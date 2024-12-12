@@ -7,7 +7,7 @@ defmodule Ama.MixProject do
     [
       app: @app,
       version: "0.0.1",
-      elixir: "~> 1.14.0",
+      elixir: "~> 1.17.0",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       build_embedded: Mix.env == :prod,
@@ -33,6 +33,8 @@ defmodule Ama.MixProject do
 
       {:photon, git: "https://github.com/vans163/photon.git"},
       {:mnesia_kv, git: "https://github.com/xenomorphtech/mnesia_kv.git"},
+
+      {:blake3, git: "https://github.com/vans163/blake3", branch: "finalize_xof"},
     ]
   end
 
