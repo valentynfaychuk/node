@@ -1,119 +1,19 @@
-defmodule CRDTVans do
-  def setup() do
-	  path = Path.join([Application.fetch_env!(:serv, :work_folder), "mnesia_kv/"])
-	  MnesiaKV.load(%{
-			NODESys => %{key_type: :elixir_term},
-			NODEChain => %{key_type: :elixir_term},
-			NODETXPool => %{key_type: :elixir_term},
-			NODEPeers => %{key_type: :elixir_term},
-			CRDTLog => %{key_type: :elixir_term, index: [:node, :counter_global, :counter_local, :table]},
-			CRDTUser => %{},
-			CRDTUserCounter => %{key_type: :elixir_term},
-	    }, %{path: path}
-	  )
-  end
+defmodule NodeGen do
+  def start_link(ip, port) do
+    :ets.new(NODEPeers, [:ordered_set, :named_table, :public,
+      {:write_concurrency, true}, {:read_concurrency, true}, {:decentralized_counters, false}])
 
-  def merge(table, key, value) do
-    json = op(:merge, table, key, value)
-    proc_merge(json)
-  end
-
-  def increment(table, key, value) do
-    json = op(:increment, table, key, value)
-    proc_increment(json)
-  end
-
-  def op(op, table, key, value) do
-	  node = Application.fetch_env!(:serv, :mnesia_kv_crdt_node)
-	  counter_local = MnesiaKV.increment_counter(CRDTSys, CounterLocal, 1, nil)
-	  counter_global = MnesiaKV.increment_counter(CRDTSys, CounterGlobal, 1, nil)
-	  json = %{op: op,
-	    table: table, key: key, value: value,
-	  	node: node,
-      counter_local: (counter_local - 1),
-	    counter_global: (counter_global - 1),
-	    nano: :os.system_time(:nanosecond)
-	  }
-	  MnesiaKV.merge(CRDTLog, {node, (counter_local - 1), (counter_global - 1)}, json)
-	  send(CRDTVansListener, {:send_to_others, json})
-		json
-  end
-
-  def proc(json) do
-    key = {json.node, json.counter_local, json.counter_global}
-    if !MnesiaKV.exists(CRDTLog, key) do
-      MnesiaKV.increment_counter(CRDTSys, CounterGlobal, 1, nil)
-      MnesiaKV.merge(CRDTLog, key, json)
-
-      case json.op do
-        :merge -> proc_merge(json)
-        :increment -> proc_increment(json)
-      end
-    end
-
-    #TODO; can prob move this inside the clause above with an init checker
-    #coldstart can be broken otherwise
-    sync_counter(json.node, json.counter_local)
-  end
-
-  def sync_counter(node, remotecounter) do
-	  localcounter = MnesiaKV.get(CRDTSys, {node, CounterLocal}) || 0
-	  if localcounter == remotecounter do
-	    localcounter = MnesiaKV.increment_counter(CRDTSys, {node, CounterLocal}, 1, nil)
-
-	    #fix holes
-	    fn_fixholes = fn(fn_fixholes, ctr)->
-	      if MnesiaKV.get_spec(CRDTLog, {node, ctr, :_}, %{nano: :'$1'}, :'$1') do
-	        IO.inspect {CRDT, :fix_hole, node, ctr}
-	        ctr = MnesiaKV.increment_counter(CRDTSys, {node, CounterLocal}, 1, nil)
-	        fn_fixholes.(fn_fixholes, ctr)
-	      end
-	    end
-	    fn_fixholes.(fn_fixholes, localcounter)
-	  end
-  end
-
-  def proc_merge(json) do
-    MnesiaKV.merge(json.table, json.key, json.value)
-  end
-
-  def proc_increment(json) do
-    MnesiaKV.increment_counter(json.table, json.key, json.value)
-  end
-end
-
-defmodule CRDTVansListener do
-	#1280 max packet size
-	#useless key to prevent udp noise
-	def aes256key do
-		<<108, 80, 102, 94, 44, 225, 200, 37, 227, 180, 114, 230, 230, 219,
-		177, 28, 80, 19, 72, 13, 196, 129, 81, 216, 161, 36, 177, 212, 199, 6, 169, 26>>
-	end
-
-	def start_link(port, module) when is_atom(module) do
-    pid = :erlang.spawn_link(__MODULE__, :init, [port, module])
+    pid = :erlang.spawn_link(__MODULE__, :init, [ip, port])
     :erlang.register(__MODULE__, pid)
     {:ok, pid}
   end
 
-  def start_link(ip, port, module) when is_atom(module) do
-    pid = :erlang.spawn_link(__MODULE__, :init, [ip, port, module])
-    :erlang.register(__MODULE__, pid)
-    {:ok, pid}
-  end
-
-  def init(port, module) do
-    lsocket = listen(port)
-    state = %{ip: {0,0,0,0}, port: port, socket: lsocket, module: module}
-    :erlang.send_after(0, self(), :tick)
-    read_loop(state)
-  end
-
-  def init(ip, port, module) do
-    ip = if !:erlang.is_tuple(ip), do: :inet.parse_address(~c'#{ip}') |> elem(1), else: ip
-    lsocket = listen(port, [{:ifaddr, ip}])
-    state = %{ip: ip, port: port, socket: lsocket, module: module}
-    :erlang.send_after(0, self(), :tick)
+  def init(ip_tuple, port) do
+    lsocket = listen(port, [{:ifaddr, ip_tuple}])
+    ip = Tuple.to_list(ip_tuple) |> Enum.join(".")
+    state = %{ip: ip, ip_tuple: ip_tuple, port: port, socket: lsocket}
+    :erlang.send_after(1000, self(), :tick)
+    :erlang.send_after(1000, self(), :ping)
     read_loop(state)
   end
 
@@ -128,89 +28,260 @@ defmodule CRDTVansListener do
     lsocket
   end
 
+  def random_peer() do
+    :ets.tab2list(NODEPeers)
+    |> Enum.map(& elem(&1,1))
+    |> case do
+      [] -> nil
+      list -> Enum.random(list)
+    end
+  end
+
+  def peers(state) do
+    seeds = Application.fetch_env!(:ama, :seednodes)
+    nodes = Application.fetch_env!(:ama, :othernodes)
+    peers = :ets.tab2list(NODEPeers)
+    peers = Enum.reduce(peers, [], fn({ip, _}, acc)->
+      acc++[ip]
+    end)
+    Enum.uniq(seeds ++ nodes ++ peers) -- [state.ip]
+  end
+
+  def peers_clear_stale() do
+    ts_m = :os.system_time(1000)
+    peers = :ets.tab2list(NODEPeers)
+    |> Enum.each(fn {key, v}->
+      lp = v[:last_ping]
+      #3 minutes
+      if !!lp and ts_m > lp+(1_000*60*3) do
+        :ets.delete(NODEPeers, key)
+      end
+    end)
+  end
+
+  def send_ping() do
+    %{block: lb, hash: lb_hash} = Blockchain.block_last()
+    msg = %{op: "ping", block_height: lb.height, block_hash: lb_hash}
+    send(NodeGen, {:send_to_others, msg})
+  end
+
+  def send_txpool(tx_packed) do
+    msg = %{op: "txpool", tx_packed: tx_packed}
+    send(NodeGen, {:send_to_others, msg})
+  end
+
+  def send_block(block_packed) do
+    msg = %{op: "block", block_packed: block_packed}
+    send(NodeGen, {:send_to_others, msg})
+  end
+
+  def send_sol(sol) do
+    msg = %{op: "sol", sol: Base58.encode(sol)}
+    send(NodeGen, {:send_to_others, msg})
+  end
+
+  def send_block_to_peer(socket, peer, height) do
+    bu = Blockchain.block_by_height(height)
+    if bu do
+      msg = %{op: "block", block_packed: Block.wrap(bu)}
+      msg = pack_message(msg)
+      {:ok, ip} = :inet.parse_address(~c'#{peer}')
+      port = Application.fetch_env!(:ama, :udp_port)
+      :gen_udp.send(socket, ip, port, msg)
+    end
+  end
+
+  def send_txpool_to_peer(socket, peer) do
+    txu = TXPool.random()
+    if txu do
+      msg = %{op: "txpool", tx_packed: TX.wrap(txu)}
+      msg = pack_message(msg)
+      {:ok, ip} = :inet.parse_address(~c'#{peer}')
+      port = Application.fetch_env!(:ama, :udp_port)
+      :gen_udp.send(socket, ip, port, msg)
+    end
+  end
+
+  def send_peer_to_peer(socket, peer) do
+    rng_peer = random_peer()
+    if rng_peer do
+      msg = %{op: "peer", ip: rng_peer.ip}
+      msg = pack_message(msg)
+      {:ok, ip} = :inet.parse_address(~c'#{peer}')
+      port = Application.fetch_env!(:ama, :udp_port)
+      :gen_udp.send(socket, ip, port, msg)
+    end
+  end
+
+  def tick(state) do
+    peers_clear_stale()
+    if Blockchain.is_in_slot() do
+      #IO.puts "🔧 producing block.."
+      block_packed = Blockchain.produce_block()
+      bu = Block.unwrap(block_packed)
+      #IO.puts "📦 produced_block #{bu.block.height} #{bu.hash}"
+      send_block(block_packed)
+    end
+    state
+  end
+
   def read_loop(state) do
   	receive do
+      :ping ->
+        :erlang.send_after(1000, self(), :ping)
+        send_ping()
+        __MODULE__.read_loop(state)
+
       :tick ->
-     	  node = Application.fetch_env!(:serv, :mnesia_kv_crdt_node)
-        counter_local = MnesiaKV.get(CRDTSys, CounterLocal) || 0
-        counter_global = MnesiaKV.get(CRDTSys, CounterGlobal) || 0
-
-        json = %{op: :ping,
-          node: node, counter_local: counter_local, counter_global: counter_global,
-        	nano: :os.system_time(:nanosecond)}
-        send(CRDTVansListener, {:send_to_others, json})
-
-        #TODO: make it lower later
-        :erlang.send_after(3000, self(), :tick)
+        :erlang.send_after(100, self(), :tick)
+        state = tick(state)
         __MODULE__.read_loop(state)
 
       {:send_to_others, opmap} ->
-        msg = prepare_msg(opmap)
-        nodes = Application.fetch_env!(:serv, :mnesia_kv_crdt_othernodes)
-        port = Application.fetch_env!(:serv, :mnesia_kv_crdt_port)
-        IO.puts IO.ANSI.green() <> inspect({:relay_udp_to, nodes, opmap}) <> IO.ANSI.reset()
-        Enum.each(nodes, fn(ip)->
+        msg = pack_message(opmap)
+        peer_ips = peers(state)
+
+        #IO.puts IO.ANSI.green() <> inspect({:relay_to, peer_ips, opmap.op}) <> IO.ANSI.reset()
+
+        Enum.each(peer_ips, fn(ip)->
           {:ok, ip} = :inet.parse_address(~c'#{ip}')
+          port = Application.fetch_env!(:ama, :udp_port)
           :gen_udp.send(state.socket, ip, port, msg)
         end)
         __MODULE__.read_loop(state)
 
       {:udp, _socket, ip, _inportno, data} ->
-        case try_decrypt_and_terms(data) do
-          nil -> nil
-          term ->
-            IO.puts IO.ANSI.red() <> inspect({UDPData, json}) <> IO.ANSI.reset()
-            proc(state, ip, term)
+        case unpack_message(data) do
+          %{error: :ok, msg: term, signer: signer} ->
+            ip = Tuple.to_list(ip) |> Enum.join(".")
+            #IO.puts IO.ANSI.red() <> inspect({:relay_from, ip, term.op}) <> IO.ANSI.reset()
+            proc(state, ip, term, signer)
+          _ -> nil
         end
         :ok = :inet.setopts(state.socket, [{:active, :once}])
         __MODULE__.read_loop(state)
     end
   end
 
-  def prepare_msg(msg) do
-	  json = :erlang.term_to_binary(msg)
-	  iv = :crypto.strong_rand_bytes(12)
-	  {ciphertext, tag} = encrypt(iv, json)
-	  [tag, iv, ciphertext]
-  end
-
-  def proc(state, ip, term) do
+  def proc(state, ip, term, signer) do
     cond do
-      term.op == :merge -> CRDTVans.proc(term)
-      term.op == :increment -> CRDTVans.proc(term)
-      term.op == :ping ->
-        MnesiaKV.merge(NODESys, {term.node, Status}, %{nano: term.nano, last_ping: :os.system_time(:nanosecond)})
-        localcounter = MnesiaKV.get(CRDTSys, {term.node, CounterLocal}) || 0
-        remotecounter = json.counter_local
-        if localcounter != remotecounter do
-          IO.inspect {CRDT, :fetch_log_one, :sent_to, term.node, localcounter}
-          mynode = Application.fetch_env!(:serv, :mnesia_kv_crdt_node)
-          port = Application.fetch_env!(:serv, :mnesia_kv_crdt_port)
-          msg = prepare_msg(%{op: :fetch_log_one, node: mynode, key: localcounter})
-          :gen_udp.send(state.socket, ip, port, msg)
+      term.op == "txpool" -> 
+        if TX.validate(term.tx_packed) == %{error: :ok} do
+          #IO.inspect {:new_tx, term.tx_packed}
+          TXPool.insert(term.tx_packed)
         end
-
-      term.op == :fetch_log_one ->
-        IO.inspect {CRDT, :fetch_log_one, :recv, term.key}
-        port = Application.fetch_env!(:serv, :mnesia_kv_crdt_port)
-
-        mynode = Application.fetch_env!(:serv, :mnesia_kv_crdt_node)
-        msg = MnesiaKV.get_spec(CRDTLog, {mynode, term.key, :_}, :'$1', :'$1')
-        if msg do
-          msg = Map.drop(msg, [:uuid])
-          IO.inspect msg
-          msg = prepare_msg(msg)
-          :gen_udp.send(state.socket, ip, port, msg)
+      term.op == "block" ->
+        if Block.validate(term.block_packed) == %{error: :ok} do
+          #IO.inspect {:new_block, term.block_packed}
+          Blockchain.insert_block(term.block_packed)
         end
+      term.op == "sol" ->
+        <<trainer_pubkey_raw::32-binary, solver_raw::32-binary, epoch::32-little, _::binary>> = Base58.decode(term.sol)
+        trainer_pk = Application.fetch_env!(:ama, :trainer_pk)
+        cond do
+          epoch != Blockchain.epoch() -> nil
+          trainer_pk == trainer_pubkey_raw and trainer_pk == solver_raw ->
+            IO.inspect {:broadcasted_sol_to_self, term.sol}
+            nil
+          !BIC.Trainer.validate_sol(Base58.decode(term.sol)) ->
+            IO.inspect {:peer_sent_invalid_sol, :blocking_malicious_peer}
+            nil
+          trainer_pk == trainer_pubkey_raw ->
+            sk_raw = Application.fetch_env!(:ama, :trainer_sk)
+            signed_tx = TX.build_transaction(sk_raw, Blockchain.height(), "Trainer", "submit_sol", [term.sol])
+            TXPool.insert(signed_tx)
+            signed_tx = TX.build_transaction(sk_raw, Blockchain.height(), "Coin", "transfer", [Base58.encode(solver_raw), BIC.Coin.to_cents(10)])
+            TXPool.insert(signed_tx)
+          true -> nil
+        end
+      term.op == "peer" ->
+        peer = :ets.lookup_element(NODEPeers, term.ip, 2, %{})
+        peer = Map.merge(peer, %{ip: term.ip})
+        :ets.insert(NODEPeers, {term.ip, peer})
+      term.op == "ping" ->
+        peer = :ets.lookup_element(NODEPeers, ip, 2, %{})
+        peer = Map.merge(peer, %{ip: ip, pk: signer, last_ping: :os.system_time(1000)})
+        :ets.insert(NODEPeers, {ip, peer})
+
+        %{block: latest_block} = Blockchain.block_last()
+        latest_height = latest_block.height
+        Enum.each(0..99, fn(idx)->
+          if latest_height > (term.block_height+idx) do send_block_to_peer(state.socket, ip, term.block_height+idx+1) end
+        end)
+        send_txpool_to_peer(state.socket, ip)
+        send_peer_to_peer(state.socket, ip)
     end
   end
 
-  def try_decrypt_and_terms(data) do
+  def generate_challenge(pk, sk, workdir) do
+    IO.inspect {:looking_for, <<0,0,0,1>>}
+    {challenge, signature} = generate_challenge_1(pk, sk)
+    Application.put_env(:ama, :challenge, challenge)
+    Application.put_env(:ama, :challenge_signature, signature)
+
+    File.write!(Path.join(workdir, "trainer_challenge"), <<challenge::binary, signature::binary>>)
+    IO.puts "challenge solved! restart amadeusd"
+    :erlang.halt()
+  end
+  defp generate_challenge_1(pk, sk, best_challenge \\ <<>>, best \\ <<0xff>>, target \\ <<0,0,0,1>>) do
+    challenge = :crypto.strong_rand_bytes(12)
+    signature = :public_key.sign(challenge, :ignored, {:ed_pri, :ed25519, pk, sk}, [])
+    cond do
+      signature <= target -> {challenge, signature}
+      signature < best ->
+        IO.inspect {:found_better, challenge, :need, <<0,0,0,1>>}
+        IO.inspect signature, limit: :infinity
+        generate_challenge_1(pk, sk, challenge, signature, target)
+      true -> generate_challenge_1(pk, sk, best_challenge, best, target)
+    end
+  end
+
+  def pack_message(msg) do
+    pk = Application.fetch_env!(:ama, :trainer_pk)
+    pk_b58 = Application.fetch_env!(:ama, :trainer_pk_b58)
+    sk = Application.fetch_env!(:ama, :trainer_sk)
+    challenge = Application.fetch_env!(:ama, :challenge)
+    challenge_signature = Application.fetch_env!(:ama, :challenge_signature)
+    msg = Map.merge(msg, %{signer: pk_b58, 
+      challenge: Base58.encode(challenge), challenge_signature: Base58.encode(challenge_signature)})
+    packed = JCS.serialize(msg)
+
+    hash = Blake3.hash(packed)
+    signature = :public_key.sign(hash, :ignored, {:ed_pri, :ed25519, pk, sk}, [])
+    pck = <<Base58.encode(hash)::binary,".",Base58.encode(signature)::binary,".",packed::binary>>
+    
+    iv = :crypto.strong_rand_bytes(12)
+    {ciphertext, tag} = encrypt(iv, pck)
+    <<iv::12-binary, tag::16-binary, ciphertext::binary>>
+  end
+
+  def unpack_message(data) do
     try do
-  	  <<tag::16-binary, iv::12-binary, ciphertext::binary>> = data
-   	  text = decrypt(iv, tag, ciphertext)
-      :erlang.binary_to_term(text)
-    catch _,_ -> nil end
+      <<iv::12-binary, tag::16-binary, ciphertext::binary>> = data
+      plaintext = decrypt(iv, tag, ciphertext)
+      [hash, plaintext] = :binary.split(plaintext, ".")
+      [signature, packed] = :binary.split(plaintext, ".")
+      term = JSX.decode!(packed, labels: :attempt_atom)
+      hash = Base58.decode(hash)
+      signature = Base58.decode(signature)
+      signer = Base58.decode(term.signer)
+      challenge = Base58.decode(term.challenge)
+      challenge_signature = Base58.decode(term.challenge_signature)
+      if hash != Blake3.hash(packed), do: throw(%{error: :invalid_hash})
+      if !:public_key.verify(hash, :ignored, signature, {:ed_pub, :ed25519, signer}), do: throw(%{error: :invalid_signature})
+      if !String.starts_with?(challenge_signature, <<0,0,0,4>>) and !String.starts_with?(challenge_signature, <<0,0,0,1>>), do: throw(%{error: :invalid_challenge})
+      if !:public_key.verify(challenge, :ignored, challenge_signature, {:ed_pub, :ed25519, signer}), do: throw(%{error: :invalid_signature_challenge})
+      %{error: :ok, msg: term, signer: term.signer}
+    catch 
+      throw,r -> %{error: r}
+      e,r -> %{error: e, reason: r}
+    end
+  end
+
+  #useless key to prevent udp noise
+  def aes256key do
+    <<108, 81, 112, 94, 44, 225, 200, 37, 227, 180, 114, 230, 230, 219, 177, 28, 
+    80, 19, 72, 13, 196, 129, 81, 216, 161, 36, 177, 212, 199, 6, 169, 26>>
   end
 
   def encrypt(iv, text) do
