@@ -1,8 +1,21 @@
 defmodule UPOW do
 	#1024 #262144
-	def calculate(nonce) do
+	def tensormath() do
+		my_pk = Application.fetch_env!(:ama, :trainer_pk)
+		tensormath(my_pk, my_pk)
+	end
+
+	def tensormath(trainer, computor) do
+		epoch = Blockchain.epoch()
+		nonce = :crypto.strong_rand_bytes(32)
+		sol_seed = <<trainer::binary, computor::binary, epoch::32-little, nonce::binary>>
+		sol_seed = sol_seed <> :binary.copy(<<0>>, 160 - byte_size(sol_seed))
+		{calculate(sol_seed), sol_seed}
+	end
+
+	def calculate(sol_seed) do
 		b = Blake3.new()
-		Blake3.update(b, nonce)
+		Blake3.update(b, sol_seed)
 		tensor = Enum.reduce(0..1023, %{}, fn(idx, acc)->
 			acc = Map.put(acc, idx, Blake3.finalize_xof(b, 1024))
 			Blake3.update(b, Blake3.finalize(b))
@@ -28,5 +41,28 @@ defmodule UPOW do
 		end)
 		tensor = Map.put(tensor, index, new_row)
 		walk_mul(rest, tensor)
+	end
+
+	def compute_for(trainer, computor, itrs \\ 30, difficulty \\ <<0,0xff>>)
+	def compute_for(trainer, computor, 0, difficulty), do: nil
+	def compute_for(trainer, computor, itrs, difficulty) do
+		{hash, sol} = UPOW.tensormath(trainer, computor)
+		if hash < difficulty do
+			sol
+		else
+			compute_for(trainer, computor, itrs - 1, difficulty)
+		end
+	end
+
+	def test() do
+		Enum.reduce(1..10000, <<0xff>>, fn(itr, best)->
+			IO.inspect {"pow #{itr} so far best sol", best}
+			{hash, sol} = UPOW.tensormath()
+			if hash < best do
+				sol
+			else
+				best
+			end
+		end)
 	end
 end
