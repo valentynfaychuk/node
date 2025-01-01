@@ -22,11 +22,15 @@ defmodule JCS do
             end
         end)
         |> Enum.sort_by(& &1)
+        |> case do
+            [] -> %{}
+            list -> list
+        end
     end
 
     def validate(binary) do
         binary
-        |> JSX.decode!()
+        |> JSX.decode!(labels: :attempt_atom)
         |> serialize()
         |> Kernel.==(binary)
     end

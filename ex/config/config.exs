@@ -1,9 +1,9 @@
 import Config
 
-config :ama, :version, Mix.Project.config[:version]
-
 config :logger, truncate: :infinity
 
-config :ama, :init_atoms, [
-    :uuid, :owner,
-]
+config :ama, :version, Mix.Project.config[:version]
+
+config :ama, :block_size, 1432
+config :ama, :tx_size, 1024
+
