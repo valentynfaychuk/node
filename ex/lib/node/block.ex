@@ -1,5 +1,5 @@
 defmodule Block do
-    def validate(block_packed) do
+    def validate_shell(block_packed) do
         try do
         block_size = Application.fetch_env!(:ama, :block_size)
         if byte_size(block_packed) >= block_size, do: throw(%{error: :too_large})
@@ -24,20 +24,7 @@ defmodule Block do
         if !is_list(bp.block.transactions), do: throw(%{error: :transactions_not_list})
 
         if bp.block.height == 0, do: throw(%{error: :ok})
-
         if (bp.block.height - 1) != bp.block.prev_height, do: throw(%{error: :invalid_prev_height})
-        lb = Blockchain.block_by_height(bp.block.prev_height)
-        if !lb, do: throw(%{error: :no_last_block})
-        if lb.hash != bp.block.prev_hash, do: throw(%{error: :no_last_block_by_hash})
-
-        lb_poh = Base58.encode(Blake3.hash(Base58.decode(lb.block.proof_of_history)))
-        if lb_poh != bp.block.proof_of_history, do: throw(%{error: :invalid_proof_of_history})
-
-        lb_signature = Base58.decode(lb.block.vrf_signature)
-        if !:public_key.verify(lb_signature, :ignored, Base58.decode(bp.block.vrf_signature), {:ed_pub, :ed25519, Base58.decode(bp.block.trainer)}), 
-            do: throw(%{error: :invalid_vrf})
-
-        #TODO: VDF
 
         Enum.each(bp.block.transactions, fn(tx_encoded)->
             %{error: err} = TX.validate(tx_encoded)
@@ -46,6 +33,37 @@ defmodule Block do
             txp = TX.unwrap(tx_encoded)
             if bp.block.height > (txp.tx.height+100_000), do: throw(%{error: :stale_tx_height})
         end)
+
+        throw(%{error: :ok})
+        catch
+            :throw,r -> r
+            e,r ->
+                IO.inspect {Blockchain, :validate_block, e, r}
+                %{error: :unknown}
+        end
+    end
+
+    def validate(block_packed) do
+        try do
+        %{error: err} = validate_shell(block_packed)
+        if err != :ok, do: throw(err)
+
+        bu = Block.unwrap(block_packed)
+
+        if bu.block.height == 0, do: throw(%{error: :ok})
+
+        lb = Blockchain.block_by_height(bu.block.prev_height)
+        if !lb, do: throw(%{error: :no_last_block})
+        if lb.hash != bu.block.prev_hash, do: throw(%{error: :no_last_block_by_hash})
+
+        lb_poh = Base58.encode(Blake3.hash(Base58.decode(lb.block.proof_of_history)))
+        if lb_poh != bu.block.proof_of_history, do: throw(%{error: :invalid_proof_of_history})
+
+        lb_signature = Base58.decode(lb.block.vrf_signature)
+        if !:public_key.verify(lb_signature, :ignored, Base58.decode(bu.block.vrf_signature), {:ed_pub, :ed25519, Base58.decode(bu.block.trainer)}), 
+            do: throw(%{error: :invalid_vrf})
+
+        #TODO: VDF
 
         throw(%{error: :ok})
         catch

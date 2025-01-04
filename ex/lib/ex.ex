@@ -17,9 +17,6 @@ defmodule Ama do
     #  %{path: path}
     #)
 
-    <<six::6-binary, _::binary>> = Application.fetch_env!(:ama, :challenge_signature)
-    IO.inspect {:challenge_solved, six}
-
     IO.puts "Loading chain.."
     BIC.Base.init()
     Blockchain.load_chain_on_init()
@@ -30,7 +27,8 @@ defmodule Ama do
     {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: PG, start: {:pg, :start_link, []}})
     {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: PGWSPanel, start: {:pg, :start_link, [PGWSPanel]}})
     
-    {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: Computor, start: {Computor, :start_link, []}})
+    {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: ComputorGen, start: {ComputorGen, :start_link, []}})
+    {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: LoggerGen, start: {LoggerGen, :start_link, []}})
     
     ip4 = Application.fetch_env!(:ama, :udp_ipv4_tuple)
     port = Application.fetch_env!(:ama, :udp_port)

@@ -3,6 +3,7 @@ defmodule BIC.Trainer do
 
 	@epoch_emission BIC.Coin.to_flat(1_000_000)
 	@epoch_interval 100_000
+	@adjudicator "4MXG4qor6TRTX9Wuu9TEku7ivBtDooNL55vtu3HcvoQH"
 
 	def slot(proof_of_history) do
 		<<hash::256-little>> = proof_of_history
@@ -52,11 +53,14 @@ defmodule BIC.Trainer do
 		kv_clear(:solutions)
 
 		leaders
-		|> Enum.take(10)
+		|> Enum.take(9)
 		|> Enum.map(fn{pubkey, _}-> pubkey end)
 		|> Enum.each(fn(pubkey)->
 			kv_merge(:trainers, pubkey)
 		end)
+		if BIC.Base.epoch(env) < 666 do
+			kv_merge(:trainers, @adjudicator)
+		end
 	end
 
 	def call(:slash_double_block, env, [blocka, blockb]) do

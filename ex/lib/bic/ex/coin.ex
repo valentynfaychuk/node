@@ -12,6 +12,10 @@ defmodule BIC.Coin do
 		trunc(coins *    10_000_000)
 	end
 
+	def from_flat(coins) do
+		Float.round(coins / 1_000_000_000, 9)
+	end
+
 	def burn_address() do
 		@burn_address
 	end

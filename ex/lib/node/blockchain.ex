@@ -87,7 +87,9 @@ defmodule Blockchain do
 		        		end)
 
 		        	mutation_root_correct ->
-		    			#IO.puts "📦 insert_block #{bu.block.height} #{bu.hash}"
+		        		if loadingChain do
+		    				IO.puts "📦 insert_block #{bu.block.height} #{bu.hash}"
+		    			end
 
 		        		Enum.each(block.transactions, fn(tx_packed)->
 				        	txu = TX.unwrap(tx_packed)
@@ -119,6 +121,11 @@ defmodule Blockchain do
 	def height() do
 		%{block: %{height: height}} = block_last()
 		height
+	end
+
+	def hash() do
+		%{hash: hash} = block_last()
+		hash
 	end
 
 	def block_last() do

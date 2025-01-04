@@ -19,6 +19,10 @@ defmodule BIC.Base do
 		BIC.Coin.balance(env.txu.tx.signer) < exec_cost(tx_bytes)
 	end
 
+	def epoch(env) do
+		trunc(env.block.height/100_000)
+	end
+
 	def precall_block(env) do
         Process.delete(:mutations)
         Process.delete(:mutations_reverse)

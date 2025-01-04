@@ -39,7 +39,7 @@ defmodule BIC.KV do
         Process.put(:mutations, Process.get(:mutations, <<>>) <> <<byte_size(mut)::32-little, mut::binary>>)
 
         if exists do
-            Process.put(:mutations_reverse, Process.get(:mutations_reverse, []) ++ [%{op: "increment", table: table, key: key, value: -1*value, default: default}])
+            Process.put(:mutations_reverse, Process.get(:mutations_reverse, []) ++ [%{op: "increment", table: table, key: key, value: -value, default: default}])
         else
             Process.put(:mutations_reverse, Process.get(:mutations_reverse, []) ++ [%{op: "delete", table: table, key: key}])
         end
