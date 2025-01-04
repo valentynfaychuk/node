@@ -1,4 +1,4 @@
-defmodule Computor do
+defmodule ComputorGen do
   use GenServer
 
   def start() do

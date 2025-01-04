@@ -2,6 +2,8 @@ defmodule NodeGen do
   def start_link(ip, port) do
     :ets.new(NODEPeers, [:ordered_set, :named_table, :public,
       {:write_concurrency, true}, {:read_concurrency, true}, {:decentralized_counters, false}])
+    :ets.new(NODEBlocks, [:ordered_set, :named_table, :public,
+      {:write_concurrency, true}, {:read_concurrency, true}, {:decentralized_counters, false}])
 
     pid = :erlang.spawn_link(__MODULE__, :init, [ip, port])
     :erlang.register(__MODULE__, pid)
@@ -57,6 +59,21 @@ defmodule NodeGen do
         :ets.delete(NODEPeers, key)
       end
     end)
+  end
+
+  def consume_blocks() do
+    height = Blockchain.height()
+    blocks = :ets.match_object(NODEBlocks, {{height+1,:_},:_})
+    cond do
+      blocks == [] -> nil
+      blocks ->
+        {_, block_packed} = Enum.random(blocks)
+        Blockchain.insert_block(block_packed)
+        new_height = Blockchain.height()
+        if new_height > height do
+          consume_blocks()
+        end
+    end
   end
 
   def send_ping() do
@@ -115,6 +132,7 @@ defmodule NodeGen do
 
   def tick(state) do
     peers_clear_stale()
+    consume_blocks()
     if Blockchain.is_in_slot() do
       #IO.puts "🔧 producing block.."
       block_packed = Blockchain.produce_block()
@@ -133,7 +151,7 @@ defmodule NodeGen do
         __MODULE__.read_loop(state)
 
       :tick ->
-        :erlang.send_after(100, self(), :tick)
+        :erlang.send_after(1000, self(), :tick)
         state = tick(state)
         __MODULE__.read_loop(state)
 
@@ -170,10 +188,21 @@ defmodule NodeGen do
           #IO.inspect {:new_tx, term.tx_packed}
           TXPool.insert(term.tx_packed)
         end
+      #term.op == "block" ->
+      #  if Block.validate(term.block_packed) == %{error: :ok} do
+      #    #IO.inspect {:new_block, term.block_packed}
+      #    Blockchain.insert_block(term.block_packed)
+      #  end
       term.op == "block" ->
-        if Block.validate(term.block_packed) == %{error: :ok} do
+        if Block.validate_shell(term.block_packed) == %{error: :ok} do
           #IO.inspect {:new_block, term.block_packed}
-          Blockchain.insert_block(term.block_packed)
+          bu = Block.unwrap(term.block_packed)
+          if Blockchain.height() == (bu.block.height-1) and Blockchain.hash() == bu.block.prev_hash do
+            #IO.inspect {:new_block, term.block_packed}
+            Blockchain.insert_block(term.block_packed)
+          else
+            :ets.insert(NODEBlocks, {{bu.block.height, bu.hash}, term.block_packed})
+          end
         end
       term.op == "sol" ->
         <<trainer_pubkey_raw::32-binary, solver_raw::32-binary, epoch::32-little, _::binary>> = Base58.decode(term.sol)
@@ -203,9 +232,12 @@ defmodule NodeGen do
         peer = Map.merge(peer, %{ip: ip, pk: signer, last_ping: :os.system_time(1000)})
         :ets.insert(NODEPeers, {ip, peer})
 
+        highest_height = :persistent_term.get(:highest_height, 0)
+        :persistent_term.put(:highest_height, max(highest_height, term.block_height))
+
         %{block: latest_block} = Blockchain.block_last()
         latest_height = latest_block.height
-        Enum.each(0..99, fn(idx)->
+        Enum.each(0..30, fn(idx)->
           if latest_height > (term.block_height+idx) do send_block_to_peer(state.socket, ip, term.block_height+idx+1) end
         end)
         send_txpool_to_peer(state.socket, ip)
@@ -249,7 +281,8 @@ defmodule NodeGen do
     hash = Blake3.hash(packed)
     signature = :public_key.sign(hash, :ignored, {:ed_pri, :ed25519, pk, sk}, [])
     pck = <<Base58.encode(hash)::binary,".",Base58.encode(signature)::binary,".",packed::binary>>
-    
+    |> :zlib.gzip()
+
     iv = :crypto.strong_rand_bytes(12)
     {ciphertext, tag} = encrypt(iv, pck)
     <<iv::12-binary, tag::16-binary, ciphertext::binary>>
@@ -259,6 +292,7 @@ defmodule NodeGen do
     try do
       <<iv::12-binary, tag::16-binary, ciphertext::binary>> = data
       plaintext = decrypt(iv, tag, ciphertext)
+      plaintext = :zlib.gunzip(plaintext)
       [hash, plaintext] = :binary.split(plaintext, ".")
       [signature, packed] = :binary.split(plaintext, ".")
       term = JSX.decode!(packed, labels: :attempt_atom)
