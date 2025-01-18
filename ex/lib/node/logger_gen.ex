@@ -19,7 +19,7 @@ defmodule LoggerGen do
   end
 
   def handle_info(:tick, state) do
-    state = if state[:enabled] do tick(state) else state end
+    state = if state[:enabled] do try do tick(state) catch _,_ -> state end else state end
     :erlang.send_after(6000, self(), :tick)
     {:noreply, state}
   end
@@ -35,16 +35,26 @@ defmodule LoggerGen do
   end
 
   def tick(state) do
-    height = Blockchain.height()
+    entry_rooted = Fabric.rooted_tip_entry()
+    rooted_height = entry_rooted.header_unpacked.height
+
+    entry = Consensus.chain_tip_entry()
+    entry = Entry.unpack(entry)
+    height = entry.header_unpacked.height
+    slot = entry.header_unpacked.slot
     highest_height = :persistent_term.get(:highest_height, 0)
     highest_height = max(height, highest_height)
-    hash = Blockchain.hash()
     txpool_size = :ets.info(TXPool, :size)
-    peers_size = :ets.info(NODEPeers, :size)
+    peer_cnt = length(NodeGen.peers_online()) + 1
 
-    trainer_pk_b58 = Application.fetch_env!(:ama, :trainer_pk_b58)
-    coins = BIC.Coin.from_flat(BIC.Coin.balance(trainer_pk_b58))
-    IO.puts "⛓️: #{height} / #{highest_height} | T: #{txpool_size} P: #{peers_size} | #{trainer_pk_b58} 🪙 #{coins}"
+    pk = Application.fetch_env!(:ama, :trainer_pk_raw)
+    coins = Consensus.chain_balance(pk)
+    quorum = Application.fetch_env!(:ama, :quorum)
+    if peer_cnt < quorum do
+      IO.puts "⛓️  #{height} / #{highest_height} R: #{height-rooted_height} S: #{slot} | T: #{txpool_size} P: #{peer_cnt} 🔴 QUORUM REQUIRES #{quorum} PEERS"
+    else
+      IO.puts "⛓️  #{height} / #{highest_height} R: #{height-rooted_height} S: #{slot} | T: #{txpool_size} P: #{peer_cnt} | #{Base58.encode(pk)} 🪙 #{coins}"
+    end
 
     state
   end

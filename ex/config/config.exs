@@ -4,6 +4,7 @@ config :logger, truncate: :infinity
 
 config :ama, :version, Mix.Project.config[:version]
 
-config :ama, :block_size, 1432
-config :ama, :tx_size, 1024
-
+config :ama, :entry_size, 1432
+config :ama, :tx_size, 896
+config :ama, :attestation_size, 512
+config :ama, :quorum, 3

@@ -1,15 +1,16 @@
 defmodule UPOW do
 	#1024 #262144
 	def tensormath() do
-		my_pk = Application.fetch_env!(:ama, :trainer_pk)
-		tensormath(my_pk, my_pk)
+		pk_raw = Application.fetch_env!(:ama, :trainer_pk)
+		pop_raw = Application.fetch_env!(:ama, :trainer_pop)
+		epoch = Consensus.DB.chain_epoch()
+		tensormath(epoch, pk_raw, pop_raw, pk_raw)
 	end
 
-	def tensormath(trainer, computor) do
-		epoch = Blockchain.epoch()
+	def tensormath(epoch, trainer, pop, computor) do
 		nonce = :crypto.strong_rand_bytes(32)
-		sol_seed = <<trainer::binary, computor::binary, epoch::32-little, nonce::binary>>
-		sol_seed = sol_seed <> :binary.copy(<<0>>, 160 - byte_size(sol_seed))
+		sol_seed = <<epoch::32-little, trainer::binary, pop::binary, computor::binary, nonce::binary>>
+		sol_seed = sol_seed <> :binary.copy(<<0>>, 256 - byte_size(sol_seed))
 		{calculate(sol_seed), sol_seed}
 	end
 
@@ -43,14 +44,14 @@ defmodule UPOW do
 		walk_mul(rest, tensor)
 	end
 
-	def compute_for(trainer, computor, itrs \\ 30, difficulty \\ <<0,0xff>>)
-	def compute_for(trainer, computor, 0, difficulty), do: nil
-	def compute_for(trainer, computor, itrs, difficulty) do
-		{hash, sol} = UPOW.tensormath(trainer, computor)
+	def compute_for(epoch, trainer, pop, computor, itrs \\ 30, difficulty \\ <<0,0xff>>)
+	def compute_for(epoch, trainer, pop, computor, 0, difficulty), do: nil
+	def compute_for(epoch, trainer, pop, computor, itrs, difficulty) do
+		{hash, sol} = UPOW.tensormath(epoch, trainer, pop, computor)
 		if hash < difficulty do
 			sol
 		else
-			compute_for(trainer, computor, itrs - 1, difficulty)
+			compute_for(epoch, trainer, pop, computor, itrs - 1, difficulty)
 		end
 	end
 

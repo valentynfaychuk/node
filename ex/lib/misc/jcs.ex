@@ -29,9 +29,13 @@ defmodule JCS do
     end
 
     def validate(binary) do
-        binary
-        |> JSX.decode!(labels: :attempt_atom)
+        map = JSX.decode!(binary, labels: :attempt_atom)
+        map
         |> serialize()
         |> Kernel.==(binary)
+        |> case do
+            true -> map
+            false -> nil
+        end
     end
 end

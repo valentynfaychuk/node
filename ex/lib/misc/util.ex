@@ -152,4 +152,42 @@ defmodule Util do
         {b3sum, 0} = System.shell("b3sum --no-names --raw #{U.b(path)}")
         Base.hex_encode32(b3sum, padding: false, case: :lower)
     end
+
+    def set_bit(bin, i) when is_bitstring(bin) and is_integer(i) do
+        n = bit_size(bin)
+
+        if i < 0 or i > n do
+          raise ArgumentError, "Bit index out of range: #{i} (size is #{n})"
+        end
+
+        left_size = i
+        << left::size(left_size), _old_bit::size(1), right::bitstring >> = bin
+        << left::size(left_size), 1::size(1), right::bitstring >>
+    end
+
+    def get_bit(bin, i) when is_bitstring(bin) and is_integer(i) do
+        n = bit_size(bin)
+  
+        if i < 0 or i > n do
+          raise ArgumentError, "Bit index out of range: #{i} (size is #{n})"
+        end
+  
+        left_size = i
+        # Pattern-match to extract the bit
+        <<_left::size(left_size), bit::size(1), _right::bitstring>> = bin
+        bit == 1
+    end
+
+    def index_of(list, key) do
+        {result, index} = Enum.reduce_while(list, {nil, 0}, fn(element, {result, index})->
+            if element == key do
+                {:halt, {element, index}}
+            else
+                {:cont, {nil, index+1}}
+            end
+        end)
+        if result do
+            index
+        end
+    end
 end
