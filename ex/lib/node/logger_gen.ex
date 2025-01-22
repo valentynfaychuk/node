@@ -47,7 +47,7 @@ defmodule LoggerGen do
     txpool_size = :ets.info(TXPool, :size)
     peer_cnt = length(NodeGen.peers_online()) + 1
 
-    pk = Application.fetch_env!(:ama, :trainer_pk_raw)
+    pk = Application.fetch_env!(:ama, :trainer_pk)
     coins = Consensus.chain_balance(pk)
     quorum = Application.fetch_env!(:ama, :quorum)
     if peer_cnt < quorum do

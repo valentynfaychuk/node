@@ -4,8 +4,13 @@ defmodule Fabric do
         
         path = Path.join([workdir, "db/fabric/"])
         File.mkdir_p!(path)
+
         {:ok, db_ref, cf_ref_list} = :rocksdb.open_optimistic_transaction_db('#{path}',
-          [{:create_if_missing, true}, {:create_missing_column_families, true}],
+          [
+            {:create_if_missing, true}, {:create_missing_column_families, true},
+            {:target_file_size_base, 2 * 1024 * 1024 * 1024}, #2GB
+            {:target_file_size_multiplier, 2}
+          ],
           [
             {'default', []},
             {'entry_by_height|height:entryhash', []},
@@ -131,7 +136,7 @@ defmodule Fabric do
         if attestation_packed do
             a = Attestation.unpack(attestation_packed)
 
-            if Application.fetch_env!(:ama, :trainer_pk_raw) == a.signer do a else
+            if Application.fetch_env!(:ama, :trainer_pk) == a.signer do a else
                 IO.puts "imported database, resigning attestation #{Base58.encode(entry_hash)}"
                 a = Attestation.sign(entry_hash, a.mutations_hash)
                 RocksDB.put(entry_hash, Attestation.pack(a), %{db: db, cf: cf.my_attestation_for_entry})

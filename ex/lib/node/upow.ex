@@ -1,10 +1,10 @@
 defmodule UPOW do
 	#1024 #262144
 	def tensormath() do
-		pk_raw = Application.fetch_env!(:ama, :trainer_pk)
-		pop_raw = Application.fetch_env!(:ama, :trainer_pop)
+		pk = Application.fetch_env!(:ama, :trainer_pk)
+		pop = Application.fetch_env!(:ama, :trainer_pop)
 		epoch = Consensus.DB.chain_epoch()
-		tensormath(epoch, pk_raw, pop_raw, pk_raw)
+		tensormath(epoch, pk, pop, pk)
 	end
 
 	def tensormath(epoch, trainer, pop, computor) do

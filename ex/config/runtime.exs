@@ -23,16 +23,19 @@ config :ama, :trustfactor, (try do System.get_env("TRUSTFACTOR") |> :erlang.bina
 
 path = Path.join([work_folder, "sk"])
 if !File.exists?(path) do
-    IO.puts "put your trainer sk (BLS12-381) into #{path} as base58"
-    :erlang.halt()
+    IO.puts "No trainer sk (BLS12-381) in #{path} as base58"
+    sk = :crypto.strong_rand_bytes(64)
+    pk = BlsEx.get_public_key!(sk)
+    IO.puts "generated random sk, your pk is #{Base58.encode(pk)}"
+    :ok = File.write!(path, Base58.encode(sk))
 end
-sk_raw = File.read!(path) |> String.trim() |> Base58.decode()
-pk_raw = BlsEx.get_public_key!(sk_raw)
+sk = File.read!(path) |> String.trim() |> Base58.decode()
+pk = BlsEx.get_public_key!(sk)
 
-config :ama, :trainer_pk, pk_raw |> Base58.encode()
-config :ama, :trainer_pk_raw, pk_raw
-config :ama, :trainer_sk_raw, sk_raw
-config :ama, :trainer_pop_raw, BlsEx.sign!(sk_raw, pk_raw)
+config :ama, :trainer_pk_b58, pk |> Base58.encode()
+config :ama, :trainer_pk, pk
+config :ama, :trainer_sk, sk
+config :ama, :trainer_pop, BlsEx.sign!(sk, pk, BLS12AggSig.dst_pop())
 
 #TODO: enable this later
 #path = Path.join([work_folder, "trainer_challenge"])
@@ -40,11 +43,11 @@ config :ama, :trainer_pop_raw, BlsEx.sign!(sk_raw, pk_raw)
 #    IO.puts "trainer did not solve basic challenge in #{path}"
 #    IO.puts "solving challenge to join network.. this can take a while"
 #    Enum.each(1..:erlang.system_info(:schedulers_online), fn(_)->
-#        :erlang.spawn(fn()-> NodeGen.generate_challenge(pk_raw, sk_raw, work_folder) end)
+#        :erlang.spawn(fn()-> NodeGen.generate_challenge(pk, sk, work_folder) end)
 #    end)
 #    receive do _ -> :infinite_loop end
 #else
 #    <<challenge::12-binary, signature::96-binary>> = File.read!(path)
-#    Application.put_env(:ama, :challenge_raw, challenge)
-#    Application.put_env(:ama, :challenge_signature_raw, signature)    
+#    Application.put_env(:ama, :challenge, challenge)
+#    Application.put_env(:ama, :challenge_signature, signature)    
 #end

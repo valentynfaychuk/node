@@ -2,7 +2,7 @@ defmodule BIC.Coin do
 	import ConsensusKV
 
 	@decimals 9
-	@burn_address Base58.encode(:binary.copy(<<0>>, 48))
+	@burn_address :binary.copy(<<0>>, 48)
 
 	def to_flat(coins) when is_integer(coins) do
 		coins * 1_000_000_000
@@ -25,7 +25,6 @@ defmodule BIC.Coin do
 	end
 
 	def call(:transfer, env, [receiver, amount]) do
-		receiver = Base58.decode(receiver)
 		if byte_size(receiver) != 48, do: throw(%{error: :invalid_receiver_pk})
 		amount = if is_binary(amount) do :erlang.binary_to_integer(amount) else amount end
 		if !is_integer(amount), do: throw(%{error: :invalid_amount})

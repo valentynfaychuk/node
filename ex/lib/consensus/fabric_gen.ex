@@ -114,7 +114,7 @@ defmodule FabricGen do
   end
 
   def proc_if_my_slot() do
-    pk_raw = Application.fetch_env!(:ama, :trainer_pk_raw)
+    pk = Application.fetch_env!(:ama, :trainer_pk)
     entry = Consensus.chain_tip_entry()
     my_height = entry.header_unpacked.height
     highest_height = max(my_height, :persistent_term.get(:highest_height, 0))
@@ -124,14 +124,14 @@ defmodule FabricGen do
     peer_cnt = length(NodeGen.peers_online()) + 1
 
     cond do
-      pk_raw == slot_trainer and peer_cnt < Application.fetch_env!(:ama, :quorum) ->
+      pk == slot_trainer and peer_cnt < Application.fetch_env!(:ama, :quorum) ->
         nil
       #TODO: confirm a valid entry with that height/hash otherwise they can lie to stall us
-      pk_raw == slot_trainer and highest_height - my_height > 0 ->
+      pk == slot_trainer and highest_height - my_height > 0 ->
         IO.puts "🔴 my_height #{my_height} chain_height #{highest_height}"
         nil
-      pk_raw == slot_trainer ->
-        IO.puts "🔧 im in slot #{slot+1}, working.. *Click Clak*"
+      pk == slot_trainer ->
+        #IO.puts "🔧 im in slot #{slot+1}, working.. *Click Clak*"
         next_entry = Consensus.produce_entry(slot + 1)
         #IO.puts "entry #{entry.header_unpacked.height} produced."
         NodeGen.broadcast_entry(next_entry)

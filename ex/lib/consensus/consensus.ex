@@ -75,7 +75,7 @@ defmodule Consensus do
         Process.put({RocksDB, :ctx}, %{rtx: rtx, cf: cf})
 
         {m, m_rev, l} = Enum.reduce(next_entry.txs, {[], [], []}, fn(tx_packed, {m, m_rev, l})->
-            txu = TX.unwrap(tx_packed)
+            txu = TX.unpack(tx_packed)
             
             {m2, m_rev2} = BIC.Base.call_tx_pre(%{entry: next_entry, txu: txu})
             m = m ++ m2
@@ -105,8 +105,8 @@ defmodule Consensus do
         attestation_packed = Attestation.pack(Attestation.sign(next_entry.hash, mutations_hash))
         :ok = :rocksdb.transaction_put(rtx, cf.my_attestation_for_entry, next_entry.hash, attestation_packed)
         
-        pk_raw = Application.fetch_env!(:ama, :trainer_pk_raw)
-        ap = if pk_raw in trainers_for_epoch(Entry.epoch(next_entry), %{rtx: rtx, cf: cf}) do
+        pk = Application.fetch_env!(:ama, :trainer_pk)
+        ap = if pk in trainers_for_epoch(Entry.epoch(next_entry), %{rtx: rtx, cf: cf}) do
             Fabric.aggregate_attestation(attestation_packed, %{rtx: rtx, cf: cf})
             attestation_packed
         end

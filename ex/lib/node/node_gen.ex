@@ -109,8 +109,8 @@ defmodule NodeGen do
     Enum.each(entries, fn(entry)->
       msg = %{op: "entry", entry_packed: Entry.pack(entry)}
 
-      pk_raw = Application.fetch_env!(:ama, :trainer_pk_raw)
-      msg = if pk_raw in Consensus.trainers_for_epoch(Entry.epoch(entry)) do
+      pk = Application.fetch_env!(:ama, :trainer_pk)
+      msg = if pk in Consensus.trainers_for_epoch(Entry.epoch(entry)) do
         attestation = Fabric.my_attestation_by_entryhash(entry.hash)
         Map.put(msg, :attestation_packed, Attestation.pack(attestation))
       else msg end
@@ -131,9 +131,9 @@ defmodule NodeGen do
   end
 
   def send_txpool_to_peer(socket, peer) do
-    txu = TXPool.random()
-    if txu do
-      msg = %{op: "txpool", tx_packed: TX.wrap(txu)}
+    txs_packed = TXPool.random()
+    if txs_packed do
+      msg = %{op: "txpool", txs_packed: txs_packed}
       msg = pack_message(msg)
       {:ok, ip} = :inet.parse_address(~c'#{peer}')
       port = Application.fetch_env!(:ama, :udp_port)
@@ -195,10 +195,8 @@ defmodule NodeGen do
   def proc(state, ip, term, signer) do
     cond do
       term.op == "txpool" ->
-        if TX.validate(term.tx_packed).error == :ok do
-          #IO.inspect {:new_tx, term.tx_packed}
-          TXPool.insert(term.tx_packed)
-        end
+        good = Enum.filter(term.txs_packed, & TX.validate(&1).error == :ok)
+        TXPool.insert(good)
       term.op == "entry" ->
         res = Entry.unpack_and_validate(term.entry_packed)
         if res.error == :ok do
@@ -223,27 +221,28 @@ defmodule NodeGen do
         end
 
       term.op == "sol" ->
-        <<epoch::32-little, sol_pk_raw::48-binary, pop_raw::96-binary, computor_raw::48-binary, _::binary>> = term.sol
-        trainer_pk_raw = Application.fetch_env!(:ama, :trainer_pk_raw)
+        <<epoch::32-little, sol_pk::48-binary, pop::96-binary, computor_pk::48-binary, _::binary>> = term.sol
+        trainer_pk = Application.fetch_env!(:ama, :trainer_pk)
         cond do
-          epoch != Consensus.chain_epoch() -> nil
-          trainer_pk_raw == sol_pk_raw and trainer_pk_raw == computor_raw ->
+          epoch != Consensus.chain_epoch() ->
+            IO.inspect {:broadcasted_sol_invalid_epoch, epoch, Consensus.chain_epoch()}
+            nil
+          trainer_pk == sol_pk and trainer_pk == computor_pk ->
             IO.inspect {:broadcasted_sol_to_self, term.sol}
             nil
           !BIC.Epoch.validate_sol(term.sol) ->
             IO.inspect {:peer_sent_invalid_sol, :TODO_block_malicious_peer}
             nil
-          !BlsEx.verify_signature?(sol_pk_raw, sol_pk_raw, pop_raw) ->
+          !BlsEx.verify?(sol_pk, pop, sol_pk, BLS12AggSig.dst_pop()) ->
             IO.inspect {:peer_sent_invalid_sol_pop, :TODO_block_malicious_peer}
             nil
-          trainer_pk_raw == sol_pk_raw ->
-            pk_raw = Application.fetch_env!(:ama, :trainer_pk_raw)
-            sk_raw = Application.fetch_env!(:ama, :trainer_sk_raw)
-            if Consensus.chain_balance(pk_raw) >= BIC.Coin.to_flat(1) do
-              tx_packed = TX.build_transaction(sk_raw, Consensus.chain_height(), "Epoch", "submit_sol", [Base58.encode(term.sol)])
-              TXPool.insert(tx_packed)
-              tx_packed = TX.build_transaction(sk_raw, Consensus.chain_height(), "Coin", "transfer", [Base58.encode(computor_raw), BIC.Coin.to_cents(10)])
-              TXPool.insert(tx_packed)
+          trainer_pk == sol_pk ->
+            sk = Application.fetch_env!(:ama, :trainer_sk)
+            if Consensus.chain_balance(trainer_pk) >= BIC.Coin.to_flat(1) do
+              IO.inspect {:peer_sent_sol, Base58.encode(signer)}
+              tx_packed1 = TX.build(sk, "Epoch", "submit_sol", [term.sol])
+              tx_packed2 = TX.build(sk, "Coin", "transfer", [computor_pk, BIC.Coin.to_cents(10)])
+              TXPool.insert([tx_packed1, tx_packed2])
             end
           true -> nil
         end
@@ -296,18 +295,18 @@ defmodule NodeGen do
   """
 
   def pack_message(msg) do
-    pk_raw = Application.fetch_env!(:ama, :trainer_pk_raw)
-    sk_raw = Application.fetch_env!(:ama, :trainer_sk_raw)
+    pk = Application.fetch_env!(:ama, :trainer_pk)
+    sk = Application.fetch_env!(:ama, :trainer_sk)
     
     #TODO: enable later if needed
     #challenge = Application.fetch_env!(:ama, :challenge)
     #challenge_signature = Application.fetch_env!(:ama, :challenge_signature)
-    #msg = Map.merge(msg, %{signer: pk_b58, challenge: Base58.encode(challenge), challenge_signature: Base58.encode(challenge_signature)})
+    #msg = Map.merge(msg, %{signer: pk, challenge: challenge, challenge_signature: challenge_signature})
     msg_packed = msg
-    |> Map.put(:signer, pk_raw)
+    |> Map.put(:signer, pk)
     |> :erlang.term_to_binary([:deterministic])
     hash = Blake3.hash(msg_packed)
-    signature = BlsEx.sign!(sk_raw, hash)
+    signature = BlsEx.sign!(sk, hash, BLS12AggSig.dst_node())
     msg_envelope = %{msg_packed: msg_packed, hash: hash, signature: signature}
     msg_envelope_packed = msg_envelope
     |> :erlang.term_to_binary([:deterministic])
@@ -327,10 +326,12 @@ defmodule NodeGen do
       |> :erlang.binary_to_term([:safe])
 
       msg = :erlang.binary_to_term(msg_envelope.msg_packed, [:safe])
-
+      #if msg.op == "sol" do
+      #  IO.inspect {:sol_msg_from, msg.signer}
+      #end
       if msg_envelope.hash != Blake3.hash(msg_envelope.msg_packed), do: throw(%{error: :invalid_hash})
-      if !BlsEx.verify_signature?(msg.signer, msg_envelope.hash, msg_envelope.signature), do: throw(%{error: :invalid_signature})
-      if msg.signer == Application.fetch_env!(:ama, :trainer_pk_raw), do: throw(%{error: :msg_to_self})
+      if !BlsEx.verify?(msg.signer, msg_envelope.signature, msg_envelope.hash, BLS12AggSig.dst_node()), do: throw(%{error: :invalid_signature})
+      if msg.signer == Application.fetch_env!(:ama, :trainer_pk), do: throw(%{error: :msg_to_self})
 
       %{error: :ok, msg: msg}
     catch 

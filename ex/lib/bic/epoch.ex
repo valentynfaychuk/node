@@ -12,31 +12,29 @@ defmodule BIC.Epoch do
 	end
 
 	def call(:submit_sol, env, [sol]) do
-		sol_raw = Base58.decode(sol)
-		if byte_size(sol_raw) != 256, do: throw(%{error: :invalid_sol_seed_size})
-		if kv_exists("bic:epoch:solutions:#{sol_raw}"), do: throw(%{error: :sol_exists})
+		if byte_size(sol) != 256, do: throw(%{error: :invalid_sol_seed_size})
+		if kv_exists("bic:epoch:solutions:#{sol}"), do: throw(%{error: :sol_exists})
 		
-		<<epoch::32-little, pk_raw::48-binary, pop_raw::96-binary, _computor_raw::48-binary, _::binary>> = sol_raw
+		<<epoch::32-little, pk::48-binary, pop::96-binary, _computor::48-binary, _::binary>> = sol
 		if epoch != Entry.epoch(env.entry), do: throw(%{error: :invalid_epoch})
-		if !validate_sol(sol_raw), do: throw(%{error: :invalid_sol})
+		if !validate_sol(sol), do: throw(%{error: :invalid_sol})
 
-		if !kv_get("bic:epoch:pop:#{pk_raw}") do
-			if !BlsEx.verify_signature?(pk_raw, pk_raw, pop_raw), do: throw %{error: :invalid_pop}
-			kv_put("bic:epoch:pop:#{pk_raw}", pop_raw)
+		if !kv_get("bic:epoch:pop:#{pk}") do
+			if !BlsEx.verify?(pk, pop, pk, BLS12AggSig.dst_pop()), do: throw %{error: :invalid_pop}
+			kv_put("bic:epoch:pop:#{pk}", pop)
 		end
-		kv_put("bic:epoch:solutions:#{sol_raw}", pk_raw)
+		kv_put("bic:epoch:solutions:#{sol}", pk)
 	end
 
 	def call(:set_emission_address, env, [address]) do
-		address_raw = Base58.decode(address)
-		if byte_size(address_raw) != 48, do: throw(%{error: :invalid_address_pk})
-		kv_put("bic:epoch:emission_address:#{env.txu.tx.signer}", address_raw)
+		if byte_size(address) != 48, do: throw(%{error: :invalid_address_pk})
+		kv_put("bic:epoch:emission_address:#{env.txu.tx.signer}", address)
 	end
 
-	def validate_sol(sol_raw) do
+	def validate_sol(sol) do
 		#TODO: perhaps add slashing for DOSing invalid sols
 		#if a != 0 or b != 0 or c != 0, do: throw(%{error: :invalid_sol})
-		<<a,b,c,_::29-binary>> = UPOW.calculate(sol_raw)
+		<<a,b,c,_::29-binary>> = UPOW.calculate(sol)
 		a == 0
 	end
 

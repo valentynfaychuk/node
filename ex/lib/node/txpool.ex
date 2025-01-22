@@ -4,9 +4,14 @@ defmodule TXPool do
             {:write_concurrency, true}, {:read_concurrency, true}, {:decentralized_counters, false}])
     end
 
-    def insert(tx_packed) do
-        txu = TX.unwrap(tx_packed)
-        :ets.insert(TXPool, {txu.hash, txu})
+    def insert(tx_packed) when is_binary(tx_packed) do insert([tx_packed]) end
+    def insert([]) do :ok end
+    def insert(txs_packed) do
+        txus = Enum.map(txs_packed, fn(tx_packed)->
+            txu = TX.unpack(tx_packed)
+            {txu.hash, txu}
+        end)
+        :ets.insert(TXPool, txus)
     end
 
     def purge_stale() do
@@ -20,12 +25,14 @@ defmodule TXPool do
 
     def grab_next_valids(next_entry) do
         :ets.tab2list(TXPool)
-        |> Enum.filter(fn({key, txu}) ->
-            heightValid = abs(next_entry.header_unpacked.height - txu.tx.height) < 100_000
-            chainValid = TX.chain_valid(TX.wrap(txu))
-            heightValid and chainValid
+        |> Enum.map(& elem(&1,1))
+        |> Enum.filter(fn(txu) ->
+            chainValid = TX.chain_valid(txu)
+            chainValid
         end)
-        |> Enum.map(& TX.wrap(elem(&1,1)))
+        |> Enum.sort_by(& &1.tx.nonce)
+        |> Enum.uniq_by(& &1.tx.signer)
+        |> Enum.map(& TX.pack(&1))
         |> case do
             [] -> []
             txs -> 
@@ -37,36 +44,30 @@ defmodule TXPool do
     def is_stale(txu) do
         entry = Fabric.rooted_tip_entry()
 
-        tx_stale_height = abs(entry.header_unpacked.height - txu.tx.height) >= 100_000
+        #tx_stale_height = abs(entry.header_unpacked.height - txu.tx.height) >= 100_000
         tx_processed = txu.tx.nonce <= Consensus.chain_nonce(txu.tx.signer)
 
         cond do
-            tx_stale_height -> true
+            #tx_stale_height -> true
             tx_processed -> true
             true -> false
         end
     end
 
-    def random() do
+    def random(amount \\ 2) do
         :ets.tab2list(TXPool)
         |> case do
             [] -> nil
-            txs -> Enum.random(txs) |> elem(1)
+            txs -> 
+                Enum.take(txs, amount)
+                |> Enum.map(fn{_, txu}-> TX.pack(txu) end)
         end
     end
 
     def test() do
-        {pk, sk} = :crypto.generate_key(:eddsa, :ed25519)
-        packed_tx = TX.build_transaction(sk, 1, "Epoch", "submit_sol", [<<>>])
-
-        TX.validate(packed_tx)
-        TXPool.insert(packed_tx)
-    end
-
-    def test2() do
-        sk_raw = Application.fetch_env!(:ama, :trainer_sk_raw)
-        pk = Base58.encode(:crypto.strong_rand_bytes(48))
-        packed_tx = TX.build_transaction(sk_raw, 110_000, "Coin", "transfer", [pk, 1])
+        sk = Application.fetch_env!(:ama, :trainer_sk)
+        pk = :crypto.strong_rand_bytes(48)
+        packed_tx = TX.build(sk, 110_000, "Coin", "transfer", [pk, 1])
         TXPool.insert(packed_tx)
     end
 end

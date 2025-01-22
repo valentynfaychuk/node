@@ -36,14 +36,14 @@ defmodule Entry do
     end
 
     def sign(entry_unpacked) do
-        sk_raw = Application.fetch_env!(:ama, :trainer_sk_raw)
+        sk = Application.fetch_env!(:ama, :trainer_sk)
 
         txs_hash = Blake3.hash(Enum.join(entry_unpacked.txs))
         entry_unpacked = put_in(entry_unpacked, [:header_unpacked, :txs_hash], txs_hash)
         h = :erlang.term_to_binary(entry_unpacked.header_unpacked, [:deterministic])
         
         hash = Blake3.hash(h)
-        signature = BlsEx.sign!(sk_raw, hash)
+        signature = BlsEx.sign!(sk, hash, BLS12AggSig.dst_entry())
         %{
             header: h,
             header_unpacked: entry_unpacked.header_unpacked,
@@ -84,7 +84,7 @@ defmodule Entry do
         try do
         hash = Blake3.hash(e.header)
         if e.hash != hash, do: throw(%{error: :invalid_hash})
-        if !BlsEx.verify_signature?(e.header_unpacked.signer, hash, e.signature), do: throw(%{error: :invalid_signature})
+        if !BlsEx.verify?(e.header_unpacked.signer, e.signature, hash, BLS12AggSig.dst_entry()), do: throw(%{error: :invalid_signature})
         %{error: :ok}
         catch
             :throw,r -> r
@@ -111,10 +111,9 @@ defmodule Entry do
 
         if !is_list(e.txs), do: throw(%{error: :txs_not_list})
         if eh.txs_hash != Blake3.hash(Enum.join(e.txs)), do: throw(%{error: :txs_hash_invalid})
-        Enum.each(e.txs, fn(tx_encoded)->
-            %{error: err, txu: txu} = TX.validate(tx_encoded)
+        Enum.each(e.txs, fn(tx_packed)->
+            %{error: err, txu: txu} = TX.validate(tx_packed)
             if err != :ok, do: throw(err)
-            if abs(eh.height - txu.tx.height) >= 100_000, do: throw(%{error: :stale_tx_height})
         end)
 
         throw(%{error: :ok})
@@ -133,7 +132,7 @@ defmodule Entry do
         if cur_entry.hash != neh.prev_hash, do: throw(%{error: :invalid_hash})
 
         if Blake3.hash(ceh.dr) != neh.dr, do: throw(%{error: :invalid_dr})
-        if !BlsEx.verify_signature?(neh.signer, ceh.vr, neh.vr), do: throw(%{error: :invalid_vr})
+        if !BlsEx.verify?(neh.signer, neh.vr, ceh.vr, BLS12AggSig.dst_vrf()), do: throw(%{error: :invalid_vr})
 
         Enum.each(cur_entry.txs, fn(tx_packed)->
             if !TX.chain_valid(tx_packed), do: %{error: :invalid_tx}
@@ -149,11 +148,11 @@ defmodule Entry do
     end
 
     def build_next(cur_entry, slot) do
-        pk_raw = Application.fetch_env!(:ama, :trainer_pk_raw)
-        sk_raw = Application.fetch_env!(:ama, :trainer_sk_raw)
+        pk = Application.fetch_env!(:ama, :trainer_pk)
+        sk = Application.fetch_env!(:ama, :trainer_sk)
 
         dr = Blake3.hash(cur_entry.header_unpacked.dr)
-        vr = BlsEx.sign!(sk_raw, cur_entry.header_unpacked.vr)
+        vr = BlsEx.sign!(sk, cur_entry.header_unpacked.vr, BLS12AggSig.dst_vrf())
 
         %{
             header_unpacked: %{
@@ -163,7 +162,7 @@ defmodule Entry do
                 prev_hash: cur_entry.hash,
                 dr: dr,
                 vr: vr,
-                signer: pk_raw,
+                signer: pk,
             }
         }
     end

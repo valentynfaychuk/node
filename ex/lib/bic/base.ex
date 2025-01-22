@@ -1,14 +1,13 @@
 defmodule BIC.Base do
 	import ConsensusKV
 
-	def exec_cost(tx_bytes) do
-		bytes = if is_integer(tx_bytes) do tx_bytes else byte_size(tx_bytes) end
+	def exec_cost(txu) do
+		bytes = byte_size(txu.tx_encoded) + 32 + 96
 		BIC.Coin.to_cents( 3 + div(bytes, 256) * 3 )
 	end
 
 	def can_pay_exec_cost(env) do
-		tx_bytes = byte_size(env.txu.tx_encoded)
-		BIC.Coin.balance(env.txu.tx.signer) >= exec_cost(tx_bytes)
+		BIC.Coin.balance(env.txu.tx.signer) >= exec_cost(env.txu)
 	end
 
 	def call_exit(env) do
@@ -38,7 +37,7 @@ defmodule BIC.Base do
 		seed_random("", env.entry.header_unpacked.vr)
 
 		kv_put("bic:base:nonce:#{env.txu.tx.signer}", env.txu.tx.nonce)
-		exec_cost = exec_cost(byte_size(env.txu.tx_encoded))
+		exec_cost = exec_cost(env.txu)
 		kv_increment("bic:coin:balance:#{env.txu.tx.signer}", -exec_cost)
 		kv_increment("bic:coin:balance:#{env.entry.header_unpacked.signer}", exec_cost)
 
@@ -75,7 +74,7 @@ defmodule BIC.Base do
 	end
 
 	defp process_tx_2(env, action) do
-		seed_random(env.txu.hash_raw, env.entry.header_unpacked.vr)
+		seed_random(env.txu.hash, env.entry.header_unpacked.vr)
 		module = String.to_existing_atom("Elixir.BIC.#{action.contract}")
 		function = String.to_existing_atom(action.function)
 		:erlang.apply(module, :call, [function, env, action.args])

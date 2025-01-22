@@ -1,34 +1,61 @@
 defmodule TX do
 	@doc """
 	%{
+	  tx: %{
 		signer: Base58PK,
 		nonce: :os.system_time(:nanosecond),
-		height: height,
 		actions: [%{op: "call", contract: "", function: "", args: []}]
+	  },
+	  tx_encoded: <<>>,
+	  hash: <<>>,
+	  signature: <<>>
 	}
 	"""
 
+	def normalize_atoms(txu) do
+		t = %{
+			tx_encoded: Map.fetch!(txu, "tx_encoded"),
+			hash: Map.fetch!(txu, "hash"),
+			signature: Map.fetch!(txu, "signature")
+		}
+		if !txu["tx"] do t else
+		    tx = Map.fetch!(txu, "tx")
+		    actions = Map.fetch!(tx, "actions")
+		    actions = Enum.map(actions, fn %{"op"=> o, "contract"=> c, "function"=> f, "args"=> a} -> 
+		    	%{op: o, contract: c, function: f, args: a}
+		    end)
+		    tx = %{signer: Map.fetch!(tx, "signer"), nonce: Map.fetch!(tx, "nonce"), actions: actions}
+		    Map.put(t, :tx, tx)
+		end
+	end
+
 	def validate(tx_packed) do
 		try do
-        [hash, tx_packed] = :binary.split(tx_packed, ".")
-        [signature, tx_encoded] = :binary.split(tx_packed, ".")
-
        	tx_size = Application.fetch_env!(:ama, :tx_size)
 	    if byte_size(tx_packed) >= tx_size, do: throw(%{error: :too_large})
 
-        tx = JCS.validate(tx_encoded)
-		if !tx, do: throw(%{error: :json_not_canonical})
+		txu = VanillaSer.decode!(tx_packed)
+		txu = Map.take(txu, ["tx_encoded", "hash", "signature"])
+		tx_encoded = Map.fetch!(txu, "tx_encoded")
+		tx = VanillaSer.decode!(tx_encoded)
+		tx = Map.take(tx, ["signer", "nonce", "actions"])
+		actions = Enum.map(Map.fetch!(tx, "actions"), & Map.take(&1, ["op", "contract", "function", "args"]))
+		tx = Map.put(tx, "actions", actions)
+		txu = Map.put(txu, "tx", tx)
+		hash = Map.fetch!(txu, "hash")
+		signature = Map.fetch!(txu, "signature")
+		txu = normalize_atoms(txu)
 
-		hash_raw = Base58.decode(hash)
-		signature_raw = Base58.decode(signature)
-    	if hash_raw != Blake3.hash(tx_encoded), do: throw(%{error: :invalid_hash})
-    	if !BlsEx.verify_signature?(Base58.decode(tx.signer), hash_raw, signature_raw), do: throw(%{error: :invalid_signature})
+		canonical = VanillaSer.encode(%{tx_encoded: VanillaSer.encode(tx), hash: hash, signature: signature})
+		if tx_packed != canonical, do: throw(%{error: :tx_not_canonical})
 
-		if !is_integer(tx.nonce), do: throw(%{error: :nonce_not_integer})
-		if !is_integer(tx.height), do: throw(%{error: :height_not_integer})
-		if !is_list(tx.actions), do: throw(%{error: :actions_must_be_list})
-		if length(tx.actions) != 1, do: throw(%{error: :actions_length_must_be_1})
-		action = hd(tx.actions)
+    	if hash != Blake3.hash(tx_encoded), do: throw(%{error: :invalid_hash})
+    	if !BlsEx.verify?(txu.tx.signer, signature, hash, BLS12AggSig.dst_tx()), do: throw(%{error: :invalid_signature})
+
+		if !is_integer(txu.tx.nonce), do: throw(%{error: :nonce_not_integer})
+		if !is_list(txu.tx.actions), do: throw(%{error: :actions_must_be_list})
+		if length(txu.tx.actions) != 1, do: throw(%{error: :actions_length_must_be_1})
+		action = hd(txu.tx.actions)
 		if action[:op] != "call", do: throw %{error: :op_must_be_call}
 		if !is_binary(action[:contract]), do: throw %{error: :contract_must_be_binary}
 		if !is_binary(action[:function]), do: throw %{error: :function_must_be_binary}
@@ -43,10 +70,7 @@ defmodule TX do
 		#if !!txp.tx[:delay] and txp.tx.delay <= 0, do: throw %{error: :delay_too_low}
 		#if !!txp.tx[:delay] and txp.tx.delay > 100_000, do: throw %{error: :delay_too_hi}
 
-        tx = Map.put(tx, :signer, Base58.decode(tx.signer))
-		throw %{error: :ok, txu: %{tx: tx, tx_encoded: tx_encoded,
-        	signature: signature, signature_raw: signature_raw,
-        	hash: hash, hash_raw: hash_raw}}
+		throw %{error: :ok, txu: txu}
 		catch
 			:throw,r -> r
 			e,r ->
@@ -55,50 +79,56 @@ defmodule TX do
 		end
 	end
 
-	def build_transaction(sk_raw, height, contract, function, args) do
-		pk_raw = BlsEx.get_public_key!(sk_raw)
+	def build(sk, contract, function, args) do
+		pk = BlsEx.get_public_key!(sk)
 		action = %{op: "call", contract: contract, function: function, args: args}
 		tx_encoded = %{
-			signer: Base58.encode(pk_raw),
+			signer: pk,
 			nonce: :os.system_time(:nanosecond),
-			height: height,
 			actions: [action]
 		}
-		|> JCS.serialize()
+		|> VanillaSer.encode()
 		hash = Blake3.hash(tx_encoded)
-        signature = BlsEx.sign!(sk_raw, hash)
-
-		<<Base58.encode(hash)::binary,".",Base58.encode(signature)::binary,".",tx_encoded::binary>>
+        signature = BlsEx.sign!(sk, hash, BLS12AggSig.dst_tx())
+		VanillaSer.encode(%{tx_encoded: tx_encoded, hash: hash, signature: signature})
 	end
 
-	def chain_valid(tx_packed) do
-		txu = unwrap(tx_packed)
-
-        #TODO: once more than 1 tx allowed per entry fix this
+	def chain_valid(tx_packed) when is_binary(tx_packed) do chain_valid(TX.unpack(tx_packed)) end
+	def chain_valid(txu) do
+      #TODO: once more than 1 tx allowed per entry fix this
 		chainNonce = Consensus.chain_nonce(txu.tx.signer)
-        nonceValid = !chainNonce or txu.tx.nonce > chainNonce
-        hasBalance = BIC.Base.exec_cost(tx_packed) <= Consensus.chain_balance(txu.tx.signer)
-        cond do
-           !nonceValid -> false
-           !hasBalance -> false
-           true -> true
-        end
+      nonceValid = !chainNonce or txu.tx.nonce > chainNonce
+      hasBalance = BIC.Base.exec_cost(txu) <= Consensus.chain_balance(txu.tx.signer)
+      cond do
+         !nonceValid -> false
+         !hasBalance -> false
+         true -> true
+      end
 	end
 
-    def wrap(txu) do
-        <<txu.hash::binary,".",txu.signature::binary,".",txu.tx_encoded::binary>>
+    def pack(txu) do
+    	txu = Map.take(txu, [:tx_encoded, :hash, :signature])
+    	VanillaSer.encode(txu)
     end
 
-    def unwrap(tx_packed, verify \\ false) do
-        [hash, tx_packed] = :binary.split(tx_packed, ".")
-        [signature, tx_encoded] = :binary.split(tx_packed, ".")
-        tx = JSX.decode!(tx_encoded, labels: :attempt_atom)
-        tx = Map.put(tx, :signer, Base58.decode(tx.signer))
-        %{tx: tx, tx_encoded: tx_encoded,
-        	signature: signature, signature_raw: Base58.decode(signature),
-        	hash: hash, hash_raw: Base58.decode(hash)}
+    def unpack(tx_packed) do
+		txu = VanillaSer.decode!(tx_packed)
+		tx = VanillaSer.decode!(Map.fetch!(txu, "tx_encoded"))
+		txu = Map.put(txu, "tx", tx)
+		normalize_atoms(txu)
     end
 
 	def test() do
+      pk = Application.fetch_env!(:ama, :trainer_pk)
+		tx = %{
+			signer: pk,
+			nonce: :os.system_time(:nanosecond),
+			actions: [%{op: "call", contract: "Epoch", function: "fake", args: []}]
+		}
+		tx_encoded = VanillaSer.encode(tx)
+		tx_packed = VanillaSer.encode(%{tx_encoded: tx_encoded})
+
+		sk = Application.fetch_env!(:ama, :trainer_sk)
+      tx_packed = TX.build(sk, "Epoch", "submit_sol", [:crypto.strong_rand_bytes(256)])
 	end
 end

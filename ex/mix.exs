@@ -35,7 +35,7 @@ defmodule Ama.MixProject do
       {:mnesia_kv, git: "https://github.com/xenomorphtech/mnesia_kv.git"},
 
       {:blake3, git: "https://github.com/vans163/blake3", branch: "finalize_xof"},
-      {:bls_ex, git: "https://github.com/archethic-foundation/bls_ex"},
+      {:bls_ex, git: "https://github.com/amadeus-robot/bls_ex"},
     ]
   end
 

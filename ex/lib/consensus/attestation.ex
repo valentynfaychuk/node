@@ -21,13 +21,13 @@ defmodule Attestation do
     end
 
     def sign(entry_hash, mutations_hash) do
-        pk_raw = Application.fetch_env!(:ama, :trainer_pk_raw)
-        sk_raw = Application.fetch_env!(:ama, :trainer_sk_raw)
-        signature = BlsEx.sign!(sk_raw, <<entry_hash::binary, mutations_hash::binary>>)
+        pk = Application.fetch_env!(:ama, :trainer_pk)
+        sk = Application.fetch_env!(:ama, :trainer_sk)
+        signature = BlsEx.sign!(sk, <<entry_hash::binary, mutations_hash::binary>>, BLS12AggSig.dst_att())
         %{
             entry_hash: entry_hash,
             mutations_hash: mutations_hash,
-            signer: pk_raw,
+            signer: pk,
             signature: signature,
         }
     end
@@ -61,7 +61,7 @@ defmodule Attestation do
         if byte_size(a.signer) != 48, do: throw(%{error: :signer_not_48_bytes})
 
         bin = <<a.entry_hash::binary, a.mutations_hash::binary>>
-        if !BlsEx.verify_signature?(a.signer, bin, a.signature), do: throw(%{error: :invalid_signature})
+        if !BlsEx.verify?(a.signer, a.signature, bin, BLS12AggSig.dst_att()), do: throw(%{error: :invalid_signature})
 
         %{error: :ok}
         catch

@@ -51,34 +51,31 @@ defmodule ComputorGen do
 
   def tick(state) do
     IO.puts "computor running #{DateTime.utc_now()}"
-    pk_raw = Application.fetch_env!(:ama, :trainer_pk_raw)
-    pop_raw = Application.fetch_env!(:ama, :trainer_pop_raw)
+    pk = Application.fetch_env!(:ama, :trainer_pk)
+    pop = Application.fetch_env!(:ama, :trainer_pop)
 
-    coins = Consensus.chain_balance(pk_raw)
+    coins = Consensus.chain_balance(pk)
     epoch = Consensus.chain_epoch()
-    height = Consensus.chain_height()
     hasExecCoins = coins >= BIC.Coin.to_flat(1)
-    sol = if state.type != :trainer do
-        UPOW.compute_for(epoch, EntryGenesis.signer(), EntryGenesis.pop(), pk_raw)
-    else
-        UPOW.compute_for(epoch, pk_raw, pop_raw, pk_raw)
-    end
     cond do
-        !sol -> nil
-        state.type == :trainer and !hasExecCoins ->
+        (state.type == :trainer and !hasExecCoins) or state.type == nil ->
+          sol = UPOW.compute_for(epoch, EntryGenesis.signer(), EntryGenesis.pop(), pk)
+          if sol do
             IO.puts "🔢 tensor matmul complete! broadcasting sol.."
             NodeGen.broadcast_sol(sol)
-        state.type == nil ->
-            IO.puts "🔢 tensor matmul complete! broadcasting sol.."
-            NodeGen.broadcast_sol(sol)
+          end
+          
         true ->
-            sk_raw = Application.fetch_env!(:ama, :trainer_sk_raw)
-            packed_tx = TX.build_transaction(sk_raw, height, "Epoch", "submit_sol", [Base58.encode(sol)])
-            %{hash: hash} = TX.unwrap(packed_tx)
-            IO.puts "🔢 tensor matmul complete! tx #{hash}"
+          sol = UPOW.compute_for(epoch, pk, pop, pk)
+          if sol do
+            sk = Application.fetch_env!(:ama, :trainer_sk)
+            packed_tx = TX.build(sk, "Epoch", "submit_sol", [sol])
+            %{hash: hash} = TX.unpack(packed_tx)
+            IO.puts "🔢 tensor matmul complete! tx #{Base58.encode(hash)}"
 
             TXPool.insert(packed_tx)
             NodeGen.broadcast_tx(packed_tx)
+          end
     end
     state
   end 

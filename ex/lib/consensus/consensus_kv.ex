@@ -94,7 +94,8 @@ defmodule ConsensusKV do
         db = Process.get({RocksDB, :ctx})
         kvs = kv_get_prefix(prefix)
         Enum.each(kvs, fn({k,v})->
-            Process.put(:mutations, Process.get(:mutations, []) ++ [%{op: :delete_prefix, key: prefix}])
+            k = prefix <> k
+            Process.put(:mutations, Process.get(:mutations, []) ++ [%{op: :delete, key: k}])
             Process.put(:mutations_reverse, Process.get(:mutations_reverse, []) ++ [%{op: :put, key: k, value: v}])
             :ok = :rocksdb.transaction_delete(db.rtx, db.cf.contractstate, k)
         end)

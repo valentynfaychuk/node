@@ -1,4 +1,20 @@
 defmodule BLS12AggSig do
+    @dst "AMADEUS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_NUL_"
+    @dst_pop "AMADEUS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_"
+    @dst_att "AMADEUS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_ATTESTATION_"
+    @dst_entry "AMADEUS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_ENTRY_"
+    @dst_vrf "AMADEUS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_VRF_"
+    @dst_tx "AMADEUS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_TX_"
+    @dst_node "AMADEUS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_NODE_"
+    
+    def dst(), do: @dst
+    def dst_pop(), do: @dst_pop
+    def dst_att(), do: @dst_att
+    def dst_entry(), do: @dst_entry
+    def dst_vrf(), do: @dst_vrf
+    def dst_tx(), do: @dst_tx
+    def dst_node(), do: @dst_node
+
     def new(trainers, pk, signature) do
         index_of_trainer = Util.index_of(trainers, pk)
 
@@ -12,20 +28,9 @@ defmodule BLS12AggSig do
         index_of_trainer = Util.index_of(trainers, pk)
 
         if Util.get_bit(mask, index_of_trainer) do m else
-            trainers_signed = unmask_trainers(trainers, mask)
-            cond do
-                trainers_signed == [] -> throw %{error: :no_one_signed_call_new_first}
-                length(trainers_signed) == 1 ->
-                    aggsig = BlsEx.aggregate_signatures!([aggsig, signature], [hd(trainers_signed), pk])
-                    mask = Util.set_bit(mask, index_of_trainer)
-                    %{mask: mask, aggsig: aggsig}
-
-                true ->
-                    apk = BlsEx.aggregate_public_keys!(trainers_signed)
-                    aggsig = BlsEx.aggregate_signatures!([aggsig, signature], [apk, pk])
-                    mask = Util.set_bit(mask, index_of_trainer)
-                    %{mask: mask, aggsig: aggsig}
-            end
+            mask = Util.set_bit(mask, index_of_trainer)
+            aggsig = BlsEx.aggregate_signatures!([aggsig, signature])
+            %{mask: mask, aggsig: aggsig}
         end
     end
 
