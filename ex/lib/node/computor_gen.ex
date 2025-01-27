@@ -78,5 +78,12 @@ defmodule ComputorGen do
           end
     end
     state
-  end 
+  end
+
+  def set_emission_address(to_address) do
+    sk = Application.fetch_env!(:ama, :trainer_sk)
+    packed_tx = TX.build(sk, "Epoch", "set_emission_address", [to_address])
+    TXPool.insert(packed_tx)
+    NodeGen.broadcast_tx([packed_tx])
+  end
 end

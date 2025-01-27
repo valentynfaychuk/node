@@ -34,7 +34,7 @@ defmodule FabricGen do
 
   def tick(state) do
     #IO.inspect "tick"
-      
+    
     proc_entries()
     proc_consensus()
 
@@ -80,12 +80,33 @@ defmodule FabricGen do
     |> Enum.sort_by(fn {entry, mut_hash, score} -> {score, -entry.header_unpacked.slot, entry.hash} end, :desc)
   end
 
+  def broadcast_for_next_few_entries(height) do
+    next_entries1 = Fabric.entries_by_height(height+1)
+    next_entries2 = Fabric.entries_by_height(height+2)
+    next_entries3 = Fabric.entries_by_height(height+3)
+    next_entries4 = Fabric.entries_by_height(height+4)
+    next_entries5 = Fabric.entries_by_height(height+5)
+    next_entries6 = Fabric.entries_by_height(height+6)
+    List.flatten([next_entries1, next_entries2, next_entries3, next_entries4, next_entries5, next_entries6])
+    |> Enum.each(fn(entry)->
+        NodeGen.broadcast_need_attestation(entry)
+    end)
+  end
+
   defp proc_consensus_1(entry, height) do
     next_entries = Fabric.entries_by_height(height+1)
     next_entries = Enum.map(next_entries, fn(entry)->
         trainers = Consensus.trainers_for_epoch(Entry.epoch(entry))
         {mut_hash, score} = Fabric.best_consensus_by_entryhash(trainers, entry.hash)
         NodeGen.broadcast_need_attestation(entry)
+
+        #TODO: fix this later, for faster sync
+        h = Consensus.chain_tip_entry()
+        hr = Fabric.rooted_tip_entry()
+        if abs(h.header_unpacked.height - hr.header_unpacked.height) >= 6 do
+          broadcast_for_next_few_entries(height+1)
+        end
+
         #IO.inspect {entry, mut_hash, score}
         {entry, mut_hash, score}
     end)
