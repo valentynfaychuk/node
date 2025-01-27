@@ -75,12 +75,12 @@ defmodule NodeGen do
 
   def broadcast_ping() do
     tip = Consensus.chain_tip_entry()
-    msg = %{op: "ping", entry_height: tip.header_unpacked.height, entry_hash: tip.hash}
+    msg = %{op: "ping", entry_height: tip.header_unpacked.height, entry_slot: tip.header_unpacked.slot, entry_hash: tip.hash}
     send(NodeGen, {:send_to_others, msg})
   end
 
-  def broadcast_tx(tx_packed) do
-    msg = %{op: "txpool", tx_packed: tx_packed}
+  def broadcast_tx(txs_packed) do
+    msg = %{op: "txpool", txs_packed: txs_packed}
     send(NodeGen, {:send_to_others, msg})
   end
 
@@ -112,7 +112,9 @@ defmodule NodeGen do
       pk = Application.fetch_env!(:ama, :trainer_pk)
       msg = if pk in Consensus.trainers_for_epoch(Entry.epoch(entry)) do
         attestation = Fabric.my_attestation_by_entryhash(entry.hash)
-        Map.put(msg, :attestation_packed, Attestation.pack(attestation))
+        if !attestation do msg else
+          Map.put(msg, :attestation_packed, Attestation.pack(attestation))
+        end
       else msg end
 
       msg = pack_message(msg)
@@ -192,28 +194,70 @@ defmodule NodeGen do
     {:noreply, state}
   end
 
+  def proc_entry(term) do
+    seen_time = :os.system_time(1000)
+
+    res = Entry.unpack_and_validate(term.entry_packed)
+    entry = if res.error == :ok do res.entry end
+    atp = term[:attestation_packed]
+    atp = if atp do
+      res = Attestation.unpack_and_validate(atp)
+      if res.error == :ok do
+        res.attestation
+      end
+    end
+    cond do
+      !!entry and !!atp -> send(FabricGen, {:insert_entry_attestation, entry, atp, seen_time})
+      !!entry -> send(FabricGen, {:insert_entry, entry, seen_time})
+      !!atp -> send(FabricGen, {:add_attestation, atp})
+      true -> nil
+    end
+  end
+
+  def proc_attestation(term) do
+    res = Attestation.unpack_and_validate(term.attestation_packed)
+    if res.error == :ok and Attestation.validate_vs_chain(res.attestation) do
+      send(FabricGen, {:add_attestation, res.attestation})
+    end
+  end
+
+  def proc_sol(term, signer) do
+    <<epoch::32-little, sol_pk::48-binary, pop::96-binary, computor_pk::48-binary, _::binary>> = term.sol
+    trainer_pk = Application.fetch_env!(:ama, :trainer_pk)
+    cond do
+      epoch != Consensus.chain_epoch() ->
+        IO.inspect {:broadcasted_sol_invalid_epoch, epoch, Consensus.chain_epoch()}
+        nil
+      trainer_pk == sol_pk and trainer_pk == computor_pk ->
+        IO.inspect {:broadcasted_sol_to_self, term.sol}
+        nil
+      !BIC.Epoch.check_sol(term.sol, epoch) ->
+        IO.inspect {:peer_sent_invalid_sol, :TODO_block_malicious_peer}
+        nil
+      !BlsEx.verify?(sol_pk, pop, sol_pk, BLS12AggSig.dst_pop()) ->
+        IO.inspect {:peer_sent_invalid_sol_pop, :TODO_block_malicious_peer}
+        nil
+      trainer_pk == sol_pk ->
+        sk = Application.fetch_env!(:ama, :trainer_sk)
+        if Consensus.chain_balance(trainer_pk) >= BIC.Coin.to_flat(1) do
+          IO.inspect {:peer_sent_sol, Base58.encode(signer)}
+          tx_packed1 = TX.build(sk, "Epoch", "submit_sol", [term.sol])
+          tx_packed2 = TX.build(sk, "Coin", "transfer", [computor_pk, BIC.Coin.to_cents(10)])
+          TXPool.insert([tx_packed1, tx_packed2])
+        end
+      true -> nil
+    end
+  end
+
   def proc(state, ip, term, signer) do
     cond do
       term.op == "txpool" ->
         good = Enum.filter(term.txs_packed, & TX.validate(&1).error == :ok)
         TXPool.insert(good)
       term.op == "entry" ->
-        res = Entry.unpack_and_validate(term.entry_packed)
-        if res.error == :ok do
-          send(FabricGen, {:insert_entry, res.entry})
-        end
-        atp = term[:attestation_packed]
-        if atp do
-          res = Attestation.unpack_and_validate(atp)
-          if res.error == :ok do
-            send(FabricGen, {:add_attestation, res.attestation})
-          end
-        end
+        :erlang.spawn(fn()-> proc_entry(term) end)
       term.op == "attestation" ->
-        res = Attestation.unpack_and_validate(term.attestation_packed)
-        if res.error == :ok and Attestation.validate_vs_chain(res.attestation) do
-          send(FabricGen, {:add_attestation, res.attestation})
-        end
+        :erlang.spawn(fn()-> proc_attestation(term) end)
       term.op == "need_attestation" ->
         attestation_packed = Fabric.get_or_resign_my_attestation(term.entry_hash)
         if attestation_packed do
@@ -221,31 +265,8 @@ defmodule NodeGen do
         end
 
       term.op == "sol" ->
-        <<epoch::32-little, sol_pk::48-binary, pop::96-binary, computor_pk::48-binary, _::binary>> = term.sol
-        trainer_pk = Application.fetch_env!(:ama, :trainer_pk)
-        cond do
-          epoch != Consensus.chain_epoch() ->
-            IO.inspect {:broadcasted_sol_invalid_epoch, epoch, Consensus.chain_epoch()}
-            nil
-          trainer_pk == sol_pk and trainer_pk == computor_pk ->
-            IO.inspect {:broadcasted_sol_to_self, term.sol}
-            nil
-          !BIC.Epoch.validate_sol(term.sol) ->
-            IO.inspect {:peer_sent_invalid_sol, :TODO_block_malicious_peer}
-            nil
-          !BlsEx.verify?(sol_pk, pop, sol_pk, BLS12AggSig.dst_pop()) ->
-            IO.inspect {:peer_sent_invalid_sol_pop, :TODO_block_malicious_peer}
-            nil
-          trainer_pk == sol_pk ->
-            sk = Application.fetch_env!(:ama, :trainer_sk)
-            if Consensus.chain_balance(trainer_pk) >= BIC.Coin.to_flat(1) do
-              IO.inspect {:peer_sent_sol, Base58.encode(signer)}
-              tx_packed1 = TX.build(sk, "Epoch", "submit_sol", [term.sol])
-              tx_packed2 = TX.build(sk, "Coin", "transfer", [computor_pk, BIC.Coin.to_cents(10)])
-              TXPool.insert([tx_packed1, tx_packed2])
-            end
-          true -> nil
-        end
+        :erlang.spawn(fn()-> proc_sol(term, signer) end)
+
       term.op == "peer" ->
         peer = :ets.lookup_element(NODEPeers, term.ip, 2, %{})
         peer = Map.merge(peer, %{ip: term.ip})
@@ -253,11 +274,15 @@ defmodule NodeGen do
       term.op == "ping" ->
         peer = :ets.lookup_element(NODEPeers, ip, 2, %{})
         peer = Map.merge(peer, %{ip: ip, pk: signer, last_ping: :os.system_time(1000), 
-            height: term.entry_height, hash: term.entry_hash})
+            height: term.entry_height, slot: term.entry_slot,
+            hash: term.entry_hash, version: term.version})
         :ets.insert(NODEPeers, {ip, peer})
 
         highest_height = :persistent_term.get(:highest_height, 0)
         :persistent_term.put(:highest_height, max(highest_height, term.entry_height))
+
+        highest_slot = :persistent_term.get(:highest_slot, 0)
+        :persistent_term.put(:highest_slot, max(highest_slot, term.entry_slot))
 
         %{header_unpacked: %{height: height}} = Consensus.chain_tip_entry()
         Enum.each(0..30, fn(idx)->
@@ -304,6 +329,7 @@ defmodule NodeGen do
     #msg = Map.merge(msg, %{signer: pk, challenge: challenge, challenge_signature: challenge_signature})
     msg_packed = msg
     |> Map.put(:signer, pk)
+    |> Map.put(:version, 1)
     |> :erlang.term_to_binary([:deterministic])
     hash = Blake3.hash(msg_packed)
     signature = BlsEx.sign!(sk, hash, BLS12AggSig.dst_node())
@@ -342,7 +368,7 @@ defmodule NodeGen do
 
   #useless key to prevent udp noise
   def aes256key do
-    <<108, 81, 112, 94, 44, 225, 200, 37, 227, 180, 114, 230, 230, 219, 177, 28, 
+    <<0, 1, 0, 94, 44, 225, 200, 37, 227, 180, 114, 230, 230, 219, 177, 28, 
     80, 19, 72, 13, 196, 129, 81, 216, 161, 36, 177, 212, 199, 6, 169, 26>>
   end
 

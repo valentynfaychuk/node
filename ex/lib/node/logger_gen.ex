@@ -50,10 +50,18 @@ defmodule LoggerGen do
     pk = Application.fetch_env!(:ama, :trainer_pk)
     coins = Consensus.chain_balance(pk)
     quorum = Application.fetch_env!(:ama, :quorum)
+
+    trainers = Consensus.trainers_for_epoch(Entry.epoch(entry))
+
+    #Moneybag mean the money in my bag
+    #Moneybag mean the money in the bag
+    #Moneyround mean i roll wit da money
+    isTrainer = if pk in trainers do "💰" else "🪙" end
+
     if peer_cnt < quorum do
       IO.puts "⛓️  #{height} / #{highest_height} R: #{height-rooted_height} S: #{slot} | T: #{txpool_size} P: #{peer_cnt} 🔴 QUORUM REQUIRES #{quorum} PEERS"
     else
-      IO.puts "⛓️  #{height} / #{highest_height} R: #{height-rooted_height} S: #{slot} | T: #{txpool_size} P: #{peer_cnt} | #{Base58.encode(pk)} 🪙 #{coins}"
+      IO.puts "⛓️  #{height} / #{highest_height} R: #{height-rooted_height} S: #{slot} | T: #{txpool_size} P: #{peer_cnt} | #{Base58.encode(pk)} #{isTrainer} #{coins}"
     end
 
     state

@@ -102,7 +102,9 @@ defmodule EntryGenesis do
         sk = Application.fetch_env!(:ama, :trainer_sk)
 
         entropy_seed = """
-        aefeafeafeafefaefa
+        January 22, 2025
+
+        Rovertech Sets New Landmine Clearing Record
         """
         dr = Blake3.hash(entropy_seed)
         vr = BlsEx.sign!(sk, dr<>dr<>dr, BLS12AggSig.dst_vrf())

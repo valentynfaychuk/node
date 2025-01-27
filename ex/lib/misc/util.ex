@@ -190,4 +190,9 @@ defmodule Util do
             index
         end
     end
+
+    def verify_time_sync() do
+        {res, 0} = System.shell("timedatectl status")
+        String.contains?(res, "System clock synchronized: yes")
+    end
 end

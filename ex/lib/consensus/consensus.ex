@@ -15,6 +15,15 @@ defmodule Consensus do
         Enum.at(trainers, index)
     end
 
+    def next_trainer_slot_in_x_slots(pk, epoch, slot, acc \\ 0) do
+        trainer = Consensus.trainer_for_slot(epoch, slot + acc)
+        cond do
+            acc >= 128 -> nil
+            pk == trainer -> acc
+            true -> next_trainer_slot_in_x_slots(pk, epoch, slot, acc + 1)
+        end
+    end
+
     def chain_height() do
         entry = chain_tip_entry()
         entry.header_unpacked.height
@@ -43,6 +52,77 @@ defmodule Consensus do
         %{db: db} = :persistent_term.get({:rocksdb, Fabric})
         RocksDB.get(chain_tip(), %{db: db, term: true})
         |> Entry.unpack()
+    end
+
+    def chain_muts_rev(hash) do
+        %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+        RocksDB.get(hash, %{db: db, cf: cf.muts_rev ,term: true})
+    end
+
+    def chain_rewind(target_hash) do
+        in_chain = Consensus.is_in_chain(target_hash)
+        cond do
+            !in_chain -> false
+            true ->
+                %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+                {:ok, rtx} = :rocksdb.transaction(db, [])
+                Process.put({RocksDB, :ctx}, %{rtx: rtx, cf: cf})
+
+                tip_entry = Consensus.chain_tip_entry()
+                entry = chain_rewind_1(tip_entry, target_hash)
+
+                :ok = :rocksdb.transaction_put(rtx, cf.sysconf, "temporal_tip", entry.hash)
+                :ok = :rocksdb.transaction_put(rtx, cf.sysconf, "temporal_height", :erlang.term_to_binary(entry.header_unpacked.height, [:deterministic]))
+                :ok = :rocksdb.transaction_commit(rtx)
+
+                true
+        end
+    end
+    defp chain_rewind_1(current_entry, target_hash) do
+        m_rev = Consensus.chain_muts_rev(current_entry.hash)
+        ConsensusKV.revert(m_rev)
+
+        case Fabric.entry_by_hash_w_mutsrev(current_entry.header_unpacked.prev_hash) do
+            nil ->
+                IO.puts "rewind catastrophically failed"
+                :erlang.halt()
+            entry = %{hash: ^target_hash} -> entry
+            current_entry -> chain_rewind_1(current_entry, target_hash)
+        end
+    end
+
+    def am_i_in_slot() do
+        pk = Application.fetch_env!(:ama, :trainer_pk)
+        entry = Consensus.chain_tip_entry()
+        next_epoch = div(entry.header_unpacked.height+1, 100_000)
+        pk == trainer_for_slot(next_epoch, entry.header_unpacked.slot + 1)
+    end
+
+    def is_in_chain(target_hash) do
+        case Fabric.entry_by_hash_w_mutsrev(target_hash) do
+            nil -> false
+            %{header_unpacked: %{height: target_height}} ->
+                tip_entry = Consensus.chain_tip_entry()
+                tip_hash  = tip_entry.hash
+                tip_height = tip_entry.header_unpacked.height
+
+                if tip_height < target_height do
+                  false
+                else
+                  is_in_chain_1(tip_hash, target_hash, target_height)
+                end
+        end
+    end
+    defp is_in_chain_1(current_hash, target_hash, target_height) do
+        case Fabric.entry_by_hash_w_mutsrev(current_hash) do
+            nil -> false
+            %{hash: ^target_hash} -> true
+            %{header_unpacked: %{prev_hash: prev_hash, height: height}} ->
+                cond do
+                  height < target_height -> false
+                  true -> is_in_chain_1(prev_hash, target_hash, target_height)
+                end
+        end
     end
 
     def best_by_weight(trainers, consensuses) do
@@ -91,10 +171,10 @@ defmodule Consensus do
                 {m, m_rev, l ++ [result]}
             end
         end)
-        {m_base, m_base_rev} = BIC.Base.call_exit(%{entry: next_entry})
+        {m_exit, m_exit_rev} = BIC.Base.call_exit(%{entry: next_entry})
 
-        m = m ++ m_base
-        m_rev = m_rev ++ m_base_rev
+        m = m ++ m_exit
+        m_rev = m_rev ++ m_exit_rev
 
         #TODO: store logs
         #IO.inspect {l ++ m, ConsensusKV.hash_mutations(l ++ m)}, limit: 11111111
@@ -110,6 +190,9 @@ defmodule Consensus do
             Fabric.aggregate_attestation(attestation_packed, %{rtx: rtx, cf: cf})
             attestation_packed
         end
+
+        seen_time = :os.system_time(1000)
+        :ok = :rocksdb.transaction_put(rtx, cf.my_seen_time_for_entry, next_entry.hash, :erlang.term_to_binary(seen_time, [:deterministic]))
 
         :ok = :rocksdb.transaction_put(rtx, cf.sysconf, "temporal_tip", next_entry.hash)
         :ok = :rocksdb.transaction_put(rtx, cf.sysconf, "temporal_height", :erlang.term_to_binary(next_entry.header_unpacked.height, [:deterministic]))
@@ -132,7 +215,7 @@ defmodule Consensus do
         next_entry = Map.put(next_entry, :txs, txs)
         next_entry = Entry.sign(next_entry)
 
-        Fabric.insert_entry(next_entry)
+        Fabric.insert_entry(next_entry, 0)
         next_entry
     end
 end

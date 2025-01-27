@@ -21,6 +21,10 @@ config :ama, :seednodes, ["104.218.45.23"]
 config :ama, :othernodes, (try do (System.get_env("OTHERNODES") |> String.split(",")) || [] catch _,_ -> [] end)
 config :ama, :trustfactor, (try do System.get_env("TRUSTFACTOR") |> :erlang.binary_to_float() catch _,_ -> 0.8 end)
 
+if !Util.verify_time_sync() do
+    IO.puts "🔴 🕒 time not synced or ntp client not found 🔴"
+end
+
 path = Path.join([work_folder, "sk"])
 if !File.exists?(path) do
     IO.puts "No trainer sk (BLS12-381) in #{path} as base58"

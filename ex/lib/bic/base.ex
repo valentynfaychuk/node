@@ -13,7 +13,7 @@ defmodule BIC.Base do
 	def call_exit(env) do
 		Process.delete(:mutations)
         Process.delete(:mutations_reverse)
-		seed_random("", env.entry.header_unpacked.vr)
+		seed_random(env.entry.header_unpacked.vr, "", "")
 
 		signer = env.entry.header_unpacked.signer
 
@@ -34,7 +34,7 @@ defmodule BIC.Base do
 	def call_tx_pre(env) do
 		Process.delete(:mutations)
         Process.delete(:mutations_reverse)
-		seed_random("", env.entry.header_unpacked.vr)
+		seed_random(env.entry.header_unpacked.vr, env.txu.hash, "")
 
 		kv_put("bic:base:nonce:#{env.txu.tx.signer}", env.txu.tx.nonce)
 		exec_cost = exec_cost(env.txu)
@@ -49,7 +49,7 @@ defmodule BIC.Base do
         Process.delete(:mutations_reverse)
 
 		result = try do
-			call_tx_actions_1(env)
+			call_tx_actions_1(env, 0)
 			%{error: :ok}
 		catch
 			:throw,r -> r
@@ -61,20 +61,20 @@ defmodule BIC.Base do
 		{Process.get(:mutations, []), Process.get(:mutations_reverse, []), result}
 	end
 
-	defp call_tx_actions_1(%{txu: %{tx: %{actions: []}}}) do nil end
-	defp call_tx_actions_1(env = %{txu: %{tx: %{actions: [action|rest]}}}) do
+	defp call_tx_actions_1(%{txu: %{tx: %{actions: []}}}, _idx) do nil end
+	defp call_tx_actions_1(env = %{txu: %{tx: %{actions: [action|rest]}}}, action_index) do
 		env = put_in(env, [:txu, :tx, :actions], rest)
-		process_tx_2(env, action)
-		call_tx_actions_1(env)
+		process_tx_2(env, action, "#{action_index}")
+		call_tx_actions_1(env, action_index + 1)
 	end
 
-	defp seed_random(txhash, vr) do
-		<<seed::256-little>> = Blake3.hash(<<txhash::binary, vr::binary>>)
+	defp seed_random(vr, txhash, action_index) do
+		<<seed::256-little>> = Blake3.hash(<<vr::binary, txhash::binary, action_index::binary>>)
 	    :rand.seed(:exsss, seed)
 	end
 
-	defp process_tx_2(env, action) do
-		seed_random(env.txu.hash, env.entry.header_unpacked.vr)
+	defp process_tx_2(env, action, action_index) do
+		seed_random(env.entry.header_unpacked.vr, env.txu.hash, action_index)
 		module = String.to_existing_atom("Elixir.BIC.#{action.contract}")
 		function = String.to_existing_atom(action.function)
 		:erlang.apply(module, :call, [function, env, action.args])

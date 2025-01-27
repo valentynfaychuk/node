@@ -7,7 +7,7 @@ defmodule BIC.Epoch do
 	def epoch_emission(_epoch, acc \\ @epoch_emission_base)
 	def epoch_emission(0, acc) do acc end
 	def epoch_emission(epoch, acc) do
-		sub = div(acc * 666, 1000000)
+		sub = div(acc * 269, 1000000)
 		epoch_emission(epoch - 1, acc - sub)
 	end
 
@@ -17,7 +17,7 @@ defmodule BIC.Epoch do
 		
 		<<epoch::32-little, pk::48-binary, pop::96-binary, _computor::48-binary, _::binary>> = sol
 		if epoch != Entry.epoch(env.entry), do: throw(%{error: :invalid_epoch})
-		if !validate_sol(sol), do: throw(%{error: :invalid_sol})
+		if !check_sol(sol, epoch), do: throw(%{error: :invalid_sol})
 
 		if !kv_get("bic:epoch:pop:#{pk}") do
 			if !BlsEx.verify?(pk, pop, pk, BLS12AggSig.dst_pop()), do: throw %{error: :invalid_pop}
@@ -31,10 +31,15 @@ defmodule BIC.Epoch do
 		kv_put("bic:epoch:emission_address:#{env.txu.tx.signer}", address)
 	end
 
-	def validate_sol(sol) do
+	def check_sol(sol, epoch) do
 		#TODO: perhaps add slashing for DOSing invalid sols
-		#if a != 0 or b != 0 or c != 0, do: throw(%{error: :invalid_sol})
-		<<a,b,c,_::29-binary>> = UPOW.calculate(sol)
+		sol
+		|> UPOW.calculate()
+		|> validate_sol(epoch)
+	end
+
+	def validate_sol(hash, _epoch) do
+		<<a,b,c,_::29-binary>> = hash
 		a == 0
 	end
 
@@ -69,8 +74,15 @@ defmodule BIC.Epoch do
 		new_trainers = if length(leaders) == 0 do trainers else
 			leaders = leaders
 			|> Enum.take(9)
-			|> Enum.shuffle()
 			|> Enum.map(fn{pk, _}-> pk end)
+			
+			#TODO: Even may not reach consensus in netsplit/malicicous net
+			#TODO: but doubleslotting can potentially break other logic
+			#if rem(length(leaders), 2) == 0 do
+			#	leaders ++ [hd(leaders)]
+			#else
+			#	leaders
+			#end
 		end
 		kv_put("bic:epoch:trainers:#{epoch+1}", Enum.shuffle(new_trainers))
 	end

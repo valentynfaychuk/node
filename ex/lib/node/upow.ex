@@ -44,14 +44,15 @@ defmodule UPOW do
 		walk_mul(rest, tensor)
 	end
 
-	def compute_for(epoch, trainer, pop, computor, itrs \\ 30, difficulty \\ <<0,0xff>>)
-	def compute_for(epoch, trainer, pop, computor, 0, difficulty), do: nil
-	def compute_for(epoch, trainer, pop, computor, itrs, difficulty) do
+	def compute_for(epoch, trainer, pop, computor, itrs \\ 30)
+	def compute_for(epoch, trainer, pop, computor, 0), do: nil
+	def compute_for(epoch, trainer, pop, computor, itrs) do
 		{hash, sol} = UPOW.tensormath(epoch, trainer, pop, computor)
-		if hash < difficulty do
+		valid = BIC.Epoch.validate_sol(hash, epoch)
+		if valid do
 			sol
 		else
-			compute_for(epoch, trainer, pop, computor, itrs - 1, difficulty)
+			compute_for(epoch, trainer, pop, computor, itrs - 1)
 		end
 	end
 

@@ -1,4 +1,9 @@
 defmodule Fabric do
+    @args [
+        {:target_file_size_base, 2 * 1024 * 1024 * 1024}, #2GB
+        {:target_file_size_multiplier, 2}
+    ]
+
     def init() do
         workdir = Application.fetch_env!(:ama, :work_folder)
         
@@ -12,35 +17,36 @@ defmodule Fabric do
             {:target_file_size_multiplier, 2}
           ],
           [
-            {'default', []},
-            {'entry_by_height|height:entryhash', []},
-            {'entry_by_slot|slot:entryhash', []},
-            {'tx|txhash:entryhash', []},
+            {'default', @args},
+            {'entry_by_height|height:entryhash', @args},
+            {'entry_by_slot|slot:entryhash', @args},
+            {'tx|txhash:entryhash', @args},
 
-            {'my_attestation_for_entry|entryhash', []},
+            {'my_seen_time_entry|entryhash', @args},
+            {'my_attestation_for_entry|entryhash', @args},
             #{'attestation|attestationhash', []},
             #{'attestation_for_entry|entryhash', []},
             #{'attestation_by_entry_signer|entryhash:signer:attestationhash', []},
 
-            {'consensus', []},
-            {'consensus_by_entryhash|Map<mutationshash,consensus>', []},
+            {'consensus', @args},
+            {'consensus_by_entryhash|Map<mutationshash,consensus>', @args},
 
-            {'contractstate', []},
-            {'muts_rev', []},
+            {'contractstate', @args},
+            {'muts_rev', @args},
 
-            {'sysconf', []},
+            {'sysconf', @args},
           ]
         )
         [
             default_cf, entry_height_cf, entry_slot_cf, tx_cf,
-            my_attestation_for_entry_cf,
+            my_seen_time_for_entry_cf, my_attestation_for_entry_cf,
             consensus_cf, consensus_by_entryhash_cf,
             contractstate_cf, muts_rev_cf,
             sysconf_cf
         ] = cf_ref_list
         cf = %{
             default: default_cf, entry_by_height: entry_height_cf, entry_by_slot: entry_slot_cf, tx: tx_cf,
-            my_attestation_for_entry: my_attestation_for_entry_cf,
+            my_seen_time_for_entry: my_seen_time_for_entry_cf, my_attestation_for_entry: my_attestation_for_entry_cf,
             consensus: consensus_cf, consensus_by_entryhash: consensus_by_entryhash_cf,
             contractstate: contractstate_cf, muts_rev: muts_rev_cf,
             sysconf: sysconf_cf
@@ -52,6 +58,21 @@ defmodule Fabric do
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
         RocksDB.get(hash, %{db: db, term: true})
         |> Entry.unpack()
+    end
+
+    def entry_by_hash_w_mutsrev(hash) do
+        %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+        entry = RocksDB.get(hash, %{db: db, term: true})
+        |> Entry.unpack()
+        mutsrev = RocksDB.get(hash, %{db: db, cf: cf.muts_rev})
+        if !!mutsrev and !!entry do
+            entry
+        end
+    end
+
+    def entry_seentime(hash) do
+        %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+        RocksDB.get(hash, %{db: db, cf: cf.my_seen_time_for_entry, term: true})
     end
 
     def entries_by_height(height) do
@@ -112,15 +133,19 @@ defmodule Fabric do
         end
     end
 
-    def insert_entry(e) when is_binary(e) do insert_entry(Entry.unpack(e)) end
-    def insert_entry(e) when is_map(e) do
+    def insert_entry(e, seen_time \\ nil)
+    def insert_entry(e, seen_time) when is_binary(e) do insert_entry(Entry.unpack(e), seen_time) end
+    def insert_entry(e, seen_time) when is_map(e) do
         entry_packed = Entry.pack(e)
+
+        seen_time = if seen_time do seen_time else :os.system_time(1000) end
 
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
         {:ok, rtx} = :rocksdb.transaction(db, [])
         has_entry = RocksDB.get(e.hash, %{rtx: rtx, cf: cf.default})
         if !has_entry do
             :ok = :rocksdb.transaction_put(rtx, cf.default, e.hash, entry_packed)
+            :ok = :rocksdb.transaction_put(rtx, cf.my_seen_time_for_entry, e.hash, :erlang.term_to_binary(seen_time, [:deterministic]))
             :ok = :rocksdb.transaction_put(rtx, cf.entry_by_height, "#{e.header_unpacked.height}:#{e.hash}", e.hash)
             :ok = :rocksdb.transaction_put(rtx, cf.entry_by_slot, "#{e.header_unpacked.slot}:#{e.hash}", e.hash)
         end

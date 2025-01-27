@@ -56,7 +56,7 @@ defmodule ComputorGen do
 
     coins = Consensus.chain_balance(pk)
     epoch = Consensus.chain_epoch()
-    hasExecCoins = coins >= BIC.Coin.to_flat(1)
+    hasExecCoins = coins >= BIC.Coin.to_cents(10)
     cond do
         (state.type == :trainer and !hasExecCoins) or state.type == nil ->
           sol = UPOW.compute_for(epoch, EntryGenesis.signer(), EntryGenesis.pop(), pk)
@@ -64,7 +64,7 @@ defmodule ComputorGen do
             IO.puts "🔢 tensor matmul complete! broadcasting sol.."
             NodeGen.broadcast_sol(sol)
           end
-          
+
         true ->
           sol = UPOW.compute_for(epoch, pk, pop, pk)
           if sol do
@@ -74,7 +74,7 @@ defmodule ComputorGen do
             IO.puts "🔢 tensor matmul complete! tx #{Base58.encode(hash)}"
 
             TXPool.insert(packed_tx)
-            NodeGen.broadcast_tx(packed_tx)
+            NodeGen.broadcast_tx([packed_tx])
           end
     end
     state
