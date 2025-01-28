@@ -13,7 +13,7 @@ defmodule FabricGen do
 
   def handle_info(:tick, state) do
     state = if true do tick(state) else state end
-    :erlang.send_after(100, self(), :tick)
+    :erlang.send_after(30, self(), :tick)
     {:noreply, state}
   end
 
@@ -165,16 +165,14 @@ defmodule FabricGen do
       trainer_for_slot = Consensus.trainer_for_slot(Entry.epoch(next_entry), next_slot)
       in_slot = next_entry.header_unpacked.signer == trainer_for_slot
 
-      valid = Entry.validate_next(cur_entry, next_entry) == %{error: :ok}
-      
       #highest_slot = :persistent_term.get(:highest_slot, 0)
       #slotBehind = (highest_slot - cur_slot) >= 3
       #IO.inspect {valid, in_slot, slot_delta, max_skipped_slot_offset}
       cond do
-        !valid -> false
         !in_slot -> false
         slot_delta <= 0 -> false
         slot_delta > 1 + max_skipped_slot_offset -> false
+        Entry.validate_next(cur_entry, next_entry) != %{error: :ok} -> false
         true -> true
       end
     end)

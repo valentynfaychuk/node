@@ -19,7 +19,7 @@ defmodule NodeGen do
     basic_opts = [
       {:active, :once},
       {:reuseaddr, true},
-		  {:reuseport, true}, #working in OTP26.1+
+      {:reuseport, true}, #working in OTP26.1+
       :binary,
     ]
     {:ok, lsocket} = :gen_udp.open(port, basic_opts++opts)
@@ -109,6 +109,10 @@ defmodule NodeGen do
   def broadcast_sol(sol) do
     msg = %{op: "sol", sol: sol}
     send(NodeGen, {:send_to_others, msg})
+  end
+
+  def broadcast_entry_catchup(hash) do
+    
   end
 
   def send_entry_to_peer(socket, peer, height) do
