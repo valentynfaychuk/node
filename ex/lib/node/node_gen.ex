@@ -35,11 +35,13 @@ defmodule NodeGen do
     end)
   end
 
-  def random_peer() do
+  def random_peers(no) do
     peers_online()
     |> case do
       [] -> nil
-      peers -> Enum.random(peers)
+      peers ->
+        Enum.shuffle(peers)
+        |> Enum.take(no)
     end
   end
 
@@ -83,39 +85,57 @@ defmodule NodeGen do
   def broadcast_ping() do
     tip = Consensus.chain_tip_entry()
     msg = %{op: "ping", entry_height: tip.header_unpacked.height, entry_slot: tip.header_unpacked.slot, entry_hash: tip.hash}
-    send(NodeGen, {:send_to_others, msg})
+    send(NodeGen, {:send_to_others, pack_message(msg)})
   end
 
   def broadcast_tx(txs_packed) do
-    msg = %{op: "txpool", txs_packed: txs_packed}
-    send(NodeGen, {:send_to_others, msg})
+    :erlang.spawn(fn()->
+      msg = %{op: "txpool", txs_packed: txs_packed}
+      send(NodeGen, {:send_to_epoch_trainers, pack_message(msg)})
+    end)
   end
 
   def broadcast_entry(entry) do
-    msg = %{op: "entry", entry_packed: Entry.pack(entry)}
-    send(NodeGen, {:send_to_others, msg})
+    :erlang.spawn(fn()->
+      msg = %{op: "entry", entry_packed: Entry.pack(entry)}
+      msg_packed = pack_message(msg)
+      send(NodeGen, {:send_to_epoch_trainers, Entry.epoch(entry), msg_packed})
+      send(NodeGen, {:send_to_x_others, 6, msg_packed})
+    end)
   end
 
   def broadcast_attestation(attestation) do
-    msg = %{op: "attestation", attestation_packed: Attestation.pack(attestation)}
-    send(NodeGen, {:send_to_others, msg})
+    :erlang.spawn(fn()->
+      msg = %{op: "attestation", attestation_packed: Attestation.pack(attestation)}
+      send(NodeGen, {:send_to_others, pack_message(msg)})
+    end)
   end
 
   def broadcast_need_attestation(entry) do
-    msg = %{op: "need_attestation", entry_hash: entry.hash}
-    send(NodeGen, {:send_to_epoch_trainers, Entry.epoch(entry), msg})
+    :erlang.spawn(fn()->
+      msg = %{op: "need_attestation", entry_hash: entry.hash}
+      msg_packed = pack_message(msg)
+      send(NodeGen, {:send_to_epoch_trainers, Entry.epoch(entry), msg_packed})
+      send(NodeGen, {:send_to_x_others, 6, msg_packed})
+    end)
   end
 
   def broadcast_sol(sol) do
-    msg = %{op: "sol", sol: sol}
-    send(NodeGen, {:send_to_others, msg})
+    :erlang.spawn(fn()->
+      <<epoch::32-little, _::binary>> = sol
+      msg = %{op: "sol", sol: sol}
+      send(NodeGen, {:send_to_epoch_trainers, epoch, pack_message(msg)})
+    end)
   end
 
-  def broadcast_entry_catchup(hash) do
-    
+  def broadcast_request_entry_catchup(hash) do
+    :erlang.spawn(fn()->
+      msg = %{op: "request_entry_catchup", entry_hash: hash}
+      send(NodeGen, {:send_to_x_others, 6, pack_message(msg)})
+    end)
   end
 
-  def send_entry_to_peer(socket, peer, height) do
+  def send_entry_to_peer(socket, peer_ip, height) do
     entries = Fabric.entries_by_height(height)
     Enum.each(entries, fn(entry)->
       msg = %{op: "entry", entry_packed: Entry.pack(entry)}
@@ -129,39 +149,31 @@ defmodule NodeGen do
       else msg end
 
       msg = pack_message(msg)
-      {:ok, ip} = :inet.parse_address(~c'#{peer}')
-      port = Application.fetch_env!(:ama, :udp_port)
-      :gen_udp.send(socket, ip, port, msg)
+      send(NodeGen, {:send_to_peer, peer_ip, msg})
     end)
   end
 
-  def send_attestation_to_peer(socket, peer, attestation_packed) do
+  def send_attestation_to_peer(socket, peer_ip, attestation_packed) do
     msg = %{op: "attestation", attestation_packed: attestation_packed}
     msg = pack_message(msg)
-    {:ok, ip} = :inet.parse_address(~c'#{peer}')
-    port = Application.fetch_env!(:ama, :udp_port)
-    :gen_udp.send(socket, ip, port, msg)
+    send(NodeGen, {:send_to_peer, peer_ip, msg})
   end
 
-  def send_txpool_to_peer(socket, peer) do
+  def send_txpool_to_peer(socket, peer_ip) do
     txs_packed = TXPool.random()
     if txs_packed do
       msg = %{op: "txpool", txs_packed: txs_packed}
       msg = pack_message(msg)
-      {:ok, ip} = :inet.parse_address(~c'#{peer}')
-      port = Application.fetch_env!(:ama, :udp_port)
-      :gen_udp.send(socket, ip, port, msg)
+      send(NodeGen, {:send_to_peer, peer_ip, msg})
     end
   end
 
-  def send_peer_to_peer(socket, peer) do
-    rng_peer = random_peer()
-    if rng_peer do
-      msg = %{op: "peer", ip: rng_peer.ip}
+  def send_peers_to_peer(socket, peer_ip) do
+    rng_peers = random_peers(6)
+    if rng_peers != [] do
+      msg = %{op: "peers", ips: Enum.map(rng_peers, & &1.ip)}
       msg = pack_message(msg)
-      {:ok, ip} = :inet.parse_address(~c'#{peer}')
-      port = Application.fetch_env!(:ama, :udp_port)
-      :gen_udp.send(socket, ip, port, msg)
+      send(NodeGen, {:send_to_peer, peer_ip, msg})
     end
   end
 
@@ -172,15 +184,14 @@ defmodule NodeGen do
   def handle_info(msg, state) do
     case msg do
       :ping ->
-        :erlang.send_after(1000, self(), :ping)
+        :erlang.send_after(500, self(), :ping)
         broadcast_ping()
 
       :tick ->
         :erlang.send_after(1000, self(), :tick)
         tick()
 
-      {:send_to_epoch_trainers, epoch, opmap} ->
-        msg = pack_message(opmap)
+      {:send_to_epoch_trainers, epoch, msg} ->
         peer_ips = peers_for_epoch(epoch)
         |> Enum.map(& &1.ip)
         Enum.each(peer_ips, fn(ip)->
@@ -189,8 +200,25 @@ defmodule NodeGen do
           :gen_udp.send(state.socket, ip, port, msg)
         end)
 
-      {:send_to_others, opmap} ->
-        msg = pack_message(opmap)
+      {:send_to_x_others, no, msg} ->
+        peer_ips = peers()
+        |> Enum.map(& &1.ip)
+        |> case do
+          [] -> []
+          peers ->
+            Enum.shuffle(peers)
+            |> Enum.take(no)
+        end
+
+        #IO.puts IO.ANSI.green() <> inspect({:relay_to, peer_ips, byte_size(msg), opmap.op}) <> IO.ANSI.reset()
+
+        Enum.each(peer_ips, fn(ip)->
+          {:ok, ip} = :inet.parse_address(~c'#{ip}')
+          port = Application.fetch_env!(:ama, :udp_port)
+          :gen_udp.send(state.socket, ip, port, msg)
+        end)
+
+      {:send_to_others, msg} ->
         peer_ips = peers()
         |> Enum.map(& &1.ip)
 
@@ -202,17 +230,29 @@ defmodule NodeGen do
           :gen_udp.send(state.socket, ip, port, msg)
         end)
 
+      {:send_to_peer, peer_ip, msg} ->
+        {:ok, ip} = :inet.parse_address(~c'#{peer_ip}')
+        port = Application.fetch_env!(:ama, :udp_port)
+        :gen_udp.send(state.socket, ip, port, msg)
+
       {:udp, _socket, ip, _inportno, data} ->
-        case unpack_message(data) do
-          %{error: :ok, msg: msg} ->
-            ip = Tuple.to_list(ip) |> Enum.join(".")
-            #IO.puts IO.ANSI.red() <> inspect({:relay_from, ip, msg.op}) <> IO.ANSI.reset()
-            proc(state, ip, msg, msg.signer)
-          _ -> nil
-        end
+        :erlang.spawn(fn()->
+          case unpack_message(data) do
+            %{error: :ok, msg: msg} ->
+              ip = Tuple.to_list(ip) |> Enum.join(".")
+              #IO.puts IO.ANSI.red() <> inspect({:relay_from, ip, msg.op}) <> IO.ANSI.reset()
+              __MODULE__.proc(state, ip, msg, msg.signer)
+            _ -> nil
+          end
+        end)
         :ok = :inet.setopts(state.socket, [{:active, :once}])
     end
     {:noreply, state}
+  end
+
+  def proc_txpool(term) do
+    good = Enum.filter(term.txs_packed, & TX.validate(&1).error == :ok)
+    TXPool.insert(good)
   end
 
   def proc_entry(term) do
@@ -273,17 +313,18 @@ defmodule NodeGen do
   def proc(state, ip, term, signer) do
     cond do
       term.op == "txpool" ->
-        good = Enum.filter(term.txs_packed, & TX.validate(&1).error == :ok)
-        TXPool.insert(good)
+        :erlang.spawn(fn()-> proc_txpool(term) end)
       term.op == "entry" ->
         :erlang.spawn(fn()-> proc_entry(term) end)
       term.op == "attestation" ->
         :erlang.spawn(fn()-> proc_attestation(term) end)
       term.op == "need_attestation" ->
-        attestation_packed = Fabric.get_or_resign_my_attestation(term.entry_hash)
-        if attestation_packed do
-          send_attestation_to_peer(state.socket, ip, attestation_packed)
-        end
+        :erlang.spawn(fn()->
+          attestation_packed = Fabric.get_or_resign_my_attestation(term.entry_hash)
+          if attestation_packed do
+            send_attestation_to_peer(state.socket, ip, attestation_packed)
+          end
+        end)
 
       term.op == "sol" ->
         :erlang.spawn(fn()-> proc_sol(term, signer) end)
@@ -292,6 +333,14 @@ defmodule NodeGen do
         peer = :ets.lookup_element(NODEPeers, term.ip, 2, %{})
         peer = Map.merge(peer, %{ip: term.ip})
         :ets.insert(NODEPeers, {term.ip, peer})
+
+      term.op == "peers" ->
+        Enum.each(term.ips, fn(ip)->
+          peer = :ets.lookup_element(NODEPeers, ip, 2, %{})
+          peer = Map.merge(peer, %{ip: ip})
+          :ets.insert(NODEPeers, {ip, peer})
+        end)
+        
       term.op == "ping" ->
         peer = :ets.lookup_element(NODEPeers, ip, 2, %{})
         peer = Map.merge(peer, %{ip: ip, pk: signer, last_ping: :os.system_time(1000), 
@@ -306,11 +355,15 @@ defmodule NodeGen do
         :persistent_term.put(:highest_slot, max(highest_slot, term.entry_slot))
 
         %{header_unpacked: %{height: height}} = Consensus.chain_tip_entry()
-        Enum.each(0..30, fn(idx)->
-          if height > (term.entry_height+idx) do send_entry_to_peer(state.socket, ip, term.entry_height+idx+1) end
+        :erlang.spawn(fn()->
+          Enum.each(0..30, fn(idx)->
+            if height > (term.entry_height+idx) do send_entry_to_peer(state.socket, ip, term.entry_height+idx+1) end
+          end)
         end)
-        send_txpool_to_peer(state.socket, ip)
-        send_peer_to_peer(state.socket, ip)
+        :erlang.spawn(fn()->
+          send_txpool_to_peer(state.socket, ip)
+          send_peers_to_peer(state.socket, ip)
+        end)
     end
   end
 
@@ -350,7 +403,7 @@ defmodule NodeGen do
     #msg = Map.merge(msg, %{signer: pk, challenge: challenge, challenge_signature: challenge_signature})
     msg_packed = msg
     |> Map.put(:signer, pk)
-    |> Map.put(:version, 1)
+    |> Map.put(:version, Application.fetch_env!(:ama, :version))
     |> :erlang.term_to_binary([:deterministic])
     hash = Blake3.hash(msg_packed)
     signature = BlsEx.sign!(sk, hash, BLS12AggSig.dst_node())

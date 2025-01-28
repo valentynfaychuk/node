@@ -223,6 +223,7 @@ defmodule FabricGen do
         next_entry = Consensus.produce_entry(next_slot)
         #IO.puts "entry #{entry.header_unpacked.height} produced."
         NodeGen.broadcast_entry(next_entry)
+        NodeGen.broadcast_ping()
         next_entry
 
       #pk in Consensus.trainers_for_epoch(next_epoch) and slots_to_skip <= max_skipped_slot_offset and highest_height - my_height > 0 ->
@@ -236,6 +237,7 @@ defmodule FabricGen do
         next_entry = Consensus.produce_entry(next_slot + slots_to_skip)
         #IO.puts "entry #{entry.header_unpacked.height} produced."
         NodeGen.broadcast_entry(next_entry)
+        NodeGen.broadcast_ping()
         next_entry
 
       true ->
