@@ -73,6 +73,13 @@ defmodule NodeGen do
     end)
   end
 
+  def peers_for_epoch(epoch) do
+    trainers = Consensus.trainers_for_epoch(epoch)
+    peers = :ets.tab2list(NODEPeers)
+    |> Enum.map(& elem(&1,1))
+    |> Enum.filter(& &1[:pk] in trainers)
+  end
+
   def broadcast_ping() do
     tip = Consensus.chain_tip_entry()
     msg = %{op: "ping", entry_height: tip.header_unpacked.height, entry_slot: tip.header_unpacked.slot, entry_hash: tip.hash}
@@ -96,7 +103,7 @@ defmodule NodeGen do
 
   def broadcast_need_attestation(entry) do
     msg = %{op: "need_attestation", entry_hash: entry.hash}
-    send(NodeGen, {:send_to_others, msg})
+    send(NodeGen, {:send_to_epoch_trainers, Entry.epoch(entry), msg})
   end
 
   def broadcast_sol(sol) do
@@ -167,6 +174,16 @@ defmodule NodeGen do
       :tick ->
         :erlang.send_after(1000, self(), :tick)
         tick()
+
+      {:send_to_epoch_trainers, epoch, opmap} ->
+        msg = pack_message(opmap)
+        peer_ips = peers_for_epoch(epoch)
+        |> Enum.map(& &1.ip)
+        Enum.each(peer_ips, fn(ip)->
+          {:ok, ip} = :inet.parse_address(~c'#{ip}')
+          port = Application.fetch_env!(:ama, :udp_port)
+          :gen_udp.send(state.socket, ip, port, msg)
+        end)
 
       {:send_to_others, opmap} ->
         msg = pack_message(opmap)

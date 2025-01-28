@@ -6,13 +6,20 @@ defmodule FabricGen do
   end
 
   def init(state) do
-    :erlang.send_after(3000, self(), :tick)
+    :erlang.send_after(2500, self(), :tick)
+    :erlang.send_after(3000, self(), :tick_slot)
     {:ok, state}
   end
 
   def handle_info(:tick, state) do
     state = if true do tick(state) else state end
-    :erlang.send_after(300, self(), :tick)
+    :erlang.send_after(100, self(), :tick)
+    {:noreply, state}
+  end
+
+  def handle_info(:tick_slot, state) do
+    state = if true do tick_slot(state) else state end
+    :erlang.send_after(3000, self(), :tick_slot)
     {:noreply, state}
   end
 
@@ -38,16 +45,21 @@ defmodule FabricGen do
     proc_entries()
     proc_consensus()
 
+    #TODO: check if reorg needed
+    TXPool.purge_stale()
+
+    state
+  end
+
+  def tick_slot(state) do
+    #IO.inspect "tick_slot"
+    
     next_entry = proc_if_my_slot()
     if next_entry do
       proc_entries()
     end
 
     #proc_compact()
-
-    #TODO: check if reorg needed
-
-    TXPool.purge_stale()
 
     state
   end
