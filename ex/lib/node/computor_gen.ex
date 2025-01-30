@@ -48,7 +48,7 @@ defmodule ComputorGen do
 
     coins = Consensus.chain_balance(pk)
     epoch = Consensus.chain_epoch()
-    hasExecCoins = coins >= BIC.Coin.to_cents(10)
+    hasExecCoins = coins >= BIC.Coin.to_cents(100)
     cond do
         (state.type == :trainer and !hasExecCoins) or state.type == nil ->
           sol = UPOW.compute_for(epoch, EntryGenesis.signer(), EntryGenesis.pop(), pk, :crypto.strong_rand_bytes(96))
