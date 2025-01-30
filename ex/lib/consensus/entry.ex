@@ -109,6 +109,7 @@ defmodule Entry do
         if byte_size(eh.txs_hash) != 32, do: throw(%{error: :txs_hash_not_256_bits})
 
         if !is_list(e.txs), do: throw(%{error: :txs_not_list})
+        if length(e.txs) > 1, do: throw(%{error: :TEMPORARY_txs_only_one_per_entry})
         if eh.txs_hash != Blake3.hash(Enum.join(e.txs)), do: throw(%{error: :txs_hash_invalid})
         Enum.each(e.txs, fn(tx_packed)->
             %{error: err, txu: txu} = TX.validate(tx_packed)
