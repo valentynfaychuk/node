@@ -9,7 +9,7 @@ defmodule TXPool do
     def insert(txs_packed) do
         txus = Enum.map(txs_packed, fn(tx_packed)->
             txu = TX.unpack(tx_packed)
-            {txu.hash, txu}
+            {{txu.tx.nonce, txu.hash}, txu}
         end)
         :ets.insert(TXPool, txus)
     end
@@ -23,43 +23,34 @@ defmodule TXPool do
         end)
     end
 
-    def grab_next_valids(next_entry) do
-        :ets.tab2list(TXPool)
-        |> Enum.map(& elem(&1,1))
-        |> Enum.filter(fn(txu) ->
-            chainValid = TX.chain_valid(txu)
-            chainValid
-        end)
-        |> Enum.sort_by(& &1.tx.nonce)
-        |> Enum.uniq_by(& &1.tx.signer)
-        |> Enum.map(& TX.pack(&1))
-        |> case do
-            [] -> []
-            txs -> 
-                Enum.shuffle(txs)
-                |> Enum.take(1)
+    def grab_next_valid() do
+        try do
+            :ets.foldl(fn({key, txu}, _nil)->
+                if TX.chain_valid(txu) do
+                    throw {:choose, TX.pack(txu)}
+                end
+            end, nil, TXPool)
+            []
+        catch
+            :throw,{:choose, tx_packed} -> [tx_packed]
         end
     end
 
-    def grab_next_valids_cached() do
-        cached = :persistent_term.get(:vcache, [])
-        if cached != [] do
-            [h|t] = cached
-            :persistent_term.put(:vcache, t)
-            [h]
-        else
-            cached = :ets.tab2list(TXPool)
-            |> Enum.map(& elem(&1,1))
-            |> Enum.filter(fn(txu) ->
-                chainValid = TX.chain_valid(txu)
-                chainValid
-            end)
-            |> Enum.sort_by(& &1.tx.nonce)
-            |> Enum.map(& TX.pack(&1))
-            :persistent_term.put(:vcache, cached)
-            cached
-        end
-    end
+        #:ets.tab2list(TXPool)
+        #|> Enum.map(& elem(&1,1))
+        #|> Enum.filter(fn(txu) ->
+        #    chainValid = TX.chain_valid(txu)
+        #    chainValid
+        #end)
+        #|> Enum.sort_by(& &1.tx.nonce)
+        #|> Enum.uniq_by(& &1.tx.signer)
+        #|> Enum.map(& TX.pack(&1))
+        #|> case do
+        #    [] -> []
+        #    txs -> 
+        #        Enum.shuffle(txs)
+        #        |> Enum.take(1)
+        #end
 
     def is_stale(txu) do
         entry = Fabric.rooted_tip_entry()

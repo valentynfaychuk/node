@@ -166,7 +166,6 @@ defmodule FabricGen do
     pk = Application.fetch_env!(:ama, :trainer_pk)
     entry = Consensus.chain_tip_entry()
     my_height = entry.header_unpacked.height
-    highest_height = max(my_height, :persistent_term.get(:highest_height, 0))
     slot = entry.header_unpacked.slot
     next_slot = slot + 1
     next_epoch = div(my_height+1, 100_000)
@@ -183,13 +182,7 @@ defmodule FabricGen do
 
     #IO.inspect {:if_my_slot, pk == slot_trainer, next_slot, delta, slots_to_skip, max_skipped_slot_offset}
     cond do
-      peer_cnt < Application.fetch_env!(:ama, :quorum) ->
-        nil
-
-      #TODO: confirm a valid entry with that height/hash otherwise they can lie to stall us
-      pk == slot_trainer and highest_height - my_height > 0 ->
-        IO.puts "🔴 inslot: my_height #{my_height} chain_height #{highest_height}"
-        nil
+      !FabricSyncGen.isQuorumSynced() -> nil
 
       pk == slot_trainer ->
         #IO.puts "🔧 im in slot #{next_slot}, working.. *Click Clak*"
@@ -203,11 +196,6 @@ defmodule FabricGen do
         NodeGen.broadcast(:entry, 3, [map])
 
         next_entry
-
-      #pk in Consensus.trainers_for_epoch(next_epoch) and slots_to_skip <= max_skipped_slot_offset and highest_height - my_height > 0 ->
-      pk in Consensus.trainers_for_epoch(next_epoch) and slots_to_skip >= 1 and slots_to_skip <= max_skipped_slot_offset and sync_round_offset == sync_round_index and highest_height - my_height > 0 ->
-        IO.puts "🔴 skipslot: my_height #{my_height} chain_height #{highest_height}"
-        nil
 
       #pk in Consensus.trainers_for_epoch(next_epoch) and slots_to_skip <= max_skipped_slot_offset ->
       pk in Consensus.trainers_for_epoch(next_epoch) and slots_to_skip >= 1 and slots_to_skip <= max_skipped_slot_offset and sync_round_offset == sync_round_index ->
