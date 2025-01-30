@@ -19,18 +19,10 @@ defmodule ComputorGen do
   end
 
   def handle_info(:tick, state) do
-    peer_cnt = length(NodePeers.online()) + 1
-
-    my_height = Consensus.chain_height()
-    highest_height = max(my_height, :persistent_term.get(:highest_height, 0))
-
     state = cond do
       !state[:enabled] -> state
-      peer_cnt < Application.fetch_env!(:ama, :quorum) ->
-        IO.puts "🔴 cannot compute: no quorum"
-        state
-      highest_height - my_height > 30 ->
-        IO.puts "🔴 out_of_sync: my_height #{my_height} peer_height #{highest_height}"
+      !FabricSyncGen.isQuorumIsInEpoch() ->
+        IO.puts "🔴 cannot compute: out_of_sync"
         state
       true -> tick(state)
     end
@@ -59,14 +51,14 @@ defmodule ComputorGen do
     hasExecCoins = coins >= BIC.Coin.to_cents(10)
     cond do
         (state.type == :trainer and !hasExecCoins) or state.type == nil ->
-          sol = UPOW.compute_for(epoch, EntryGenesis.signer(), EntryGenesis.pop(), pk)
+          sol = UPOW.compute_for(epoch, EntryGenesis.signer(), EntryGenesis.pop(), pk, :crypto.strong_rand_bytes(96))
           if sol do
             IO.puts "🔢 tensor matmul complete! broadcasting sol.."
             NodeGen.broadcast(:sol, :trainers, [sol])
           end
 
         true ->
-          sol = UPOW.compute_for(epoch, pk, pop, pk)
+          sol = UPOW.compute_for(epoch, pk, pop, pk, :crypto.strong_rand_bytes(96))
           if sol do
             sk = Application.fetch_env!(:ama, :trainer_sk)
             packed_tx = TX.build(sk, "Epoch", "submit_sol", [sol])

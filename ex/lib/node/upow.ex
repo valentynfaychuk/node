@@ -13,8 +13,8 @@ defmodule UPOW do
 
     def branch_sol(epoch, trainer, pop, computor, segment_vr) do
         cond do
-            epoch >= 1 -> UPOW1.tensor_math(epoch, trainer, pop, computor, segment_vr)
-            true -> UPOW0.tensor_math(epoch, trainer, pop, computor)
+            epoch >= 1 -> UPOW1.tensormath(epoch, trainer, pop, computor, segment_vr)
+            true -> UPOW0.tensormath(epoch, trainer, pop, computor)
         end
     end
 
@@ -81,7 +81,7 @@ defmodule UPOW1 do
     def tensormath(epoch, trainer, pop, computor, segment_vr) do
         nonce = :crypto.strong_rand_bytes(16)
         sol_seed = <<epoch::32-little, trainer::binary, pop::binary, computor::binary, segment_vr::binary, nonce::binary>>
-        sol_seed = sol_seed <> :binary.copy(<<0>>, 256 - byte_size(sol_seed))
+        sol_seed = sol_seed <> :binary.copy(<<0>>, 320 - byte_size(sol_seed))
         {calculate(sol_seed), sol_seed}
     end
 

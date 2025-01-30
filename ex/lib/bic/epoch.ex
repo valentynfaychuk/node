@@ -12,12 +12,12 @@ defmodule BIC.Epoch do
     end
 
     def call(:submit_sol, env, [sol]) do
-        if byte_size(sol) != 256, do: throw(%{error: :invalid_sol_seed_size})
         if kv_exists("bic:epoch:solutions:#{sol}"), do: throw(%{error: :sol_exists})
         
+        if !BIC.Sol.verify(sol), do: throw(%{error: :invalid_sol})
+
         su = BIC.Sol.unpack(sol)
         if su.epoch != Entry.epoch(env.entry), do: throw(%{error: :invalid_epoch})
-        if !BIC.Sol.verify(sol), do: throw(%{error: :invalid_sol})
 
         if !kv_get("bic:epoch:pop:#{su.pk}") do
             if !BlsEx.verify?(su.pk, su.pop, su.pk, BLS12AggSig.dst_pop()), do: throw %{error: :invalid_pop}
