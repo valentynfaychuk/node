@@ -10,6 +10,6 @@ defmodule Wallet do
         sk = Application.fetch_env!(:ama, :trainer_sk)
         tx_packed = TX.build(sk, "Coin", "transfer", [to, BIC.Coin.to_flat(amount)])
         TXPool.insert(tx_packed)
-        NodeGen.broadcast_tx([tx_packed])
+        NodeGen.broadcast(:txpool, :trainers, [[tx_packed]])
     end
 end

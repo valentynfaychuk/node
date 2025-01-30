@@ -41,6 +41,26 @@ defmodule TXPool do
         end
     end
 
+    def grab_next_valids_cached() do
+        cached = :persistent_term.get(:vcache, [])
+        if cached != [] do
+            [h|t] = cached
+            :persistent_term.put(:vcache, t)
+            [h]
+        else
+            cached = :ets.tab2list(TXPool)
+            |> Enum.map(& elem(&1,1))
+            |> Enum.filter(fn(txu) ->
+                chainValid = TX.chain_valid(txu)
+                chainValid
+            end)
+            |> Enum.sort_by(& &1.tx.nonce)
+            |> Enum.map(& TX.pack(&1))
+            :persistent_term.put(:vcache, cached)
+            cached
+        end
+    end
+
     def is_stale(txu) do
         entry = Fabric.rooted_tip_entry()
 
