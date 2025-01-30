@@ -15,32 +15,20 @@ defmodule BIC.Epoch do
         if byte_size(sol) != 256, do: throw(%{error: :invalid_sol_seed_size})
         if kv_exists("bic:epoch:solutions:#{sol}"), do: throw(%{error: :sol_exists})
         
-        <<epoch::32-little, pk::48-binary, pop::96-binary, _computor::48-binary, _::binary>> = sol
-        if epoch != Entry.epoch(env.entry), do: throw(%{error: :invalid_epoch})
-        if !check_sol(sol, epoch), do: throw(%{error: :invalid_sol})
+        su = BIC.Sol.unpack(sol)
+        if su.epoch != Entry.epoch(env.entry), do: throw(%{error: :invalid_epoch})
+        if !BIC.Sol.verify(sol), do: throw(%{error: :invalid_sol})
 
-        if !kv_get("bic:epoch:pop:#{pk}") do
-            if !BlsEx.verify?(pk, pop, pk, BLS12AggSig.dst_pop()), do: throw %{error: :invalid_pop}
-            kv_put("bic:epoch:pop:#{pk}", pop)
+        if !kv_get("bic:epoch:pop:#{su.pk}") do
+            if !BlsEx.verify?(su.pk, su.pop, su.pk, BLS12AggSig.dst_pop()), do: throw %{error: :invalid_pop}
+            kv_put("bic:epoch:pop:#{su.pk}", su.pop)
         end
-        kv_put("bic:epoch:solutions:#{sol}", pk)
+        kv_put("bic:epoch:solutions:#{sol}", su.pk)
     end
 
     def call(:set_emission_address, env, [address]) do
         if byte_size(address) != 48, do: throw(%{error: :invalid_address_pk})
         kv_put("bic:epoch:emission_address:#{env.txu.tx.signer}", address)
-    end
-
-    def check_sol(sol, epoch) do
-        #TODO: perhaps add slashing for DOSing invalid sols
-        sol
-        |> UPOW.calculate()
-        |> validate_sol(epoch)
-    end
-
-    def validate_sol(hash, _epoch) do
-        <<a,b,c,_::29-binary>> = hash
-        a == 0
     end
 
     def next(env) do
