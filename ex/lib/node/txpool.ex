@@ -53,14 +53,11 @@ defmodule TXPool do
         #end
 
     def is_stale(txu) do
-        entry = Fabric.rooted_tip_entry()
-
-        #tx_stale_height = abs(entry.header_unpacked.height - txu.tx.height) >= 100_000
-        tx_processed = txu.tx.nonce <= Consensus.chain_nonce(txu.tx.signer)
+        chainNonce = Consensus.chain_nonce(txu.tx.signer)
+        nonceValid = !chainNonce or txu.tx.nonce > chainNonce
 
         cond do
-            #tx_stale_height -> true
-            tx_processed -> true
+            !nonceValid -> true
             true -> false
         end
     end
