@@ -67,7 +67,7 @@ defmodule Entry do
 
         e = Map.put(e, :header_unpacked, eh)
 
-        res_sig = validate_signature(e)
+        res_sig = validate_signature(e.header, e.signature, e.header_unpacked.signer)
         res_entry = validate_entry(e)
         cond do 
             res_sig.error != :ok -> throw res_sig
@@ -80,11 +80,10 @@ defmodule Entry do
         end
     end
 
-    defp validate_signature(e) do
+    def validate_signature(header, signature, signer) do
         try do
-        hash = Blake3.hash(e.header)
-        if e.hash != hash, do: throw(%{error: :invalid_hash})
-        if !BlsEx.verify?(e.header_unpacked.signer, e.signature, hash, BLS12AggSig.dst_entry()), do: throw(%{error: :invalid_signature})
+        hash = Blake3.hash(header)
+        if !BlsEx.verify?(signer, signature, hash, BLS12AggSig.dst_entry()), do: throw(%{error: :invalid_signature})
         %{error: :ok}
         catch
             :throw,r -> r
