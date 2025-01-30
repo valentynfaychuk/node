@@ -43,4 +43,14 @@ defmodule BLS12AggSig do
             end
         end)
     end
+
+    def score(trainers, mask) do
+        trainers_signed = BLS12AggSig.unmask_trainers(trainers, mask)
+
+        maxScore = length(trainers)
+        score = Enum.reduce(trainers_signed, 0, fn(pk, acc)->
+            acc + ConsensusWeight.count(pk)
+        end)
+        score/maxScore
+    end
 end

@@ -1,5 +1,42 @@
 defmodule Consensus do
 
+    def unpack(consensus_packed) do
+        :erlang.binary_to_term(consensus_packed, [:safe])
+        |> Map.take([:entry_hash, :mutations_hash, :mask, :aggsig])
+    end
+
+    def pack(consensus_packed) when is_binary(consensus_packed) do consensus_packed end
+    def pack(consensus_packed) do
+        consensus_packed
+        |> Map.take([:entry_hash, :mutations_hash, :mask, :aggsig])
+        |> :erlang.term_to_binary([:deterministic])
+    end
+
+    def validate_vs_chain(c) do
+        try do
+        to_sign = <<c.entry_hash::binary, c.mutations_hash::binary>>
+
+        entry = Fabric.entry_by_hash(c.entry_hash)
+        trainers = Consensus.trainers_for_epoch(Entry.epoch(entry))
+        score = BLS12AggSig.score(trainers, c.mask)
+
+        trainers_signed = BLS12AggSig.unmask_trainers(trainers, c.mask)
+        aggpk = BlsEx.aggregate_public_keys!(trainers_signed)
+        if !BlsEx.verify?(aggpk, c.aggsig, to_sign, BLS12AggSig.dst_att()), do: throw(%{error: :invalid_signature})
+
+        c = Map.put(c, :score, score)
+        %{error: :ok, consensus: c}
+        catch
+            :throw,r -> r
+            e,r -> IO.inspect {Consensus, :validate, e, r, __STACKTRACE__}; %{error: :unknown}
+        end
+    end
+
+    def is_trainer_for_epoch(trainer, epoch, opts \\ %{}) do
+        trainers = trainers_for_epoch(epoch, opts) || []
+        trainer in trainers
+    end
+
     def trainers_for_epoch(epoch, opts \\ %{}) do
         if opts[:rtx] do
             RocksDB.get("bic:epoch:trainers:#{epoch}", %{rtx: opts.rtx, cf: opts.cf.contractstate, term: true})
@@ -161,7 +198,9 @@ defmodule Consensus do
             m = m ++ m2
             m_rev = m_rev ++ m_rev2
 
+            #ts_m = :os.system_time(1000)
             {m3, m_rev3, result} = BIC.Base.call_tx_actions(%{entry: next_entry, txu: txu})
+            #IO.inspect {:call_tx, :os.system_time(1000) - ts_m}
             if result == %{error: :ok} do
                 m = m ++ m3
                 m_rev = m_rev ++ m_rev3
@@ -210,7 +249,9 @@ defmodule Consensus do
         next_entry = Entry.build_next(cur_entry, slot)
 
         #TODO: todo add >1 tx
+        #ts_m = :os.system_time(1000)
         txs = TXPool.grab_next_valids(next_entry)
+        #IO.inspect {:tx, :os.system_time(1000) - ts_m}
 
         next_entry = Map.put(next_entry, :txs, txs)
         next_entry = Entry.sign(next_entry)

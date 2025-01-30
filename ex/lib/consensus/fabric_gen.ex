@@ -13,37 +13,25 @@ defmodule FabricGen do
 
   def handle_info(:tick, state) do
     state = if true do tick(state) else state end
-    :erlang.send_after(30, self(), :tick)
+    :erlang.send_after(100, self(), :tick)
     {:noreply, state}
   end
 
   def handle_info(:tick_slot, state) do
     state = if true do tick_slot(state) else state end
-    :erlang.send_after(3000, self(), :tick_slot)
-    {:noreply, state}
-  end
-
-  def handle_info({:insert_entry_attestation, entry, attestation, seen_time}, state) do
-    Fabric.insert_entry(entry, seen_time)
-    Fabric.aggregate_attestation(attestation)
-    {:noreply, state}
-  end
-
-  def handle_info({:insert_entry, entry, seen_time}, state) do
-    Fabric.insert_entry(entry, seen_time)
-    {:noreply, state}
-  end
-
-  def handle_info({:add_attestation, attestation}, state) do
-    Fabric.aggregate_attestation(attestation)
+    :erlang.send_after(30000, self(), :tick_slot)
     {:noreply, state}
   end
 
   def tick(state) do
     #IO.inspect "tick"
     
+    #ts_m = :os.system_time(1000)
     proc_entries()
+    #IO.inspect {:proc_entries, :os.system_time(1000) - ts_m}
+    #ts_m = :os.system_time(1000)
     proc_consensus()
+    #IO.inspect {:proc_consensus, :os.system_time(1000) - ts_m}
 
     #TODO: check if reorg needed
     TXPool.purge_stale()
@@ -53,10 +41,13 @@ defmodule FabricGen do
 
   def tick_slot(state) do
     #IO.inspect "tick_slot"
-    
+    #ts_m = :os.system_time(1000)
     next_entry = proc_if_my_slot()
+    #IO.inspect {:proc_if_my_slot, :os.system_time(1000) - ts_m}
     if next_entry do
+      #ts_m = :os.system_time(1000)
       proc_entries()
+      #IO.inspect {:proc_entries, :os.system_time(1000) - ts_m}
     end
 
     #proc_compact()
@@ -85,39 +76,21 @@ defmodule FabricGen do
     next_entries = Fabric.entries_by_height(height)
     Enum.map(next_entries, fn(entry)->
         trainers = Consensus.trainers_for_epoch(Entry.epoch(entry))
-        {mut_hash, score} = Fabric.best_consensus_by_entryhash(trainers, entry.hash)
+        {mut_hash, score, _consensus} = Fabric.best_consensus_by_entryhash(trainers, entry.hash)
         {entry, mut_hash, score}
     end)
     |> Enum.filter(fn {entry, mut_hash, score} -> mut_hash end)
     |> Enum.sort_by(fn {entry, mut_hash, score} -> {score, -entry.header_unpacked.slot, entry.hash} end, :desc)
   end
 
-  def broadcast_for_next_few_entries(height) do
-    next_entries1 = Fabric.entries_by_height(height+1)
-    next_entries2 = Fabric.entries_by_height(height+2)
-    next_entries3 = Fabric.entries_by_height(height+3)
-    next_entries4 = Fabric.entries_by_height(height+4)
-    next_entries5 = Fabric.entries_by_height(height+5)
-    next_entries6 = Fabric.entries_by_height(height+6)
-    List.flatten([next_entries1, next_entries2, next_entries3, next_entries4, next_entries5, next_entries6])
-    |> Enum.each(fn(entry)->
-        NodeGen.broadcast_need_attestation(entry)
-    end)
-  end
-
   defp proc_consensus_1(entry, height) do
     next_entries = Fabric.entries_by_height(height+1)
     next_entries = Enum.map(next_entries, fn(entry)->
         trainers = Consensus.trainers_for_epoch(Entry.epoch(entry))
-        {mut_hash, score} = Fabric.best_consensus_by_entryhash(trainers, entry.hash)
-        NodeGen.broadcast_need_attestation(entry)
-
-        #TODO: fix this later, for faster sync
-        h = Consensus.chain_tip_entry()
-        hr = Fabric.rooted_tip_entry()
-        if abs(h.header_unpacked.height - hr.header_unpacked.height) >= 6 do
-          broadcast_for_next_few_entries(height+1)
-        end
+        {mut_hash, score, _consensus} = Fabric.best_consensus_by_entryhash(trainers, entry.hash)
+        
+        #if missing?
+        #NodeGen.broadcast_need_attestation_or_consensus([entry.hash], Entry.epoch(entry))
 
         #IO.inspect {entry, mut_hash, score}
         {entry, mut_hash, score}
@@ -129,7 +102,7 @@ defmodule FabricGen do
         {best_entry, mut_hash, score} when score >= 0.6 ->
             mymut = Fabric.my_attestation_by_entryhash(best_entry.hash)
             cond do
-              !mymut -> 
+              !mymut ->
                 IO.puts "softfork: rewind to entry #{Base58.encode(best_entry.hash)}, height #{best_entry.header_unpacked.height}"
                 {entry, mut_hash, score} = List.first(best_entry_for_height(best_entry.header_unpacked.height - 1))
                 true = Consensus.chain_rewind(entry.hash)
@@ -179,12 +152,12 @@ defmodule FabricGen do
     |> Enum.sort_by(& {&1.header_unpacked.slot, &1.hash}, :desc)
     case List.first(next_entries) do
       nil -> nil
-      entry -> 
+      entry ->
         %{error: :ok, attestation_packed: attestation_packed} = Consensus.apply_entry(entry)
         if attestation_packed do
-          NodeGen.broadcast_attestation(attestation_packed)
+          NodeGen.broadcast(:attestation_bulk, :trainers, [[attestation_packed]])
+          NodeGen.broadcast(:attestation_bulk, 3, [[attestation_packed]])
         end
-        :persistent_term.put(:last_entry_applied, :os.system_time(1000))
         proc_entries()
     end
   end
@@ -198,7 +171,7 @@ defmodule FabricGen do
     next_slot = slot + 1
     next_epoch = div(my_height+1, 100_000)
     slot_trainer = Consensus.trainer_for_slot(next_epoch, next_slot)
-    peer_cnt = length(NodeGen.peers_online()) + 1
+    peer_cnt = length(NodePeers.online()) + 1
 
     delta = abs(:os.system_time(1000) - Fabric.entry_seentime(entry.hash))
     max_skipped_slot_offset = div(delta, 3_000)
@@ -220,10 +193,15 @@ defmodule FabricGen do
 
       pk == slot_trainer ->
         #IO.puts "🔧 im in slot #{next_slot}, working.. *Click Clak*"
+        #ts_m = :os.system_time(1000)
         next_entry = Consensus.produce_entry(next_slot)
+        #IO.inspect {:prod_entry, :os.system_time(1000) - ts_m}
         #IO.puts "entry #{entry.header_unpacked.height} produced."
-        NodeGen.broadcast_entry(next_entry)
-        NodeGen.broadcast_ping()
+
+        map = %{entry_packed: Entry.pack(next_entry)}
+        NodeGen.broadcast(:entry, :trainers, [map])
+        NodeGen.broadcast(:entry, 3, [map])
+
         next_entry
 
       #pk in Consensus.trainers_for_epoch(next_epoch) and slots_to_skip <= max_skipped_slot_offset and highest_height - my_height > 0 ->
@@ -236,8 +214,11 @@ defmodule FabricGen do
         IO.puts "🔧 skipped #{slots_to_skip} slots | #{next_slot + slots_to_skip}, working.. *Click Clak*"
         next_entry = Consensus.produce_entry(next_slot + slots_to_skip)
         #IO.puts "entry #{entry.header_unpacked.height} produced."
-        NodeGen.broadcast_entry(next_entry)
-        NodeGen.broadcast_ping()
+        
+        map = %{entry_packed: Entry.pack(next_entry)}
+        NodeGen.broadcast(:entry, :trainers, [map])
+        NodeGen.broadcast(:entry, 3, [map])
+
         next_entry
 
       true ->

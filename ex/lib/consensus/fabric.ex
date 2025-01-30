@@ -81,6 +81,24 @@ defmodule Fabric do
         |> Enum.map(& Entry.unpack(entry_by_hash(elem(&1,0))))
     end
 
+    def my_attestation_by_height(height) do
+        entries = Fabric.entries_by_height(height)
+        Enum.find_value(entries, fn(entry)->
+            my_attestation_by_entryhash(entry.hash)
+        end)
+    end
+
+    def consensuses_by_height(height) do
+        entries = Fabric.entries_by_height(height)
+        Enum.map(entries, fn(entry)->
+            map = consensuses_by_entryhash(entry.hash) || %{}
+            Enum.map(map, fn {mutations_hash, %{mask: mask, aggsig: aggsig}} ->
+                %{entry_hash: entry.hash, mutations_hash: mutations_hash, mask: mask, aggsig: aggsig}
+            end)
+        end)
+        |> List.flatten()
+    end
+
     def rooted_tip() do
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
         RocksDB.get("rooted_tip", %{db: db, cf: cf.sysconf})
@@ -100,11 +118,59 @@ defmodule Fabric do
         RocksDB.get(hash, %{db: db, cf: cf.consensus_by_entryhash, term: true})
     end
 
+    def get_entries_by_height_w_attestation_or_consensus(height) do
+        epoch = div(height, 100_000)
+
+        my_pk = Application.fetch_env!(:ama, :trainer_pk)
+        trainers = Consensus.trainers_for_epoch(epoch) || []
+        isTrainer = my_pk in trainers
+
+        consens = consensuses_by_height(height)
+        |> Enum.filter(fn(c)-> BLS12AggSig.score(trainers, c.mask) >= 1.0 end)
+        |> Enum.take(1)
+
+        entries = Fabric.entries_by_height(height)
+        Enum.map(entries, fn(entry)->
+            consen = Enum.find_value(consens, & &1.entry_hash == entry.hash && &1)
+            if consen do
+                %{entry: entry, consensus: consen}
+            else
+                attest = if isTrainer do
+                    my_attestation_by_height(height)
+                end
+                %{entry: entry, attest: attest}
+            end
+        end)
+    end
+
+    def get_attestations_or_consensuses_by_height(height) do
+        epoch = div(height, 100_000)
+
+        my_pk = Application.fetch_env!(:ama, :trainer_pk)
+        trainers = Consensus.trainers_for_epoch(epoch) || []
+        isTrainer = my_pk in trainers
+
+        consens = consensuses_by_height(height)
+        |> Enum.filter(fn(c)-> BLS12AggSig.score(trainers, c.mask) >= 1.0 end)
+        |> Enum.take(1)
+
+        cond do
+            consens != [] -> {[], consens}
+            isTrainer ->
+                attest = my_attestation_by_height(height)
+                if attest do
+                    {[attest], []}
+                else
+                    {[], []}
+                end
+            true -> {[], []}
+        end
+    end
+
     def best_consensus_by_entryhash(trainers, hash) do
         consensuses = consensuses_by_entryhash(hash)
-        if !consensuses do {nil,nil} else
-            {mut_hash, score, _consensus} = Consensus.best_by_weight(trainers, consensuses)
-            {mut_hash, score}
+        if !consensuses do {nil,nil,nil} else
+            {mut_hash, score, consensus} = Consensus.best_by_weight(trainers, consensuses)
         end
     end
 
@@ -203,6 +269,21 @@ defmodule Fabric do
             if !opts[:rtx] do
                 :ok = :rocksdb.transaction_commit(rtx)
             end
+        end
+    end
+
+    def insert_consensus(consensus) do
+        entry_hash = consensus.entry_hash
+        if consensus.score >= 1.0 do
+            %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+            {:ok, rtx} = :rocksdb.transaction(db, [])
+            
+            consensuses = RocksDB.get(entry_hash, %{rtx: rtx, cf: cf.consensus_by_entryhash, term: true}) || %{}
+            consensuses = put_in(consensuses, [consensus.mutations_hash], %{mask: consensus.mask, aggsig: consensus.aggsig})
+            :ok = :rocksdb.transaction_put(rtx, cf.consensus_by_entryhash, entry_hash, :erlang.term_to_binary(consensuses, [:deterministic]))
+            :ok = :rocksdb.transaction_commit(rtx)
+        else
+            IO.inspect {:insert_consensus, :rejected_by_score, consensus.score}
         end
     end
 end
