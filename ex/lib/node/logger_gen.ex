@@ -48,14 +48,11 @@ defmodule LoggerGen do
     entry = Entry.unpack(entry)
     height = entry.header_unpacked.height
     slot = entry.header_unpacked.slot
-    highest_height = :persistent_term.get(:highest_height, 0)
-    highest_height = max(height, highest_height)
     txpool_size = :ets.info(TXPool, :size)
-    peer_cnt = length(NodeGen.peers_online()) + 1
+    peer_cnt = length(NodePeers.online()) + 1
 
     pk = Application.fetch_env!(:ama, :trainer_pk)
     coins = Consensus.chain_balance(pk)
-    quorum = Application.fetch_env!(:ama, :quorum)
 
     trainers = Consensus.trainers_for_epoch(Entry.epoch(entry))
 
@@ -64,8 +61,11 @@ defmodule LoggerGen do
     #Moneyround mean i roll wit da money
     isTrainer = if pk in trainers do "💰" else "🪙" end
 
-    if peer_cnt < quorum do
-      IO.puts "⛓️  #{height} / #{highest_height} R: #{height-rooted_height} S: #{slot} | T: #{txpool_size} P: #{peer_cnt} 🔴 QUORUM REQUIRES #{quorum} PEERS"
+    isSynced = FabricSyncGen.isQuorumSynced()
+    highest_height = FabricSyncGen.highestTemporalHeight() || height
+
+    if !isSynced do
+      IO.puts "⛓️  #{height} / #{highest_height} R: #{height-rooted_height} S: #{slot} | T: #{txpool_size} P: #{peer_cnt} 🔴 NOT SYNCED"
     else
       IO.puts "⛓️  #{height} / #{highest_height} R: #{height-rooted_height} S: #{slot} | T: #{txpool_size} P: #{peer_cnt} | #{Base58.encode(pk)} #{isTrainer} #{coins}"
     end

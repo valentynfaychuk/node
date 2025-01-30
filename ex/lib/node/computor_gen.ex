@@ -19,7 +19,7 @@ defmodule ComputorGen do
   end
 
   def handle_info(:tick, state) do
-    peer_cnt = length(NodeGen.peers_online()) + 1
+    peer_cnt = length(NodePeers.online()) + 1
 
     my_height = Consensus.chain_height()
     highest_height = max(my_height, :persistent_term.get(:highest_height, 0))
@@ -62,7 +62,7 @@ defmodule ComputorGen do
           sol = UPOW.compute_for(epoch, EntryGenesis.signer(), EntryGenesis.pop(), pk)
           if sol do
             IO.puts "🔢 tensor matmul complete! broadcasting sol.."
-            NodeGen.broadcast_sol(sol)
+            NodeGen.broadcast(:sol, :trainers, [sol])
           end
 
         true ->
@@ -74,7 +74,7 @@ defmodule ComputorGen do
             IO.puts "🔢 tensor matmul complete! tx #{Base58.encode(hash)}"
 
             TXPool.insert(packed_tx)
-            NodeGen.broadcast_tx([packed_tx])
+            NodeGen.broadcast(:txpool, :trainers, [[packed_tx]])
           end
     end
     state
@@ -84,6 +84,6 @@ defmodule ComputorGen do
     sk = Application.fetch_env!(:ama, :trainer_sk)
     packed_tx = TX.build(sk, "Epoch", "set_emission_address", [to_address])
     TXPool.insert(packed_tx)
-    NodeGen.broadcast_tx([packed_tx])
+    NodeGen.broadcast(:txpool, :trainers, [[packed_tx]])
   end
 end
