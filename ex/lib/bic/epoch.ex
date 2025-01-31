@@ -12,7 +12,7 @@ defmodule BIC.Epoch do
     end
 
     def circulating(_epoch, _acc \\ 0)
-    def circulating(0, acc) do acc end
+    def circulating(0, acc) do acc - BIC.Coin.burn_balance() end
     def circulating(epoch, acc) do
         circulating(epoch - 1, acc + epoch_emission(epoch))
     end

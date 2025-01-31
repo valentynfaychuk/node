@@ -62,7 +62,7 @@ defmodule LoggerGen do
     isTrainer = if pk in trainers do "💰" else "🪙" end
 
     isSynced = FabricSyncGen.isQuorumSyncedOffBy1()
-    highest_height = FabricSyncGen.highestTemporalHeight() || height
+    highest_height = max(FabricSyncGen.highestTemporalHeight() || height, height)
 
     if !isSynced do
       IO.puts "⛓️  #{height} / #{highest_height} R: #{height-rooted_height} S: #{slot} | T: #{txpool_size} P: #{peer_cnt} 🔴 NOT SYNCED"
