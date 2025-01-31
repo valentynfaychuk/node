@@ -7,7 +7,7 @@ defmodule BIC.Epoch do
     def epoch_emission(_epoch, acc \\ @epoch_emission_base)
     def epoch_emission(0, acc) do acc end
     def epoch_emission(epoch, acc) do
-        sub = div(acc * 666, 1000000)
+        sub = div(acc * 333, 1000000)
         epoch_emission(epoch - 1, acc - sub)
     end
 
