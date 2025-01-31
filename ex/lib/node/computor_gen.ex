@@ -24,7 +24,8 @@ defmodule ComputorGen do
       !FabricSyncGen.isQuorumIsInEpoch() ->
         IO.puts "🔴 cannot compute: out_of_sync"
         state
-      true -> tick(state)
+      true ->
+        tick(state)
     end
     :erlang.send_after(1000, self(), :tick)
     {:noreply, state}

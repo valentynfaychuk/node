@@ -55,7 +55,7 @@ defmodule NodePeers do
     online()
     |> Enum.map(fn(p)->
       [
-        p.ip, 
+        p.ip,
         p[:latency], 
         get_in(p, [:temporal, :header_unpacked, :height]),
         get_in(p, [:rooted, :header_unpacked, :height])
@@ -64,16 +64,26 @@ defmodule NodePeers do
   end
 
   def online() do
-    ts_m = :os.system_time(1000)
     peers = :ets.tab2list(NODEPeers)
-    |> Enum.reduce([], fn ({key, v}, acc)->
-      lp = v[:last_ping]
-      if !!lp and ts_m - lp <= 3_000 do
+    |> Enum.reduce([], fn ({_key, v}, acc)->
+      if is_online(v) do
         acc ++ [v]
       else
         acc
       end
     end)
+  end
+
+  def is_online(peer) do
+    ts_m = :os.system_time(1000)
+    lp = peer[:last_ping]
+    !!lp and ts_m - lp <= 3_000
+  end
+
+  def by_pk(pk) do
+    ip = :ets.select(NODEPeers, [{{:"$1", %{pk: pk}}, [], [:"$1"]}])
+    |> List.first()
+    :ets.lookup_element(NODEPeers, ip, 2, nil)
   end
 
   def for_epoch(epoch) do
