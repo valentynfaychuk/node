@@ -7,8 +7,14 @@ defmodule BIC.Epoch do
     def epoch_emission(_epoch, acc \\ @epoch_emission_base)
     def epoch_emission(0, acc) do acc end
     def epoch_emission(epoch, acc) do
-        sub = div(acc * 269, 1000000)
+        sub = div(acc * 666, 1000000)
         epoch_emission(epoch - 1, acc - sub)
+    end
+
+    def circulating(_epoch, _acc \\ 0)
+    def circulating(0, acc) do acc end
+    def circulating(epoch, acc) do
+        circulating(epoch - 1, acc + epoch_emission(epoch))
     end
 
     def call(:submit_sol, env, [sol]) do
