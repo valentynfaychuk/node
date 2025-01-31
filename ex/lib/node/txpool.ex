@@ -56,7 +56,14 @@ defmodule TXPool do
         chainNonce = Consensus.chain_nonce(txu.tx.signer)
         nonceValid = !chainNonce or txu.tx.nonce > chainNonce
 
+        hasSol = Enum.find_value(txu.tx.actions, fn(a)-> a.function == "submit_sol" and hd(a.args) end)
+        epochSolValid = if !hasSol do true else
+            <<sol_epoch::32-little, _::binary>> = hasSol
+            Consensus.chain_epoch() == sol_epoch
+        end
+
         cond do
+            !epochSolValid -> true
             !nonceValid -> true
             true -> false
         end

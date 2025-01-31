@@ -19,7 +19,7 @@ defmodule FabricGen do
 
   def handle_info(:tick_slot, state) do
     state = if true do tick_slot(state) else state end
-    :erlang.send_after(30000, self(), :tick_slot)
+    :erlang.send_after(1000, self(), :tick_slot)
     {:noreply, state}
   end
 
@@ -184,7 +184,7 @@ defmodule FabricGen do
     cond do
       !FabricSyncGen.isQuorumSynced() -> nil
 
-      pk == slot_trainer ->
+      sync_round_offset == sync_round_index and pk == slot_trainer ->
         #IO.puts "🔧 im in slot #{next_slot}, working.. *Click Clak*"
         #ts_m = :os.system_time(1000)
         next_entry = Consensus.produce_entry(next_slot)
@@ -198,7 +198,7 @@ defmodule FabricGen do
         next_entry
 
       #pk in Consensus.trainers_for_epoch(next_epoch) and slots_to_skip <= max_skipped_slot_offset ->
-      pk in Consensus.trainers_for_epoch(next_epoch) and slots_to_skip >= 1 and slots_to_skip <= max_skipped_slot_offset and sync_round_offset == sync_round_index ->
+      sync_round_offset == sync_round_index and pk in Consensus.trainers_for_epoch(next_epoch) and slots_to_skip >= 1 and slots_to_skip <= max_skipped_slot_offset ->
         IO.puts "🔧 skipped #{slots_to_skip} slots | #{next_slot + slots_to_skip}, working.. *Click Clak*"
         next_entry = Consensus.produce_entry(next_slot + slots_to_skip)
         #IO.puts "entry #{entry.header_unpacked.height} produced."

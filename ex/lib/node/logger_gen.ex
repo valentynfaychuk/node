@@ -61,7 +61,7 @@ defmodule LoggerGen do
     #Moneyround mean i roll wit da money
     isTrainer = if pk in trainers do "💰" else "🪙" end
 
-    isSynced = FabricSyncGen.isQuorumSynced()
+    isSynced = FabricSyncGen.isQuorumSyncedOffBy1()
     highest_height = FabricSyncGen.highestTemporalHeight() || height
 
     if !isSynced do

@@ -10,7 +10,7 @@ defmodule FabricSyncGen do
   end
 
   def isSynced() do
-    :persistent_term.get({Net, :isSynced}, false)
+    :persistent_term.get({Net, :isSynced}, nil)
   end
 
   def isInEpoch() do
@@ -22,6 +22,10 @@ defmodule FabricSyncGen do
   end
 
   def isQuorumSynced() do
+    hasQuorum() and isSynced() == :full
+  end
+
+  def isQuorumSyncedOffBy1() do
     hasQuorum() and isSynced()
   end
 
@@ -31,7 +35,7 @@ defmodule FabricSyncGen do
 
   def init(state) do
     :persistent_term.put({Net, :hasQuorum}, false)
-    :persistent_term.put({Net, :isSynced}, false)
+    :persistent_term.put({Net, :isSynced}, nil)
     :persistent_term.put({Net, :isInEpoch}, false)
 
     :erlang.send_after(1000, self(), :tick_quorum)
@@ -69,10 +73,10 @@ defmodule FabricSyncGen do
     ts_m = :os.system_time(1000)
 
     cond do
-      isQuorumSynced() ->
+      isQuorumSyncedOffBy1() ->
         tick()
         :erlang.send_after(100, self(), :tick)
-
+        
       hasQuorum() -> 
         tick()
         :erlang.send_after(300, self(), :tick)
@@ -100,8 +104,9 @@ defmodule FabricSyncGen do
 
     isS = isSynced()
     cond do
-      highest_height - temporal_height == 0 and !isS -> :persistent_term.put({Net, :isSynced}, true)
-      highest_height - temporal_height > 0 and isS -> :persistent_term.put({Net, :isSynced}, false)
+      highest_height - temporal_height == 0 and isS != :full -> :persistent_term.put({Net, :isSynced}, :full)
+      highest_height - temporal_height == 1 and isS != :off_by_1 -> :persistent_term.put({Net, :isSynced}, :off_by_1)
+      highest_height - temporal_height > 1 and isS -> :persistent_term.put({Net, :isSynced}, nil)
       true -> nil
     end
 
@@ -144,11 +149,13 @@ defmodule FabricSyncGen do
       !hasQuorum() -> nil
 
       len1000_holes > 0 and len1000_holes <= 3 ->
-        IO.puts "Syncing #{len1000_holes} entries"
+        if len1000_holes > 1 do
+          IO.puts "Syncing #{len1000_holes} entries"
+        end
+        #IO.inspect {temporal_height, rooted_height, highest_peers}
 
         msg = NodeProto.catchup_tri(next1000_holes)
         peer_ips = Enum.shuffle(highest_peers) |> Enum.map(& hd(&1)) |> Enum.take(3)
-
         send(NodeGen, {:send_to_some, peer_ips, NodeProto.pack_message(msg)})
 
       len1000_holes > 3 ->

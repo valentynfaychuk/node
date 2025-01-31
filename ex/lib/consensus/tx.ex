@@ -89,7 +89,7 @@ defmodule TX do
       }
       |> VanillaSer.encode()
       hash = Blake3.hash(tx_encoded)
-        signature = BlsEx.sign!(sk, hash, BLS12AggSig.dst_tx())
+      signature = BlsEx.sign!(sk, hash, BLS12AggSig.dst_tx())
       VanillaSer.encode(%{tx_encoded: tx_encoded, hash: hash, signature: signature})
    end
 
@@ -99,7 +99,15 @@ defmodule TX do
       chainNonce = Consensus.chain_nonce(txu.tx.signer)
       nonceValid = !chainNonce or txu.tx.nonce > chainNonce
       hasBalance = BIC.Base.exec_cost(txu) <= Consensus.chain_balance(txu.tx.signer)
+
+      hasSol = Enum.find_value(txu.tx.actions, fn(a)-> a.function == "submit_sol" and hd(a.args) end)
+      epochSolValid = if !hasSol do true else
+         <<sol_epoch::32-little, _::binary>> = hasSol
+         Consensus.chain_epoch() == sol_epoch
+      end
+
       cond do
+         !epochSolValid -> false
          !nonceValid -> false
          !hasBalance -> false
          true -> true
