@@ -20,6 +20,10 @@ defmodule BIC.Coin do
         @burn_address
     end
 
+    def burn_balance() do
+        kv_get("bic:coin:balance:#{@burn_address}") || 0
+    end
+
     def balance(pubkey) do
         kv_get("bic:coin:balance:#{pubkey}") || 0
     end
