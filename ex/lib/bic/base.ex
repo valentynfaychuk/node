@@ -20,14 +20,17 @@ defmodule BIC.Base do
         #thank you come again
         kv_increment("bic:coin:balance:#{signer}", BIC.Coin.to_flat(1))
 
+        if env.entry.header_unpacked.height >= 100_000 do
+            if rem(env.entry.header_unpacked.height, 1000) == 0 do
+                kv_put("bic:epoch:segment_vr", env.entry.header_unpacked.vr)
+            end
+        end
+
         cond do
             env.entry.header_unpacked.height == 0 ->
                 kv_put("bic:epoch:trainers:0", [signer])
                 kv_put("bic:epoch:pop:#{signer}", EntryGenesis.pop())
             rem(env.entry.header_unpacked.height, 100_000) == 99_999 ->
-                #TODO: maybe fix this a simpler way
-                epoch = Entry.epoch(env.entry)
-                kv_put("bic:epoch:segment_vr:#{epoch + 1}", env.entry.header_unpacked.vr)
                 BIC.Epoch.next(env)
             true -> :ok
         end

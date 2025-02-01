@@ -2,7 +2,7 @@ defmodule BIC.Sol do
     import ConsensusKV
     
     def unpack(sol = <<epoch::32-little, _::binary>>) when epoch >= 1 do
-        <<epoch::32-little, sol_pk::48-binary, pop::96-binary, computor_pk::48-binary, segment_vr::32-binary, _::binary>> = sol
+        <<epoch::32-little, sol_pk::48-binary, pop::96-binary, computor_pk::48-binary, segment_vr::96-binary, _::binary>> = sol
         %{epoch: epoch, pk: sol_pk, pop: pop, computor: computor_pk, segment_vr: segment_vr}
     end
     def unpack(sol) do
@@ -14,7 +14,7 @@ defmodule BIC.Sol do
         <<a, b, _::30-binary>> = hash
         a == 0 and b == 0
     end
-    def verify(sol = <<epoch::32-little, _::192-binary, _segment_vr::32-binary, _::binary>>) when epoch >= 1 do
+    def verify(sol = <<epoch::32-little, _::192-binary, _segment_vr::96-binary, _::binary>>) when epoch >= 1 do
         if byte_size(sol) != 320, do: throw(%{error: :invalid_sol_seed_size})
         #if !kv_get("bic:epoch:segment_vr:#{epoch}") == segment_vr, do: throw %{error: :segment_vr}
         verify_cache(UPOW1, sol)

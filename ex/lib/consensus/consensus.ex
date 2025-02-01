@@ -235,10 +235,11 @@ defmodule Consensus do
 
         :ok = :rocksdb.transaction_put(rtx, cf.sysconf, "temporal_tip", next_entry.hash)
         :ok = :rocksdb.transaction_put(rtx, cf.sysconf, "temporal_height", :erlang.term_to_binary(next_entry.header_unpacked.height, [:deterministic]))
+        #:ok = :rocksdb.transaction_put(rtx, cf.my_mutations_hash_for_entry, next_entry.hash, mutations_hash)
         :ok = :rocksdb.transaction_put(rtx, cf.muts_rev, next_entry.hash, :erlang.term_to_binary(m_rev, [:deterministic]))
 
         :ok = :rocksdb.transaction_commit(rtx)
-
+        
         %{error: :ok, attestation_packed: ap, mutations_hash: mutations_hash}
     end
 
@@ -257,7 +258,6 @@ defmodule Consensus do
         next_entry = Map.put(next_entry, :txs, txs)
         next_entry = Entry.sign(next_entry)
 
-        Fabric.insert_entry(next_entry, 0)
         next_entry
     end
 end

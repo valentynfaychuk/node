@@ -34,6 +34,7 @@ defmodule Ama do
     port = Application.fetch_env!(:ama, :udp_port)
     {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: NodeGen, start: {NodeGen, :start_link, [ip4, port]}, restart: :permanent})
 
+
     #web panel
     #ip4 = Application.fetch_env!(:ama, :http_ip4)
     #port = Application.fetch_env!(:ama, :http_port)

@@ -24,6 +24,8 @@ defmodule Fabric do
 
             {'my_seen_time_entry|entryhash', @args},
             {'my_attestation_for_entry|entryhash', @args},
+            #{'my_mutations_hash_for_entry|entryhash', @args},
+
             #{'attestation|attestationhash', []},
             #{'attestation_for_entry|entryhash', []},
             #{'attestation_by_entry_signer|entryhash:signer:attestationhash', []},
@@ -39,7 +41,8 @@ defmodule Fabric do
         )
         [
             default_cf, entry_height_cf, entry_slot_cf, tx_cf,
-            my_seen_time_for_entry_cf, my_attestation_for_entry_cf,
+            my_seen_time_for_entry_cf, my_attestation_for_entry_cf, 
+            #my_mutations_hash_for_entry_cf,
             consensus_cf, consensus_by_entryhash_cf,
             contractstate_cf, muts_rev_cf,
             sysconf_cf
@@ -47,6 +50,7 @@ defmodule Fabric do
         cf = %{
             default: default_cf, entry_by_height: entry_height_cf, entry_by_slot: entry_slot_cf, tx: tx_cf,
             my_seen_time_for_entry: my_seen_time_for_entry_cf, my_attestation_for_entry: my_attestation_for_entry_cf,
+            #my_mutations_hash_for_entry: my_mutations_hash_for_entry_cf,
             consensus: consensus_cf, consensus_by_entryhash: consensus_by_entryhash_cf,
             contractstate: contractstate_cf, muts_rev: muts_rev_cf,
             sysconf: sysconf_cf
@@ -86,6 +90,11 @@ defmodule Fabric do
         Enum.find_value(entries, fn(entry)->
             my_attestation_by_entryhash(entry.hash)
         end)
+    end
+
+    def my_mutations_hash_for_entry(hash) do
+        %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+        RocksDB.get(hash, %{db: db, cf: cf.my_mutations_hash_for_entry})
     end
 
     def consensuses_by_height(height) do
