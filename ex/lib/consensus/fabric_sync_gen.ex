@@ -145,6 +145,17 @@ defmodule FabricSyncGen do
     next1000_holes = FabricSyncGen.next_1000_holes_rooted(rooted_height+1, highest_height)
     len1000_holes = length(next1000_holes)
 
+    highest_peers = NodePeers.highest_height(%{min_temporal: temporal_height, sort: :temporal})
+    {highest_height, _highest_consensus} = case List.first(highest_peers) do
+      nil -> {temporal_height, rooted_height}
+      [_, _, highest, consensus | _ ] -> {highest, consensus}
+    end
+
+    next1000_holes_temporal = FabricSyncGen.next_1000_holes_rooted(temporal_height+1, highest_height)
+    len1000_holes_temporal = length(next1000_holes_temporal)
+
+    #IO.inspect {highest_height, highest_consensus, len1000_holes}
+
     cond do
       !hasQuorum() -> nil
 
@@ -155,6 +166,16 @@ defmodule FabricSyncGen do
         #IO.inspect {temporal_height, rooted_height, highest_peers}
 
         msg = NodeProto.catchup_tri(next1000_holes)
+        peer_ips = Enum.shuffle(highest_peers) |> Enum.map(& hd(&1)) |> Enum.take(3)
+        send(NodeGen, {:send_to_some, peer_ips, NodeProto.pack_message(msg)})
+
+      len1000_holes_temporal > 0 and len1000_holes_temporal <= 3 ->
+        if len1000_holes_temporal > 1 do
+          IO.puts "Syncing #{len1000_holes_temporal} temporal entries"
+        end
+        #IO.inspect {temporal_height, rooted_height, highest_peers}
+
+        msg = NodeProto.catchup_tri(next1000_holes_temporal)
         peer_ips = Enum.shuffle(highest_peers) |> Enum.map(& hd(&1)) |> Enum.take(3)
         send(NodeGen, {:send_to_some, peer_ips, NodeProto.pack_message(msg)})
 

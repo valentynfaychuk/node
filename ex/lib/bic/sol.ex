@@ -16,7 +16,7 @@ defmodule BIC.Sol do
     end
     def verify(sol = <<epoch::32-little, _::192-binary, _segment_vr::96-binary, _::binary>>) when epoch >= 1 do
         if byte_size(sol) != 320, do: throw(%{error: :invalid_sol_seed_size})
-        #if !kv_get("bic:epoch:segment_vr:#{epoch}") == segment_vr, do: throw %{error: :segment_vr}
+        #if kv_get("bic:epoch:segment_vr") != segment_vr, do: throw %{error: :segment_vr}
         verify_cache(UPOW1, sol)
     end
 
