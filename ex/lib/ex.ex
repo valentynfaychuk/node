@@ -5,16 +5,23 @@ defmodule Ama do
     import Supervisor.Spec, warn: false
 
     #IO.inspect Application.app_dir(:ama, "priv/index.html") 
+    Process.sleep(300)
 
     supervisor = Supervisor.start_link([
       {DynamicSupervisor, strategy: :one_for_one, name: Ama.Supervisor, max_seconds: 1, max_restarts: 999_999_999_999}
     ], strategy: :one_for_one)
 
+    IO.puts "version: #{Application.fetch_env!(:ama, :version)}"
+
+    IO.puts "Initing Fabric.."
     Fabric.init()
     Fabric.insert_genesis()
 
     IO.puts "Initing TXPool.."
     TXPool.init()
+
+    pk = Application.fetch_env!(:ama, :trainer_pk)
+    IO.puts "systems functional. welcome #{Base58.encode(pk)}"
 
     :ets.new(NODEPeers, [:ordered_set, :named_table, :public,
       {:write_concurrency, true}, {:read_concurrency, true}, {:decentralized_counters, false}])

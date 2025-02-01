@@ -41,7 +41,7 @@ defmodule FabricSyncGen do
     :erlang.send_after(1000, self(), :tick_quorum)
     :erlang.send_after(1000, self(), :tick_synced)
     :erlang.send_after(3000, self(), :tick)
-    #:erlang.send_after(3000, self(), :tick_missing_attestation)
+    :erlang.send_after(3000, self(), :tick_missing_attestation)
     {:ok, state}
   end
 
@@ -92,12 +92,9 @@ defmodule FabricSyncGen do
     cond do
       isQuorumSyncedOffBy1() ->
         tick_missing_attestation()
-        :erlang.send_after(300, self(), :tick)
-        
-      true ->
-        :erlang.send_after(300, self(), :tick)
+      true -> nil
     end
-
+    :erlang.send_after(1600, self(), :tick_missing_attestation)
     {:noreply, state}
   end
 
@@ -265,10 +262,10 @@ defmodule FabricSyncGen do
       !isQuorumSyncedOffBy1() -> nil
 
       len1000_holes > 0 ->
-        #if len1000_holes > 1 do
-          IO.puts "Syncing #{len1000_holes} entries"
-        #end
-        IO.inspect next1000_holes
+        if len1000_holes > 1 do
+          IO.puts "Syncing #{len1000_holes} attestations"
+        end
+        #IO.inspect next1000_holes
 
         #next1000_holes = Enum.shuffle(next1000_holes) |> Enum.take(10)
         next1000_holes = Enum.take(next1000_holes, 10)
