@@ -7,11 +7,15 @@ defmodule Attestation do
         signature: <entry_hash,mutations_hash>,
     }
     """
-
-    def unpack(attestation_packed) do
-        :erlang.binary_to_term(attestation_packed, [:safe])
-        |> Map.take([:entry_hash, :mutations_hash, :signer, :signature])
+    def unpack(attestation_packed) when is_binary(attestation_packed) do
+        a = :erlang.binary_to_term(attestation_packed, [:safe])
+        unpack(a)
     end
+    def unpack(attestation_packed) when is_map(attestation_packed) do
+        Map.take(attestation_packed, [:entry_hash, :mutations_hash, :signer, :signature])
+    end
+    def unpack(nil), do: nil
+
 
     def pack(attestation_unpacked) when is_binary(attestation_unpacked) do attestation_unpacked end
     def pack(attestation_unpacked) do

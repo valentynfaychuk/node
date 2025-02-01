@@ -1,9 +1,14 @@
 defmodule Consensus do
 
-    def unpack(consensus_packed) do
+    def unpack(consensus_packed) when is_binary(consensus_packed) do
         :erlang.binary_to_term(consensus_packed, [:safe])
+        |> unpack()
+    end
+    def unpack(consensus_packed) when is_map(consensus_packed) do
+        consensus_packed
         |> Map.take([:entry_hash, :mutations_hash, :mask, :aggsig])
     end
+
 
     def pack(consensus_packed) when is_binary(consensus_packed) do consensus_packed end
     def pack(consensus_packed) do

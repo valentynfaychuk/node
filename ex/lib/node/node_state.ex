@@ -71,6 +71,7 @@ defmodule NodeState do
     istate.ns
   end
 
+  #def handle(:sol, istate, term) do nil end
   def handle(:sol, istate, term) do
     sol = BIC.Sol.unpack(term.sol)
     trainer_pk = Application.fetch_env!(:ama, :trainer_pk)
@@ -118,6 +119,7 @@ defmodule NodeState do
   end
 
   def handle(:attestation_bulk, istate, term) do
+    #IO.inspect {:got, :attestation_bulk,  istate.peer.ip}
     Enum.each(term.attestations_packed, fn(attestation_packed)->
         res = Attestation.unpack_and_validate(attestation_packed)
         if res.error == :ok and Attestation.validate_vs_chain(res.attestation) do
@@ -160,6 +162,8 @@ defmodule NodeState do
 
     {attestations_packed, consensuses_packed} = Enum.reduce(term.heights, {[], []}, fn(height, {a, c})->
         {attests, consens} = Fabric.get_attestations_or_consensuses_by_height(height)
+        attests = Enum.map(attests, & Attestation.pack(&1))
+        consens = Enum.map(consens, & Consensus.pack(&1))
         {a ++ attests, c ++ consens}
     end)
 
@@ -175,6 +179,26 @@ defmodule NodeState do
         Enum.chunk_every(consensuses_packed, 3)
         |> Enum.each(fn(bulk)->
             msg = NodeProto.consensus_bulk(bulk)
+            :erlang.spawn(fn()-> send(NodeGen, {:send_to_some, [istate.peer.ip], pack_message(msg)}) end)
+        end)
+    end
+  end
+
+  def handle(:catchup_attestation, istate, term) do
+    #IO.inspect {:got, :catchup_attestation,  istate.peer.ip}
+
+    true = length(term.hashes) <= 30
+
+    attestations_packed = Enum.map(term.hashes, fn(hash)->
+      Fabric.my_attestation_by_entryhash(hash)
+    end)
+    |> Enum.filter(& &1)
+    |> Enum.map(& Attestation.pack(&1))
+
+    if length(attestations_packed) > 0 do
+        Enum.chunk_every(attestations_packed, 3)
+        |> Enum.each(fn(bulk)->
+            msg = NodeProto.attestation_bulk(bulk)
             :erlang.spawn(fn()-> send(NodeGen, {:send_to_some, [istate.peer.ip], pack_message(msg)}) end)
         end)
     end

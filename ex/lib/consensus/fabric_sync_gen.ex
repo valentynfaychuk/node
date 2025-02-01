@@ -40,7 +40,8 @@ defmodule FabricSyncGen do
 
     :erlang.send_after(1000, self(), :tick_quorum)
     :erlang.send_after(1000, self(), :tick_synced)
-    :erlang.send_after(300, self(), :tick)
+    :erlang.send_after(3000, self(), :tick)
+    #:erlang.send_after(3000, self(), :tick_missing_attestation)
     {:ok, state}
   end
 
@@ -82,6 +83,19 @@ defmodule FabricSyncGen do
         :erlang.send_after(300, self(), :tick)
 
       true -> :erlang.send_after(30, self(), :tick)
+    end
+
+    {:noreply, state}
+  end
+
+  def handle_info(:tick_missing_attestation, state) do
+    cond do
+      isQuorumSyncedOffBy1() ->
+        tick_missing_attestation()
+        :erlang.send_after(300, self(), :tick)
+        
+      true ->
+        :erlang.send_after(300, self(), :tick)
     end
 
     {:noreply, state}
@@ -145,6 +159,8 @@ defmodule FabricSyncGen do
     next1000_holes = FabricSyncGen.next_1000_holes_rooted(rooted_height+1, highest_height)
     len1000_holes = length(next1000_holes)
 
+    #IO.inspect {highest_height, highest_consensus, rooted_height, len1000_holes}
+
     highest_peers = NodePeers.highest_height(%{min_temporal: temporal_height, sort: :temporal})
     {highest_height, _highest_consensus} = case List.first(highest_peers) do
       nil -> {temporal_height, rooted_height}
@@ -195,6 +211,80 @@ defmodule FabricSyncGen do
           peer_ips = Enum.shuffle(highest_peers) |> Enum.map(& hd(&1)) |> Enum.take(2)
           send(NodeGen, {:send_to_some, peer_ips, NodeProto.pack_message(msg)})
         end)
+        
+      true -> nil
+    end
+  end
+
+  #  FabricSyncGen.next_1000_holes_rooted_trainers 100_003, 100030
+  def next_1000_holes_rooted_trainers(height, max_height) do
+    next_1000_holes_rooted_trainers_1(height, max_height)
+  end
+  def next_1000_holes_rooted_trainers_1(height, max_height, acc \\ []) do
+    consens = Fabric.consensuses_by_height(height)
+    cond do
+      length(acc) >= 1000 -> acc
+      height > max_height -> acc
+      true ->
+        trainers = Consensus.trainers_for_epoch(div(height, 100_000))
+        height_add = Enum.reduce_while(consens, nil, fn(%{mask: mask}, acc)->
+          best_score = BLS12AggSig.score(trainers, mask)
+          if best_score < 1.0 do
+            {:halt, height}
+          else
+            {:cont, nil}
+          end
+        end)
+        if height_add do
+          next_1000_holes_rooted_trainers_1(height + 1, max_height, acc ++ [height_add])
+        else
+          next_1000_holes_rooted_trainers_1(height + 1, max_height, acc)
+        end
+    end
+  end
+
+  def tick_missing_attestation() do
+    temporal = Consensus.chain_tip_entry()
+    temporal_height = temporal.header_unpacked.height
+    rooted = Fabric.rooted_tip_entry()
+    rooted_height = rooted.header_unpacked.height
+
+    highest_peers = NodePeers.highest_height(%{min_rooted: rooted_height, sort: :rooted})
+    {highest_height, highest_consensus} = case List.first(highest_peers) do
+      nil -> {temporal_height, rooted_height}
+      [_, _, highest, consensus | _ ] -> {highest, consensus}
+    end
+
+    next1000_holes = FabricSyncGen.next_1000_holes_rooted_trainers(rooted_height+1, highest_height)
+    len1000_holes = length(next1000_holes)
+
+    #IO.inspect {highest_height, highest_consensus, rooted_height, len1000_holes, next1000_holes}
+
+    cond do
+      #true -> nil
+      !isQuorumSyncedOffBy1() -> nil
+
+      len1000_holes > 0 ->
+        #if len1000_holes > 1 do
+          IO.puts "Syncing #{len1000_holes} entries"
+        #end
+        IO.inspect next1000_holes
+
+        #next1000_holes = Enum.shuffle(next1000_holes) |> Enum.take(10)
+        next1000_holes = Enum.take(next1000_holes, 10)
+        hashes = Enum.map(next1000_holes, fn(height)->
+          Fabric.entries_by_height(height)
+        end)
+        |> List.flatten()
+        |> Enum.map(& &1.hash)
+        #TODO: check missing
+        #Consensus.missing_attestations()
+
+        Process.sleep(10)
+
+        trainer_ips = NodePeers.for_epoch(div(rooted_height+1, 100_000)) |> Enum.map(& &1.ip)
+        msg = NodeProto.catchup_attestation(hashes)
+        send(NodeGen, {:send_to_some, trainer_ips, NodeProto.pack_message(msg)})
         
       true -> nil
     end

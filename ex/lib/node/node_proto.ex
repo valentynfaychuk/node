@@ -45,7 +45,9 @@ defmodule NodeProto do
     %{op: :catchup_bi, heights: heights}
   end
 
-
+  def catchup_attestation(hashes) do
+    %{op: :catchup_attestation, hashes: hashes}
+  end
 
 
 
