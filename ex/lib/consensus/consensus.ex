@@ -224,14 +224,14 @@ defmodule Consensus do
         #IO.inspect {l ++ m, ConsensusKV.hash_mutations(l ++ m)}, limit: 11111111
         mutations_hash = ConsensusKV.hash_mutations(l ++ m)
 
-        #TODO: also write attestaton
-        #TODO: aggregate attestation
-        attestation_packed = Attestation.pack(Attestation.sign(next_entry.hash, mutations_hash))
+        attestation = Attestation.sign(next_entry.hash, mutations_hash)
+        attestation_packed = Attestation.pack(attestation)
         :ok = :rocksdb.transaction_put(rtx, cf.my_attestation_for_entry, next_entry.hash, attestation_packed)
         
         pk = Application.fetch_env!(:ama, :trainer_pk)
         ap = if pk in trainers_for_epoch(Entry.epoch(next_entry), %{rtx: rtx, cf: cf}) do
-            Fabric.aggregate_attestation(attestation_packed, %{rtx: rtx, cf: cf})
+            #TODO: not ideal in super tight latency constrains but its 1 line and it works
+            send(FabricCoordinatorGen, {:add_attestation, attestation})
             attestation_packed
         end
 
