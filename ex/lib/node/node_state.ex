@@ -79,9 +79,6 @@ defmodule NodeState do
       sol.epoch != Consensus.chain_epoch() ->
         IO.inspect {:broadcasted_sol_invalid_epoch, sol.epoch, Consensus.chain_epoch()}
         nil
-      trainer_pk == sol.pk and trainer_pk == sol.computor ->
-        IO.inspect {:broadcasted_sol_to_self, term.sol}
-        nil
       !BIC.Sol.verify(term.sol) ->
         IO.inspect {:peer_sent_invalid_sol, :TODO_block_malicious_peer}
         nil
@@ -93,7 +90,7 @@ defmodule NodeState do
         if Consensus.chain_balance(trainer_pk) >= BIC.Coin.to_flat(1) do
           IO.inspect {:peer_sent_sol, Base58.encode(istate.peer.signer)}
           tx_packed1 = TX.build(sk, "Epoch", "submit_sol", [term.sol])
-          tx_packed2 = TX.build(sk, "Coin", "transfer", [sol.computor, BIC.Coin.to_cents(10)])
+          tx_packed2 = TX.build(sk, "Coin", "transfer", [sol.computor, BIC.Coin.to_cents(30)])
           TXPool.insert([tx_packed1, tx_packed2])
         end
       true -> nil
