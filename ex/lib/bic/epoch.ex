@@ -66,8 +66,12 @@ defmodule BIC.Epoch do
         kv_clear("bic:epoch:solutions:")
 
         new_trainers = if length(leaders) == 0 do trainers else
+            to_take = cond do
+                epoch >= 3 -> 17
+                true -> 9
+            end
             leaders = leaders
-            |> Enum.take(9)
+            |> Enum.take(to_take)
             |> Enum.map(fn{pk, _}-> pk end)
             
             #TODO: Even may not reach consensus in netsplit/malicicous net
