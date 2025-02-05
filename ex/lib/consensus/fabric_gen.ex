@@ -173,7 +173,7 @@ defmodule FabricGen do
     next_trainer = Consensus.trainer_for_slot(Entry.epoch(next_entry), next_slot+1)
     peer = NodePeers.by_pk(next_trainer)
     if peer do
-      NodeGen.broadcast(:entry, {:some, peer.ip}, [map])
+      NodeGen.broadcast(:entry, {:some, [peer.ip]}, [map])
       Process.sleep(0x10)
     end
 
