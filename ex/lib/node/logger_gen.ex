@@ -15,6 +15,7 @@ defmodule LoggerGen do
 
   def init(state) do
     :erlang.send_after(1000, self(), :tick)
+    :erlang.send_after(1000, self(), :check)
     {:ok, state}
   end
 

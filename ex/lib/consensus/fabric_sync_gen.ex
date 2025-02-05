@@ -262,7 +262,7 @@ defmodule FabricSyncGen do
       !isQuorumSyncedOffBy1() -> nil
 
       len1000_holes > 0 ->
-        if len1000_holes > 1 do
+        if len1000_holes > 2 do
           IO.puts "Syncing #{len1000_holes} attestations"
         end
         #IO.inspect next1000_holes

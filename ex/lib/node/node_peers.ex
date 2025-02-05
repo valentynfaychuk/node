@@ -93,6 +93,9 @@ defmodule NodePeers do
     |> Enum.filter(& &1[:pk] in trainers)
   end
 
+  def by_who({:some, peer_ips}) do
+    peer_ips
+  end
   def by_who(:trainers) do
     epoch = Consensus.chain_epoch()
     NodePeers.for_epoch(epoch)

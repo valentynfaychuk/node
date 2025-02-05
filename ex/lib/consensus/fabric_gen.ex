@@ -19,7 +19,7 @@ defmodule FabricGen do
 
   def handle_info(:tick_slot, state) do
     state = if true do tick_slot(state) else state end
-    :erlang.send_after(1000, self(), :tick_slot)
+    :erlang.send_after(100, self(), :tick_slot)
     {:noreply, state}
   end
 
@@ -169,6 +169,14 @@ defmodule FabricGen do
     Fabric.insert_entry(next_entry, :os.system_time(1000))
 
     map = %{entry_packed: Entry.pack(next_entry)}
+
+    next_trainer = Consensus.trainer_for_slot(Entry.epoch(next_entry), next_slot+1)
+    peer = NodePeers.by_pk(next_trainer)
+    if peer do
+      NodeGen.broadcast(:entry, {:some, peer.ip}, [map])
+      Process.sleep(0x10)
+    end
+
     NodeGen.broadcast(:entry, :trainers, [map])
     NodeGen.broadcast(:entry, 3, [map])
     next_entry

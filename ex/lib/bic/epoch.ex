@@ -39,6 +39,10 @@ defmodule BIC.Epoch do
 
     def next(env) do
         epoch = Entry.epoch(env.entry)
+        top_x = cond do
+            epoch >= 3 -> 19
+            true -> 9
+        end
 
         leaders = kv_get_prefix("bic:epoch:solutions:")
         |> Enum.reduce(%{}, fn({_sol, pk}, acc)->
@@ -49,7 +53,7 @@ defmodule BIC.Epoch do
         trainers = kv_get("bic:epoch:trainers:#{epoch}")
         trainers_to_recv_emissions = leaders
         |> Enum.filter(& elem(&1,0) in trainers)
-        |> Enum.take(9)
+        |> Enum.take(top_x)
 
         total_sols = Enum.reduce(trainers_to_recv_emissions, 0, & &2 + elem(&1,1))
         Enum.each(trainers_to_recv_emissions, fn({trainer, trainer_sols})->
@@ -66,12 +70,8 @@ defmodule BIC.Epoch do
         kv_clear("bic:epoch:solutions:")
 
         new_trainers = if length(leaders) == 0 do trainers else
-            to_take = cond do
-                epoch >= 3 -> 17
-                true -> 9
-            end
             leaders = leaders
-            |> Enum.take(to_take)
+            |> Enum.take(top_x)
             |> Enum.map(fn{pk, _}-> pk end)
             
             #TODO: Even may not reach consensus in netsplit/malicicous net
