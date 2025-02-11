@@ -71,6 +71,14 @@ defmodule NodeGen do
     end)
   end
 
+  def broadcast(:special_business, who, [business]) do
+    :erlang.spawn(fn()->
+      msg = NodeProto.special_business(business)
+      ips = NodePeers.by_who(who)
+      send(NodeGen, {:send_to_some, ips, NodeProto.pack_message(msg)})
+    end)
+  end
+
 
 
   def tick() do

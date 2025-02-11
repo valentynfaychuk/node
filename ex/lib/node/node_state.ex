@@ -200,4 +200,29 @@ defmodule NodeState do
         end)
     end
   end
+
+  def handle(:special_business, istate, term) do
+    op = term.business.op
+    cond do
+      #istate.peer.pk != <<>> -> nil
+      op == "slash_trainer" ->
+        signature = SpecialMeetingGen.check_maybe_attest("slash_trainer", term.business.epoch, term.business.malicious_pk)
+        if signature do
+          pk = Application.fetch_env!(:ama, :trainer_pk)
+          business = %{op: "slash_trainer_reply", epoch: term.business.epoch, malicious_pk: term.business.malicious_pk, 
+            pk: pk, signature: signature}
+          msg = NodeProto.special_business_reply(business)
+          :erlang.spawn(fn()-> send(NodeGen, {:send_to_some, [istate.peer.ip], pack_message(msg)}) end)
+        end
+    end
+  end
+
+  def handle(:special_business_reply, istate, term) do
+    IO.inspect {:special_business_reply, term.business}
+    op = term.business.op
+    cond do
+      #istate.peer.pk != <<>> -> nil
+      op == "slash_trainer_reply" -> nil
+    end
+  end
 end

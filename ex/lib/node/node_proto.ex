@@ -49,6 +49,14 @@ defmodule NodeProto do
     %{op: :catchup_attestation, hashes: hashes}
   end
 
+  def special_business(business) do
+    %{op: :special_business, business: business}
+  end
+
+  def special_business_reply(business) do
+    %{op: :special_business_reply, business: business}
+  end
+
 
 
   def pack_message(msg) do
