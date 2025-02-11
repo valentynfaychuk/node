@@ -11,11 +11,13 @@ defmodule BIC.Epoch do
         epoch_emission(epoch - 1, acc - sub)
     end
 
-    def circulating(_epoch, _acc \\ 0)
-    def circulating(0, acc) do acc - BIC.Coin.burn_balance() end
-    def circulating(epoch, acc) do
-        circulating(epoch - 1, acc + epoch_emission(epoch))
+    def circulating_without_burn(_epoch, _acc \\ 0)
+    def circulating_without_burn(0, acc) do acc end
+    def circulating_without_burn(epoch, acc) do
+        circulating_without_burn(epoch - 1, acc + epoch_emission(epoch))
     end
+
+    def circulating(epoch) do circulating_without_burn(epoch) - BIC.Coin.burn_balance() end
 
     def call(:submit_sol, env, [sol]) do
         if kv_exists("bic:epoch:solutions:#{sol}"), do: throw(%{error: :sol_exists})
@@ -38,9 +40,10 @@ defmodule BIC.Epoch do
     end
 
     def next(env) do
-        epoch = Entry.epoch(env.entry)
+        epoch_fin = Entry.epoch(env.entry)
+        epoch_next = epoch_fin + 1
         top_x = cond do
-            epoch >= 3 -> 19
+            epoch_next > 3 -> 19
             true -> 9
         end
 
@@ -50,14 +53,14 @@ defmodule BIC.Epoch do
         end)
         |> Enum.sort_by(& elem(&1,1), :desc)
         
-        trainers = kv_get("bic:epoch:trainers:#{epoch}")
+        trainers = kv_get("bic:epoch:trainers:#{epoch_fin}")
         trainers_to_recv_emissions = leaders
         |> Enum.filter(& elem(&1,0) in trainers)
         |> Enum.take(top_x)
 
         total_sols = Enum.reduce(trainers_to_recv_emissions, 0, & &2 + elem(&1,1))
         Enum.each(trainers_to_recv_emissions, fn({trainer, trainer_sols})->
-            coins = div(trainer_sols * epoch_emission(epoch), total_sols)
+            coins = div(trainer_sols * epoch_emission(epoch_fin), total_sols)
 
             emission_address = kv_get("bic:epoch:emission_address:#{trainer}")
             if emission_address do
@@ -82,7 +85,43 @@ defmodule BIC.Epoch do
             #   leaders
             #end
         end
-        kv_put("bic:epoch:trainers:#{epoch+1}", Enum.shuffle(new_trainers))
+        new_trainers = Enum.shuffle(new_trainers)
+        kv_put("bic:epoch:trainers:#{epoch_next}", new_trainers)
+        if epoch_next > 3 do
+            kv_put("bic:epoch:trainers:height:#{env.entry.header_unpacked.height+1}", new_trainers)
+        end
+    end
+
+    def call(:slash_trainer, env, [bin]) do
+        cur_epoch = Entry.epoch(env.entry)
+        <<"slash_trainer", epoch::32-little, malicious_pk::48-binary, signature::96-binary, bitmasksize::32-little, mask::size(bitmasksize)>> = bin
+        mask = <<mask::size(bitmasksize)>>
+
+        if cur_epoch != epoch, do: throw(%{error: :invalid_epoch})
+
+        trainers = kv_get("bic:epoch:trainers:#{cur_epoch}")
+        if malicious_pk not in trainers, do: throw(%{error: :invalid_trainer_pk})
+
+        # 75% vote
+        signers = BLS12AggSig.unmask_trainers(trainers, mask)
+        consensus_pct = length(signers) / length(trainers)
+        if consensus_pct < 0.75, do: throw %{error: :invalid_amount_of_signatures}
+
+        apk = BlsEx.aggregate_public_keys!(signers)
+        msg = <<"slash_trainer", cur_epoch, malicious_pk>>
+        if !BlsEx.verify?(apk, signature, msg, BLS12AggSig.dst_motion()), do: throw %{error: :invalid_signature}
+
+        # slash sols
+        kv_get_prefix("bic:epoch:solutions:")
+        |> Enum.each(fn({sol, sol_pk})->
+            if malicious_pk == sol_pk do
+                kv_delete("bic:epoch:solutions:#{sol}")
+            end
+        end)
+
+        new_trainers = trainers -- [malicious_pk]
+        kv_put("bic:epoch:trainers:#{cur_epoch}", new_trainers)
+        kv_put("bic:epoch:trainers:height:#{env.entry.header_unpacked.height}", new_trainers)
     end
 
     @doc """
