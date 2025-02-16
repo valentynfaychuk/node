@@ -47,6 +47,18 @@ defmodule BIC.Epoch do
             true -> 9
         end
 
+        if epoch_next > 3 do
+            removedTrainers = kv_get("bic:epoch:trainers:removed:#{epoch_fin}") || []
+
+            # slash sols
+            kv_get_prefix("bic:epoch:solutions:")
+            |> Enum.each(fn({sol, sol_pk})->
+                if sol_pk in removedTrainers do
+                    kv_delete("bic:epoch:solutions:#{sol}")
+                end
+            end)
+        end
+
         leaders = kv_get_prefix("bic:epoch:solutions:")
         |> Enum.reduce(%{}, fn({_sol, pk}, acc)->
             Map.put(acc, pk, Map.get(acc, pk, 0) + 1)
@@ -92,10 +104,23 @@ defmodule BIC.Epoch do
         end
     end
 
-    def call(:slash_trainer, env, [bin]) do
+    def slash_trainer_verify(cur_epoch, malicious_pk, trainers, mask, signature) do
+        signers = BLS12AggSig.unmask_trainers(trainers, mask)
+        consensus_pct = length(signers) / length(trainers)
+
+        apk = BlsEx.aggregate_public_keys!(signers)
+        msg = <<"slash_trainer", cur_epoch::32-little, malicious_pk::binary>>
+        validSignature = BlsEx.verify?(apk, signature, msg, BLS12AggSig.dst_motion())
+        cond do
+            consensus_pct < 0.75 -> :invalid_amount_of_signatures
+            !validSignature -> :invalid_signature
+            true -> nil
+        end
+    end
+
+    def call(:slash_trainer, env, [epoch, malicious_pk, signature, mask_size, mask]) do
         cur_epoch = Entry.epoch(env.entry)
-        <<"slash_trainer", epoch::32-little, malicious_pk::48-binary, signature::96-binary, bitmasksize::32-little, mask::size(bitmasksize)>> = bin
-        mask = <<mask::size(bitmasksize)>>
+        <<mask::size(mask_size)-bitstring, _::bitstring>> = mask
 
         if cur_epoch != epoch, do: throw(%{error: :invalid_epoch})
 
@@ -108,16 +133,11 @@ defmodule BIC.Epoch do
         if consensus_pct < 0.75, do: throw %{error: :invalid_amount_of_signatures}
 
         apk = BlsEx.aggregate_public_keys!(signers)
-        msg = <<"slash_trainer", cur_epoch, malicious_pk>>
+        msg = <<"slash_trainer", cur_epoch::32-little, malicious_pk::binary>>
         if !BlsEx.verify?(apk, signature, msg, BLS12AggSig.dst_motion()), do: throw %{error: :invalid_signature}
 
-        # slash sols
-        kv_get_prefix("bic:epoch:solutions:")
-        |> Enum.each(fn({sol, sol_pk})->
-            if malicious_pk == sol_pk do
-                kv_delete("bic:epoch:solutions:#{sol}")
-            end
-        end)
+        removed = kv_get("bic:epoch:trainers:removed:#{cur_epoch}") || []
+        kv_put("bic:epoch:trainers:removed:#{cur_epoch}", removed ++ [malicious_pk])
 
         new_trainers = trainers -- [malicious_pk]
         kv_put("bic:epoch:trainers:#{cur_epoch}", new_trainers)
