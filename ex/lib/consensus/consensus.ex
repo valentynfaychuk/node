@@ -42,6 +42,7 @@ defmodule Consensus do
         trainer in trainers
     end
 
+    #def trainers_for_height(height, opts \\ %{}) do
     def trainers_for_epoch(epoch, opts \\ %{}) do
         if opts[:rtx] do
             RocksDB.get("bic:epoch:trainers:#{epoch}", %{rtx: opts.rtx, cf: opts.cf.contractstate, term: true})
@@ -49,6 +50,8 @@ defmodule Consensus do
             %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
             RocksDB.get("bic:epoch:trainers:#{epoch}", %{db: db, cf: cf.contractstate, term: true})
         end
+
+        #kv_put("bic:epoch:trainers:height:#{height}", new_trainers)
     end
 
     def trainer_for_slot(epoch, slot) do
@@ -115,6 +118,13 @@ defmodule Consensus do
 
                 :ok = :rocksdb.transaction_put(rtx, cf.sysconf, "temporal_tip", entry.hash)
                 :ok = :rocksdb.transaction_put(rtx, cf.sysconf, "temporal_height", :erlang.term_to_binary(entry.header_unpacked.height, [:deterministic]))
+
+                rooted_hash = RocksDB.get("rooted_tip", %{rtx: rtx, cf: cf.sysconf})
+                rooted_entry = RocksDB.get(rooted_hash, %{rtx: rtx, cf: cf.default})
+                if !rooted_entry do
+                    :ok = :rocksdb.transaction_put(rtx, cf.sysconf, "rooted_tip", entry.hash)
+                end
+
                 :ok = :rocksdb.transaction_commit(rtx)
 
                 true
@@ -124,12 +134,30 @@ defmodule Consensus do
         m_rev = Consensus.chain_muts_rev(current_entry.hash)
         ConsensusKV.revert(m_rev)
 
-        case Fabric.entry_by_hash_w_mutsrev(current_entry.header_unpacked.prev_hash) do
-            nil ->
+        %{rtx: rtx, cf: cf} = Process.get({RocksDB, :ctx})
+        :ok = :rocksdb.transaction_delete(rtx, cf.default, current_entry.hash)
+        :ok = :rocksdb.transaction_delete(rtx, cf.my_seen_time_for_entry, current_entry.hash)
+        :ok = :rocksdb.transaction_delete(rtx, cf.entry_by_height, "#{current_entry.header_unpacked.height}:#{current_entry.hash}")
+        :ok = :rocksdb.transaction_delete(rtx, cf.entry_by_slot, "#{current_entry.header_unpacked.slot}:#{current_entry.hash}")
+        :ok = :rocksdb.transaction_delete(rtx, cf.consensus_by_entryhash, current_entry.hash)
+        :ok = :rocksdb.transaction_delete(rtx, cf.my_attestation_for_entry, current_entry.hash)
+
+        if current_entry.hash == target_hash do
+            prev_entry = Fabric.entry_by_hash_w_mutsrev(current_entry.header_unpacked.prev_hash)
+            if !prev_entry do
                 IO.puts "rewind catastrophically failed"
                 :erlang.halt()
-            entry = %{hash: ^target_hash} -> entry
-            current_entry -> chain_rewind_1(current_entry, target_hash)
+            else
+                prev_entry
+            end
+        else
+            case Fabric.entry_by_hash_w_mutsrev(current_entry.header_unpacked.prev_hash) do
+                nil ->
+                    IO.puts "rewind catastrophically failed"
+                    :erlang.halt()
+                entry = %{hash: ^target_hash} -> entry
+                current_entry -> chain_rewind_1(current_entry, target_hash)
+            end
         end
     end
 
