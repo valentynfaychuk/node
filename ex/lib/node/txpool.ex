@@ -79,6 +79,17 @@ defmodule TXPool do
         end
     end
 
+    def lowest_nonce(pk) do
+        :ets.tab2list(TXPool)
+        |> Enum.reduce(nil, fn({nonce, txu}, lowest_nonce)->
+            if txu.tx.signer == pk and (!nonce or nonce < lowest_nonce) do
+                nonce
+            else
+                lowest_nonce
+            end
+        end)
+    end
+
     def test() do
         sk = Application.fetch_env!(:ama, :trainer_sk)
         pk = :crypto.strong_rand_bytes(48)
