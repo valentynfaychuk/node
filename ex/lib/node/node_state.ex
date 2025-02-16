@@ -222,7 +222,13 @@ defmodule NodeState do
     op = term.business.op
     cond do
       #istate.peer.pk != <<>> -> nil
-      op == "slash_trainer_reply" -> nil
+      op == "slash_trainer_reply" ->
+        b = term.business
+        msg = <<"slash_trainer", b.epoch::32-little, b.malicious_pk::binary>>
+        sigValid = BlsEx.verify?(b.pk, b.signature, msg, BLS12AggSig.dst_motion())
+        if sigValid do
+          send(SpecialMeetingGen, {:add_slash_trainer_reply, term.business})
+        end
     end
   end
 end
