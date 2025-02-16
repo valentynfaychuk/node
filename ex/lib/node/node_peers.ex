@@ -77,7 +77,12 @@ defmodule NodePeers do
   def is_online(peer) do
     ts_m = :os.system_time(1000)
     lp = peer[:last_ping]
-    !!lp and ts_m - lp <= 3_000
+    cond do
+      !peer[:pk] -> false
+      Application.fetch_env!(:ama, :trainer_pk) == peer.pk -> true
+      !!lp and ts_m - lp <= 3_000 -> true
+      true -> false
+    end
   end
 
   def by_pk(pk) do
