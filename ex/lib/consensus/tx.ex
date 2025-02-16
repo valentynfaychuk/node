@@ -79,12 +79,13 @@ defmodule TX do
       end
    end
 
-   def build(sk, contract, function, args) do
+   def build(sk, contract, function, args, nonce \\ nil) do
       pk = BlsEx.get_public_key!(sk)
+      nonce = if !nonce do :os.system_time(:nanosecond) else nonce end
       action = %{op: "call", contract: contract, function: function, args: args}
       tx_encoded = %{
          signer: pk,
-         nonce: :os.system_time(:nanosecond),
+         nonce: nonce,
          actions: [action]
       }
       |> VanillaSer.encode()
