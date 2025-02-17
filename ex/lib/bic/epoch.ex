@@ -141,7 +141,7 @@ defmodule BIC.Epoch do
 
         new_trainers = trainers -- [malicious_pk]
         kv_put("bic:epoch:trainers:#{cur_epoch}", new_trainers)
-        kv_put("bic:epoch:trainers:height:#{env.entry.header_unpacked.height}", new_trainers)
+        kv_put("bic:epoch:trainers:height:#{env.entry.header_unpacked.height+1}", new_trainers)
     end
 
     @doc """
