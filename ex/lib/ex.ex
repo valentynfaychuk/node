@@ -7,6 +7,8 @@ defmodule Ama do
     #IO.inspect Application.app_dir(:ama, "priv/index.html") 
     Process.sleep(300)
 
+    IEx.configure(inspect: [width: 120])
+
     supervisor = Supervisor.start_link([
       {DynamicSupervisor, strategy: :one_for_one, name: Ama.Supervisor, max_seconds: 1, max_restarts: 999_999_999_999}
     ], strategy: :one_for_one)

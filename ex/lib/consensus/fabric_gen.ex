@@ -127,6 +127,7 @@ defmodule FabricGen do
     trainers = Consensus.trainers_for_height(Entry.height(cur_entry))
     max_backsight = length(trainers)
     Enum.reduce_while(cur_height..(cur_height-max_backsight), nil, fn(height, _)->
+      trainers = Consensus.trainers_for_height(height)
       entries = Fabric.entries_by_height(height)
       entryIsSlash = Enum.find(entries, fn(entry)->
         Enum.find(entry.txs, fn(txp)->

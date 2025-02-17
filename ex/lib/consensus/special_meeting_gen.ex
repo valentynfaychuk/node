@@ -78,7 +78,7 @@ defmodule SpecialMeetingGen do
 
     cond do
         !isSynced -> nil
-        delta < 30_000 and nextSlotStalled -> :persistent_term.delete({SpecialMeeting, :nextSlotStalled})
+        delta < 30_000 and nextSlotStalled -> :persistent_term.erase({SpecialMeeting, :nextSlotStalled})
         delta >= 30_000 and !nextSlotStalled -> :persistent_term.put({SpecialMeeting, :nextSlotStalled}, next_slot_trainer)
         true -> nil
     end
@@ -181,9 +181,9 @@ defmodule SpecialMeetingGen do
         signature = check_maybe_attest("slash_trainer", epoch, mpk)
         true = byte_size(signature) == 96
         ma = BLS12AggSig.new(trainers, my_pk, signature)
-        Map.put(state, :slash_trainer, %{malicious_pk: mpk, epoch: epoch, mask: ma.mask, aggsig: ma.aggsig})
+        Map.put(state, :slash_trainer, %{height: height, malicious_pk: mpk, epoch: epoch, mask: ma.mask, aggsig: ma.aggsig})
       !state[:slash_trainer] or state.slash_trainer.malicious_pk != mpk ->
-        Map.put(state, :slash_trainer, %{malicious_pk: mpk, epoch: epoch})
+        Map.put(state, :slash_trainer, %{height: height, malicious_pk: mpk, epoch: epoch})
       true -> state
     end
 
@@ -193,7 +193,7 @@ defmodule SpecialMeetingGen do
       state
     end
 
-    business = %{op: "slash_trainer", height: height, epoch: epoch, malicious_pk: mpk}
+    business = %{op: "slash_trainer", epoch: epoch, malicious_pk: mpk}
     NodeGen.broadcast(:special_business, :trainers, [business])
 
     {:noreply, state}
