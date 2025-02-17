@@ -58,6 +58,19 @@ defmodule Consensus do
         Enum.at(trainers, index)
     end
 
+    def did_trainer_sign_consensus(trainer, entry_hash) do
+        c = Fabric.consensuses_by_entryhash(entry_hash)
+        if c do
+            entry = Fabric.entry_by_hash(entry_hash)
+            trainers = trainers_for_height(entry.header_unpacked.height)
+            res = Enum.reject(c, fn {_mut_hash, %{mask: mask}}->
+                signed = BLS12AggSig.unmask_trainers(trainers, mask)
+                trainer in signed
+            end)
+            res == [] 
+        end
+    end
+
     #def next_trainer_slot_in_x_slots(pk, epoch, slot, acc \\ 0) do
     #    trainer = Consensus.trainer_for_slot(epoch, slot + acc)
     #    cond do

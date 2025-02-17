@@ -258,18 +258,20 @@ defmodule Fabric do
 
         entry = entry_by_hash(entry_hash)
         trainers = if !entry do nil else Consensus.trainers_for_height(Entry.height(entry)) end
-        if !!entry and !!trainers do
-            true = a.signer in trainers
+        if !!entry and !!trainers and a.signer in trainers do
 
-            consensuses = RocksDB.get(entry_hash, %{rtx: rtx, cf: cf.consensus_by_entryhash, term: true}) || %{}
-            consensus = consensuses[mutations_hash]
-            consensus = if consensus do
-                BLS12AggSig.add(consensus, trainers, a.signer, a.signature)
-            else
-                BLS12AggSig.new(trainers, a.signer, a.signature)
+            #FIX: make sure we dont race on the trainers_for_height
+            if entry.header_unpacked.height <= Consensus.chain_height() do
+                consensuses = RocksDB.get(entry_hash, %{rtx: rtx, cf: cf.consensus_by_entryhash, term: true}) || %{}
+                consensus = consensuses[mutations_hash]
+                consensus = cond do
+                    !consensus -> BLS12AggSig.new(trainers, a.signer, a.signature)
+                    bit_size(consensus.mask) < length(trainers) -> BLS12AggSig.new(trainers, a.signer, a.signature)
+                    true -> BLS12AggSig.add(consensus, trainers, a.signer, a.signature)
+                end
+                consensuses = Map.put(consensuses, mutations_hash, consensus)
+                :ok = :rocksdb.transaction_put(rtx, cf.consensus_by_entryhash, entry_hash, :erlang.term_to_binary(consensuses, [:deterministic]))
             end
-            consensuses = Map.put(consensuses, mutations_hash, consensus)
-            :ok = :rocksdb.transaction_put(rtx, cf.consensus_by_entryhash, entry_hash, :erlang.term_to_binary(consensuses, [:deterministic]))
 
             if !opts[:rtx] do
                 :ok = :rocksdb.transaction_commit(rtx)
