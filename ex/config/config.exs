@@ -1,6 +1,7 @@
 import Config
 
 config :logger, truncate: :infinity
+config :iex, inspect: [width: 120]
 
 config :ama, :version, Mix.Project.config[:version]
 
