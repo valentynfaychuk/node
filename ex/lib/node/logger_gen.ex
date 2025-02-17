@@ -55,7 +55,7 @@ defmodule LoggerGen do
     pk = Application.fetch_env!(:ama, :trainer_pk)
     coins = Consensus.chain_balance(pk)
 
-    trainers = Consensus.trainers_for_epoch(Entry.epoch(entry))
+    trainers = Consensus.trainers_for_height(Entry.height(entry)+1)
 
     #Moneybag mean the money in my bag
     #Moneybag mean the money in the bag
@@ -75,5 +75,6 @@ defmodule LoggerGen do
   end
 
   def check() do
+
   end
 end

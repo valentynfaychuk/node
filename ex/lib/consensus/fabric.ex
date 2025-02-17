@@ -128,10 +128,8 @@ defmodule Fabric do
     end
 
     def get_entries_by_height_w_attestation_or_consensus(height) do
-        epoch = div(height, 100_000)
-
         my_pk = Application.fetch_env!(:ama, :trainer_pk)
-        trainers = Consensus.trainers_for_epoch(epoch) || []
+        trainers = Consensus.trainers_for_height(height) || []
         isTrainer = my_pk in trainers
 
         consens = consensuses_by_height(height)
@@ -153,10 +151,8 @@ defmodule Fabric do
     end
 
     def get_attestations_or_consensuses_by_height(height) do
-        epoch = div(height, 100_000)
-
         my_pk = Application.fetch_env!(:ama, :trainer_pk)
-        trainers = Consensus.trainers_for_epoch(epoch) || []
+        trainers = Consensus.trainers_for_height(height) || []
         isTrainer = my_pk in trainers
 
         consens = consensuses_by_height(height)
@@ -261,7 +257,7 @@ defmodule Fabric do
         mutations_hash = a.mutations_hash
 
         entry = entry_by_hash(entry_hash)
-        trainers = if !entry do nil else Consensus.trainers_for_epoch(Entry.epoch(entry)) end
+        trainers = if !entry do nil else Consensus.trainers_for_height(Entry.height(entry)) end
         if !!entry and !!trainers do
             true = a.signer in trainers
 

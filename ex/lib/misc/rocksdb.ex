@@ -15,6 +15,16 @@ defmodule RocksDB do
         end
     end
 
+    def get_prev(prefix, key, opts) do
+        {:ok, it} = iterator(opts)
+        res = :rocksdb.iterator_move(it, {:seek_for_prev, "#{prefix}#{key}"})
+        case res do
+            {:ok, <<^prefix::binary, _::binary>>, value} ->
+                if opts[:term] do :erlang.binary_to_term(value, [:safe]) else value end
+            _ -> nil
+        end
+    end
+
     def put(key, value, opts) do
         db = opts[:db]
         cf = opts[:cf]

@@ -22,7 +22,7 @@ defmodule Consensus do
         to_sign = <<c.entry_hash::binary, c.mutations_hash::binary>>
 
         entry = Fabric.entry_by_hash(c.entry_hash)
-        trainers = Consensus.trainers_for_epoch(Entry.epoch(entry))
+        trainers = trainers_for_height(Entry.height(entry))
         score = BLS12AggSig.score(trainers, c.mask)
 
         trainers_signed = BLS12AggSig.unmask_trainers(trainers, c.mask)
@@ -37,37 +37,35 @@ defmodule Consensus do
         end
     end
 
-    def is_trainer_for_epoch(trainer, epoch, opts \\ %{}) do
-        trainers = trainers_for_epoch(epoch, opts) || []
-        trainer in trainers
-    end
-
-    #def trainers_for_height(height, opts \\ %{}) do
-    def trainers_for_epoch(epoch, opts \\ %{}) do
-        if opts[:rtx] do
-            RocksDB.get("bic:epoch:trainers:#{epoch}", %{rtx: opts.rtx, cf: opts.cf.contractstate, term: true})
+    def trainers_for_height(height, opts \\ %{}) do
+        options = if opts[:rtx] do
+            %{rtx: opts.rtx, cf: opts.cf.contractstate, term: true}
         else
             %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
-            RocksDB.get("bic:epoch:trainers:#{epoch}", %{db: db, cf: cf.contractstate, term: true})
+            %{db: db, cf: cf.contractstate, term: true}
         end
 
-        #kv_put("bic:epoch:trainers:height:#{height}", new_trainers)
+        res = RocksDB.get_prev("bic:epoch:trainers:height:", height, options)
+        if res do res else
+            epoch = div(height, 100_000)
+            RocksDB.get("bic:epoch:trainers:#{epoch}", options)
+        end
     end
 
-    def trainer_for_slot(epoch, slot) do
-        trainers = trainers_for_epoch(epoch)
+    def trainer_for_slot(height, slot) do
+        trainers = trainers_for_height(height)
         index = rem(slot, length(trainers))
         Enum.at(trainers, index)
     end
 
-    def next_trainer_slot_in_x_slots(pk, epoch, slot, acc \\ 0) do
-        trainer = Consensus.trainer_for_slot(epoch, slot + acc)
-        cond do
-            acc >= 128 -> nil
-            pk == trainer -> acc
-            true -> next_trainer_slot_in_x_slots(pk, epoch, slot, acc + 1)
-        end
-    end
+    #def next_trainer_slot_in_x_slots(pk, epoch, slot, acc \\ 0) do
+    #    trainer = Consensus.trainer_for_slot(epoch, slot + acc)
+    #    cond do
+    #        acc >= 128 -> nil
+    #        pk == trainer -> acc
+    #        true -> next_trainer_slot_in_x_slots(pk, epoch, slot, acc + 1)
+    #    end
+    #end
 
     def chain_height() do
         entry = chain_tip_entry()
@@ -161,13 +159,6 @@ defmodule Consensus do
         end
     end
 
-    def am_i_in_slot() do
-        pk = Application.fetch_env!(:ama, :trainer_pk)
-        entry = Consensus.chain_tip_entry()
-        next_epoch = div(entry.header_unpacked.height+1, 100_000)
-        pk == trainer_for_slot(next_epoch, entry.header_unpacked.slot + 1)
-    end
-
     def is_in_chain(target_hash) do
         case Fabric.entry_by_hash_w_mutsrev(target_hash) do
             nil -> false
@@ -257,7 +248,7 @@ defmodule Consensus do
         :ok = :rocksdb.transaction_put(rtx, cf.my_attestation_for_entry, next_entry.hash, attestation_packed)
         
         pk = Application.fetch_env!(:ama, :trainer_pk)
-        ap = if pk in trainers_for_epoch(Entry.epoch(next_entry), %{rtx: rtx, cf: cf}) do
+        ap = if pk in trainers_for_height(Entry.height(next_entry), %{rtx: rtx, cf: cf}) do
             #TODO: not ideal in super tight latency constrains but its 1 line and it works
             send(FabricCoordinatorGen, {:add_attestation, attestation})
             attestation_packed

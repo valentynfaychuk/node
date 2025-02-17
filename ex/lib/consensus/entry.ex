@@ -174,4 +174,12 @@ defmodule Entry do
     def height(entry) do
         entry.header_unpacked.height
     end
+
+    def contains_tx(entry, txfunction) do
+        !!Enum.find(entry.txs, fn(txp)->
+            txu = TX.unpack(txp)
+            action = List.first(txu.tx.actions)
+            action["function"] == txfunction
+        end)
+    end
 end

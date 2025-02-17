@@ -223,7 +223,7 @@ defmodule FabricSyncGen do
       length(acc) >= 1000 -> acc
       height > max_height -> acc
       true ->
-        trainers = Consensus.trainers_for_epoch(div(height, 100_000))
+        trainers = Consensus.trainers_for_height(height)
         height_add = Enum.reduce_while(consens, nil, fn(%{mask: mask}, acc)->
           best_score = BLS12AggSig.score(trainers, mask)
           if best_score < 1.0 do
@@ -279,7 +279,7 @@ defmodule FabricSyncGen do
 
         Process.sleep(10)
 
-        trainer_ips = NodePeers.for_epoch(div(rooted_height+1, 100_000)) |> Enum.map(& &1.ip)
+        trainer_ips = NodePeers.for_height(rooted_height+1) |> Enum.map(& &1.ip)
         msg = NodeProto.catchup_attestation(hashes)
         send(NodeGen, {:send_to_some, trainer_ips, NodeProto.pack_message(msg)})
         

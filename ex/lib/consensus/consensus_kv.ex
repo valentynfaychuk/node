@@ -73,6 +73,16 @@ defmodule ConsensusKV do
         end
     end
 
+    def kv_get_prev(prefix, key) do
+        db = Process.get({RocksDB, :ctx})
+        {:ok, it} = :rocksdb.transaction_iterator(db.rtx, db.cf.contractstate, [])
+        res = :rocksdb.iterator_move(it, {:seek_for_prev, "#{prefix}#{key}"})
+        case res do
+            {:ok, <<^prefix::binary, _::binary>>, value} -> :erlang.binary_to_term(value)
+            _ -> nil
+        end
+    end
+
     def kv_exists(key) do
         db = Process.get({RocksDB, :ctx})
         case :rocksdb.transaction_get(db.rtx, db.cf.contractstate, key, []) do

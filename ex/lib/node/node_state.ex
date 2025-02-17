@@ -116,7 +116,7 @@ defmodule NodeState do
   end
 
   def handle(:attestation_bulk, istate, term) do
-    #IO.inspect {:got, :attestation_bulk,  istate.peer.ip}
+    #IO.inspect {:got, :attestation_bulk,  istate.peer.ip, term}
     Enum.each(term.attestations_packed, fn(attestation_packed)->
         res = Attestation.unpack_and_validate(attestation_packed)
         if res.error == :ok and Attestation.validate_vs_chain(res.attestation) do

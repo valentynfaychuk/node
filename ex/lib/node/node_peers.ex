@@ -91,8 +91,8 @@ defmodule NodePeers do
     :ets.lookup_element(NODEPeers, ip, 2, nil)
   end
 
-  def for_epoch(epoch) do
-    trainers = Consensus.trainers_for_epoch(epoch)
+  def for_height(height) do
+    trainers = Consensus.trainers_for_height(height)
     peers = :ets.tab2list(NODEPeers)
     |> Enum.map(& elem(&1,1))
     |> Enum.filter(& &1[:pk] in trainers)
@@ -102,8 +102,8 @@ defmodule NodePeers do
     peer_ips
   end
   def by_who(:trainers) do
-    epoch = Consensus.chain_epoch()
-    NodePeers.for_epoch(epoch)
+    height = Consensus.chain_height()
+    NodePeers.for_height(height)
     |> Enum.map(& &1.ip)
     |> case do
       [] -> []

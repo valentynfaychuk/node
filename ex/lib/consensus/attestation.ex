@@ -77,7 +77,7 @@ defmodule Attestation do
     def validate_vs_chain(a) do
         entry = Fabric.entry_by_hash(a.entry_hash)
         if entry do
-            trainers = Consensus.trainers_for_epoch(Entry.epoch(entry))
+            trainers = Consensus.trainers_for_height(Entry.height(entry))
             if !!trainers and a.signer in trainers do
                 true
             end

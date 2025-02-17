@@ -42,9 +42,9 @@ defmodule SpecialMeetingGen do
     my_height = entry.header_unpacked.height
     slot = entry.header_unpacked.slot
     next_slot = slot + 1
-    next_epoch = div(my_height+1, 100_000)
+    next_height = my_height + 1
 
-    trainers = Consensus.trainers_for_epoch(next_epoch)
+    trainers = Consensus.trainers_for_height(next_height)
     #TODO: make this 3 or 6 later
     sync_round_offset = rem(div(:os.system_time(1), 60), length(trainers))
     sync_round_index = Enum.find_index(trainers, fn t -> t == pk end)
@@ -61,8 +61,8 @@ defmodule SpecialMeetingGen do
 
     entry = Consensus.chain_tip_entry()
     next_slot = entry.header_unpacked.slot + 1
-    next_epoch = div(entry.header_unpacked.height + 1, 100_000)
-    next_slot_trainer = Consensus.trainer_for_slot(next_epoch, next_slot)
+    next_height = entry.header_unpacked.height + 1
+    next_slot_trainer = Consensus.trainer_for_slot(next_height, next_slot)
 
     ts_m = :os.system_time(1000)
     seen_time = Fabric.entry_seentime(entry.hash)
@@ -99,7 +99,7 @@ defmodule SpecialMeetingGen do
   def tick_offline(state) do
     isSynced = FabricSyncGen.isQuorumSyncedOffBy1()
 
-    trainers = Consensus.trainers_for_epoch(Consensus.chain_epoch())
+    trainers = Consensus.trainers_for_height(Consensus.chain_height()+1)
     onlineTrainers = trainers
     |> Enum.filter(fn(pk)->
         p = NodePeers.by_pk(pk)
@@ -171,9 +171,10 @@ defmodule SpecialMeetingGen do
   end
 
   def handle_info({:try_slash_trainer, mpk}, state) do
+    height = Consensus.chain_height()
     epoch = Consensus.chain_epoch()
 
-    trainers = Consensus.trainers_for_epoch(epoch)
+    trainers = Consensus.trainers_for_height(height)
     my_pk = Application.fetch_env!(:ama, :trainer_pk)
     state = cond do
       my_pk in trainers and (!state[:slash_trainer] or state.slash_trainer.malicious_pk != mpk) ->
@@ -192,7 +193,7 @@ defmodule SpecialMeetingGen do
       state
     end
 
-    business = %{op: "slash_trainer", epoch: epoch, malicious_pk: mpk}
+    business = %{op: "slash_trainer", height: height, epoch: epoch, malicious_pk: mpk}
     NodeGen.broadcast(:special_business, :trainers, [business])
 
     {:noreply, state}
@@ -200,7 +201,7 @@ defmodule SpecialMeetingGen do
 
   def handle_info({:add_slash_trainer_reply, business}, state = %{slash_trainer: _}) do
     st = state.slash_trainer
-    trainers = Consensus.trainers_for_epoch(st.epoch)
+    trainers = Consensus.trainers_for_height(st.height)
     state = cond do
       !st[:aggsig] ->
         ma = BLS12AggSig.new(trainers, business.pk, business.signature)
@@ -232,7 +233,7 @@ defmodule SpecialMeetingGen do
       cur_height = cur_entry.header_unpacked.height
       cur_slot = cur_entry.header_unpacked.slot
 
-      true = my_pk == Consensus.trainer_for_slot(Consensus.chain_epoch(), cur_slot)
+      true = my_pk == Consensus.trainer_for_slot(Consensus.chain_height(), cur_slot)
 
       [rewound_entry] = Fabric.entries_by_height(cur_height-1)
       next_entry = Entry.build_next(rewound_entry, cur_slot)
@@ -241,7 +242,7 @@ defmodule SpecialMeetingGen do
       next_entry = Entry.sign(next_entry)
 
       IO.inspect next_entry, limit: 11111111111
-      #send(FabricCoordinatorGen, {:insert_entry, next_entry, :os.system_time(1000)})
+      send(FabricCoordinatorGen, {:insert_entry, next_entry, :os.system_time(1000)})
     end
 
     {:noreply, state}
