@@ -119,6 +119,13 @@ defmodule BIC.Epoch do
     end
 
     def call(:slash_trainer, env, [epoch, malicious_pk, signature, mask_size, mask]) do
+        if env.entry.header_unpacked.height == 319556 do
+            kv_put("bic:epoch:trainers:height:0", kv_get("bic:epoch:trainers:0"))
+            kv_put("bic:epoch:trainers:height:100000", kv_get("bic:epoch:trainers:1"))
+            kv_put("bic:epoch:trainers:height:200000", kv_get("bic:epoch:trainers:2"))
+            kv_put("bic:epoch:trainers:height:300000", kv_get("bic:epoch:trainers:3"))
+        end
+        
         cur_epoch = Entry.epoch(env.entry)
         <<mask::size(mask_size)-bitstring, _::bitstring>> = mask
 
