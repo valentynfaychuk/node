@@ -64,7 +64,7 @@ defmodule TX do
          if !is_integer(arg) and !is_binary(arg), do: throw(%{error: :arg_invalid_type})
       end)
       if !:lists.member(action.contract, ["Epoch", "Coin"]), do: throw %{error: :invalid_module}
-      if !:lists.member(action.function, ["submit_sol", "transfer", "set_emission_address"]), do: throw %{error: :invalid_function}
+      if !:lists.member(action.function, ["submit_sol", "transfer", "set_emission_address", "slash_trainer"]), do: throw %{error: :invalid_function}
 
       #if !!txp.tx[:delay] and !is_integer(txp.tx.delay), do: throw %{error: :delay_not_integer}
       #if !!txp.tx[:delay] and txp.tx.delay <= 0, do: throw %{error: :delay_too_low}

@@ -8,6 +8,7 @@ defmodule FabricGen do
   def init(state) do
     :erlang.send_after(2500, self(), :tick)
     :erlang.send_after(3000, self(), :tick_slot)
+    :erlang.send_after(5000, self(), :tick_slash)
     {:ok, state}
   end
 
@@ -20,6 +21,14 @@ defmodule FabricGen do
   def handle_info(:tick_slot, state) do
     state = if true do tick_slot(state) else state end
     :erlang.send_after(100, self(), :tick_slot)
+    {:noreply, state}
+  end
+
+  def handle_info(:tick_slash, state) do
+    if proc_entries_slash() do
+      proc_entries()
+    end
+    :erlang.send_after(3000, self(), :tick_slash)
     {:noreply, state}
   end
 
@@ -66,7 +75,7 @@ defmodule FabricGen do
   def best_entry_for_height(height) do
     next_entries = Fabric.entries_by_height(height)
     Enum.map(next_entries, fn(entry)->
-        trainers = Consensus.trainers_for_epoch(Entry.epoch(entry))
+        trainers = Consensus.trainers_for_height(Entry.height(entry))
         {mut_hash, score, _consensus} = Fabric.best_consensus_by_entryhash(trainers, entry.hash)
         {entry, mut_hash, score}
     end)
@@ -77,7 +86,7 @@ defmodule FabricGen do
   defp proc_consensus_1(entry, height) do
     next_entries = Fabric.entries_by_height(height+1)
     next_entries = Enum.map(next_entries, fn(entry)->
-        trainers = Consensus.trainers_for_epoch(Entry.epoch(entry))
+        trainers = Consensus.trainers_for_height(Entry.height(entry))
         {mut_hash, score, _consensus} = Fabric.best_consensus_by_entryhash(trainers, entry.hash)
         {entry, mut_hash, score}
     end)
@@ -110,6 +119,46 @@ defmodule FabricGen do
     end
   end
 
+  def proc_entries_slash() do
+    cur_entry = Consensus.chain_tip_entry()
+    cur_slot = cur_entry.header_unpacked.slot
+    cur_height = cur_entry.header_unpacked.height
+  
+    trainers = Consensus.trainers_for_height(Entry.height(cur_entry))
+    max_backsight = length(trainers)
+    Enum.reduce_while(cur_height..(cur_height-max_backsight), nil, fn(height, _)->
+      entries = Fabric.entries_by_height(height)
+      entryIsSlash = Enum.find(entries, fn(entry)->
+        Enum.find(entry.txs, fn(txp)->
+          txu = TX.unpack(txp)
+          action = List.first(txu.tx.actions)
+          if action[:function] == "slash_trainer" do
+            [epoch, malicious_pk, signature, mask_size, mask] = action.args
+            if !BIC.Epoch.slash_trainer_verify(epoch, malicious_pk, trainers, mask, signature) do
+              true
+            end
+          end
+        end)
+      end)
+      cond do
+        length(entries) <= 1 -> {:cont, nil}
+        entryIsSlash ->
+          in_chain = Consensus.is_in_chain(entryIsSlash.hash)
+          if !in_chain do
+            IO.inspect {:not_in_chain, :fixing}
+            entry_to_revert = entries
+            |> Enum.find_value(& Consensus.is_in_chain(&1.hash) and &1)
+            IO.inspect {:revert, entry_to_revert.hash}
+            Consensus.chain_rewind(entry_to_revert.hash)
+            {:halt, entry_to_revert.hash}
+          else
+            {:cont, nil}
+          end
+        true -> {:cont, nil}
+      end
+    end)
+  end
+
   def proc_entries() do
     cur_entry = Consensus.chain_tip_entry()
     cur_slot = cur_entry.header_unpacked.slot
@@ -119,7 +168,7 @@ defmodule FabricGen do
     next_entries = Enum.filter(next_entries, fn(next_entry)->
       #in slot
       next_slot = next_entry.header_unpacked.slot
-      trainer_for_slot = Consensus.trainer_for_slot(Entry.epoch(next_entry), next_slot)
+      trainer_for_slot = Consensus.trainer_for_slot(Entry.height(next_entry), next_slot)
       in_slot = next_entry.header_unpacked.signer == trainer_for_slot
 
       #is incremental slot
@@ -132,12 +181,16 @@ defmodule FabricGen do
         true -> true
       end
     end)
-    |> Enum.sort_by(& {&1.header_unpacked.slot, &1.hash}, :desc)
+    |> Enum.sort_by(& {!Entry.contains_tx(&1, "slash_trainer"), &1.header_unpacked.slot, &1.hash}, :desc)
     case List.first(next_entries) do
       nil -> nil
       entry ->
         %{error: :ok, attestation_packed: attestation_packed} = Consensus.apply_entry(entry)
         if attestation_packed do
+          map = %{entry_packed: Entry.pack(entry)}
+          NodeGen.broadcast(:entry, :trainers, [map])
+          NodeGen.broadcast(:entry, 3, [map])
+
           NodeGen.broadcast(:attestation_bulk, :trainers, [[attestation_packed]])
           NodeGen.broadcast(:attestation_bulk, 3, [[attestation_packed]])
         end
@@ -149,8 +202,8 @@ defmodule FabricGen do
     pk = Application.fetch_env!(:ama, :trainer_pk)
     entry = Consensus.chain_tip_entry()
     next_slot = entry.header_unpacked.slot + 1
-    next_epoch = div(entry.header_unpacked.height+1, 100_000)
-    slot_trainer = Consensus.trainer_for_slot(next_epoch, next_slot)
+    next_height = entry.header_unpacked.height + 1
+    slot_trainer = Consensus.trainer_for_slot(next_height, next_slot)
 
     cond do
       !FabricSyncGen.isQuorumSynced() -> nil
@@ -170,7 +223,7 @@ defmodule FabricGen do
 
     map = %{entry_packed: Entry.pack(next_entry)}
 
-    next_trainer = Consensus.trainer_for_slot(Entry.epoch(next_entry), next_slot+1)
+    next_trainer = Consensus.trainer_for_slot(Entry.height(next_entry), next_slot+1)
     peer = NodePeers.by_pk(next_trainer)
     if peer do
       NodeGen.broadcast(:entry, {:some, [peer.ip]}, [map])
