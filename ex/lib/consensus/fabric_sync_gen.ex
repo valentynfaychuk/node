@@ -90,7 +90,7 @@ defmodule FabricSyncGen do
 
   def handle_info(:tick_missing_attestation, state) do
     cond do
-      isQuorumSyncedOffBy1() ->
+      hasQuorum() ->
         tick_missing_attestation()
       true -> nil
     end
@@ -253,7 +253,7 @@ defmodule FabricSyncGen do
     end
 
     delta = abs(highest_consensus - rooted_height)
-    if delta > 10 do
+    if delta > 16 do
       tick_missing_attestation_new()
     end
 
@@ -282,8 +282,6 @@ defmodule FabricSyncGen do
         #TODO: check missing
         #Consensus.missing_attestations()
 
-        Process.sleep(10)
-
         trainer_ips = NodePeers.for_height(rooted_height+1) |> Enum.map(& &1.ip)
         msg = NodeProto.catchup_attestation(hashes)
         send(NodeGen, {:send_to_some, trainer_ips, NodeProto.pack_message(msg)})
@@ -311,7 +309,7 @@ defmodule FabricSyncGen do
 
     cond do
       #true -> nil
-      !isQuorumSyncedOffBy1() -> nil
+      !hasQuorum() -> nil
 
       len1000_holes > 0 ->
         if len1000_holes > 2 do

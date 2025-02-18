@@ -22,6 +22,7 @@ defmodule Consensus do
         to_sign = <<c.entry_hash::binary, c.mutations_hash::binary>>
 
         entry = Fabric.entry_by_hash(c.entry_hash)
+        #TODO: race here if entry is not proced
         trainers = trainers_for_height(Entry.height(entry))
         score = BLS12AggSig.score(trainers, c.mask)
 
