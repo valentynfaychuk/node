@@ -43,6 +43,10 @@ defmodule Ama do
     ip4 = Application.fetch_env!(:ama, :udp_ipv4_tuple)
     port = Application.fetch_env!(:ama, :udp_port)
     {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: NodeGen, start: {NodeGen, :start_link, [ip4, port]}, restart: :permanent})
+    Enum.each(0..7, fn(idx)->
+      atom = :'NodeGenSocketGen#{idx}'
+      {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: atom, start: {NodeGenSocketGen, :start_link, [ip4, port, atom]}, restart: :permanent})
+    end)
 
 
     #web panel
