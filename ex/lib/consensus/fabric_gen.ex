@@ -198,7 +198,9 @@ defmodule FabricGen do
       entry ->
         %{error: :ok, attestation_packed: attestation_packed, 
           mutations_hash: m_hash, logs: l, muts: m} = Consensus.apply_entry(entry)
+        
         send(FabricEventGen, {:entry, entry, m_hash, m, l})
+        
         if attestation_packed do
           map = %{entry_packed: Entry.pack(entry)}
           NodeGen.broadcast(:entry, :trainers, [map])
