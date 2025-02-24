@@ -47,10 +47,10 @@ defmodule Consensus do
         end
 
         cond do
-            height < 319557 ->
+            height <= 319556 ->
                 epoch = div(height, 100_000)
                 RocksDB.get("bic:epoch:trainers:#{epoch}", options)
-            height < 3195575 ->
+            height <= 3195575 ->
                 RocksDB.get_prev("bic:epoch:trainers:height:", height, options)
             true ->
                 elements = RocksDB.get_prefix("bic:epoch:trainers:height:", options)

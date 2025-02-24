@@ -147,8 +147,8 @@ defmodule FabricSyncGen do
     rooted = Fabric.rooted_tip_entry()
     rooted_height = rooted.header_unpacked.height
 
-    highest_peers = NodePeers.highest_height(%{min_rooted: rooted_height, sort: :rooted})
-    {highest_height, highest_consensus} = case List.first(highest_peers) do
+    highest_peers_rooted = NodePeers.highest_height(%{min_rooted: rooted_height+1, sort: :rooted})
+    {highest_height, highest_consensus} = case List.first(highest_peers_rooted) do
       nil -> {temporal_height, rooted_height}
       [_, _, highest, consensus | _ ] -> {highest, consensus}
     end
@@ -158,7 +158,7 @@ defmodule FabricSyncGen do
 
     #IO.inspect {highest_height, highest_consensus, rooted_height, len1000_holes}
 
-    highest_peers = NodePeers.highest_height(%{min_temporal: temporal_height, sort: :temporal})
+    highest_peers = NodePeers.highest_height(%{min_temporal: temporal_height+1, sort: :temporal})
     {highest_height, _highest_consensus} = case List.first(highest_peers) do
       nil -> {temporal_height, rooted_height}
       [_, _, highest, consensus | _ ] -> {highest, consensus}
@@ -176,6 +176,7 @@ defmodule FabricSyncGen do
         if len1000_holes > 1 do
           IO.puts "Syncing #{len1000_holes} entries"
         end
+        #IO.inspect next1000_holes
         #IO.inspect {temporal_height, rooted_height, highest_peers}
 
         msg = NodeProto.catchup_tri(next1000_holes)
@@ -186,6 +187,7 @@ defmodule FabricSyncGen do
         if len1000_holes_temporal > 1 do
           IO.puts "Syncing #{len1000_holes_temporal} temporal entries"
         end
+        #IO.inspect next1000_holes_temporal
         #IO.inspect {temporal_height, rooted_height, highest_peers}
 
         msg = NodeProto.catchup_tri(next1000_holes_temporal)
