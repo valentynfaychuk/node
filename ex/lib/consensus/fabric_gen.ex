@@ -28,7 +28,7 @@ defmodule FabricGen do
     if proc_entries_slash() do
       proc_entries()
     end
-    :erlang.send_after(3000, self(), :tick_slash)
+    :erlang.send_after(1000, self(), :tick_slash)
     {:noreply, state}
   end
 
@@ -74,6 +74,8 @@ defmodule FabricGen do
 
   def best_entry_for_height(height) do
     next_entries = Fabric.entries_by_height(height)
+    slash_entries = filter_slash_entries(next_entries, Consensus.trainers_for_height(height))
+    next_entries = if slash_entries == [] do next_entries else slash_entries end
     Enum.map(next_entries, fn(entry)->
         trainers = Consensus.trainers_for_height(Entry.height(entry))
         {mut_hash, score, _consensus} = Fabric.best_consensus_by_entryhash(trainers, entry.hash)
@@ -85,6 +87,8 @@ defmodule FabricGen do
 
   defp proc_consensus_1(entry, height) do
     next_entries = Fabric.entries_by_height(height+1)
+    slash_entries = filter_slash_entries(next_entries, Consensus.trainers_for_height(height+1))
+    next_entries = if slash_entries == [] do next_entries else slash_entries end
     next_entries = Enum.map(next_entries, fn(entry)->
         trainers = Consensus.trainers_for_height(Entry.height(entry))
         {mut_hash, score, _consensus} = Fabric.best_consensus_by_entryhash(trainers, entry.hash)
@@ -119,6 +123,22 @@ defmodule FabricGen do
     end
   end
 
+  def filter_slash_entries(entries, trainers) do
+    Enum.filter(entries, fn(entry)->
+      Enum.find(entry.txs, fn(txp)->
+        txu = TX.unpack(txp)
+        action = List.first(txu.tx.actions)
+        if action[:function] == "slash_trainer" do
+          [epoch, malicious_pk, signature, mask_size, mask] = action.args
+          if nil == BIC.Epoch.slash_trainer_verify(epoch, malicious_pk, trainers, mask, signature) do
+            true
+          end
+        end
+      end)
+    end)
+    |> Enum.sort_by(& &1.hash)
+  end
+
   def proc_entries_slash() do
     cur_entry = Consensus.chain_tip_entry()
     cur_slot = cur_entry.header_unpacked.slot
@@ -129,21 +149,12 @@ defmodule FabricGen do
     Enum.reduce_while(cur_height..(cur_height-max_backsight), nil, fn(height, _)->
       trainers = Consensus.trainers_for_height(height)
       entries = Fabric.entries_by_height(height)
-      entryIsSlash = Enum.find(entries, fn(entry)->
-        Enum.find(entry.txs, fn(txp)->
-          txu = TX.unpack(txp)
-          action = List.first(txu.tx.actions)
-          if action[:function] == "slash_trainer" do
-            [epoch, malicious_pk, signature, mask_size, mask] = action.args
-            if !BIC.Epoch.slash_trainer_verify(epoch, malicious_pk, trainers, mask, signature) do
-              true
-            end
-          end
-        end)
-      end)
+      entriesAreSlash = entries
+      |> filter_slash_entries(trainers)
       cond do
-        length(entries) <= 1 -> {:cont, nil}
-        entryIsSlash ->
+        length(entriesAreSlash) == 0 -> {:cont, nil}
+        true ->
+          entryIsSlash = hd(entriesAreSlash)
           in_chain = Consensus.is_in_chain(entryIsSlash.hash)
           if !in_chain do
             IO.inspect {:not_in_chain, :fixing}
@@ -155,7 +166,6 @@ defmodule FabricGen do
           else
             {:cont, nil}
           end
-        true -> {:cont, nil}
       end
     end)
   end
@@ -186,7 +196,9 @@ defmodule FabricGen do
     case List.first(next_entries) do
       nil -> nil
       entry ->
-        %{error: :ok, attestation_packed: attestation_packed} = Consensus.apply_entry(entry)
+        %{error: :ok, attestation_packed: attestation_packed, 
+          mutations_hash: m_hash, logs: l, muts: m} = Consensus.apply_entry(entry)
+        send(FabricEventGen, {:entry, entry, m_hash, m, l})
         if attestation_packed do
           map = %{entry_packed: Entry.pack(entry)}
           NodeGen.broadcast(:entry, :trainers, [map])
