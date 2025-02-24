@@ -46,10 +46,22 @@ defmodule Consensus do
             %{db: db, cf: cf.contractstate, term: true}
         end
 
-        res = RocksDB.get_prev("bic:epoch:trainers:height:", height, options)
-        if res do res else
-            epoch = div(height, 100_000)
-            RocksDB.get("bic:epoch:trainers:#{epoch}", options)
+        cond do
+            height < 319557 ->
+                epoch = div(height, 100_000)
+                RocksDB.get("bic:epoch:trainers:#{epoch}", options)
+            height < 3195575 ->
+                RocksDB.get_prev("bic:epoch:trainers:height:", height, options)
+            true ->
+                elements = RocksDB.get_prefix("bic:epoch:trainers:height:", options)
+                |> Enum.map(fn {k,v}-> {:erlang.binary_to_integer(k), v} end)
+                |> Enum.sort()
+                |> Enum.filter(&(elem(&1,0) <= height))
+                |> List.last()
+                |> case do
+                    nil -> nil
+                    {_,v} -> v
+                end                
         end
     end
 
@@ -153,6 +165,10 @@ defmodule Consensus do
         :ok = :rocksdb.transaction_delete(rtx, cf.entry_by_slot, "#{current_entry.header_unpacked.slot}:#{current_entry.hash}")
         :ok = :rocksdb.transaction_delete(rtx, cf.consensus_by_entryhash, current_entry.hash)
         :ok = :rocksdb.transaction_delete(rtx, cf.my_attestation_for_entry, current_entry.hash)
+        Enum.each(current_entry.txs, fn(tx_packed)->
+            txu = TX.unpack(tx_packed)
+            :ok = :rocksdb.transaction_delete(rtx, cf.tx, txu.hash)
+        end)
 
         if current_entry.hash == target_hash do
             prev_entry = Fabric.entry_by_hash_w_mutsrev(current_entry.header_unpacked.prev_hash)
@@ -278,7 +294,7 @@ defmodule Consensus do
 
         :ok = :rocksdb.transaction_commit(rtx)
         
-        %{error: :ok, attestation_packed: ap, mutations_hash: mutations_hash}
+        %{error: :ok, attestation_packed: ap, mutations_hash: mutations_hash, logs: l, muts: m}
     end
 
     def produce_entry(slot) do
