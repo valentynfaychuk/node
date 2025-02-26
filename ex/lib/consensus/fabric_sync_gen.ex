@@ -173,7 +173,7 @@ defmodule FabricSyncGen do
       !hasQuorum() -> nil
 
       len1000_holes > 0 and len1000_holes <= 3 ->
-        if len1000_holes > 1 do
+        if len1000_holes > 2 do
           IO.puts "Syncing #{len1000_holes} entries"
         end
         #IO.inspect next1000_holes
@@ -184,7 +184,7 @@ defmodule FabricSyncGen do
         send(NodeGen, {:send_to_some, peer_ips, NodeProto.pack_message(msg)})
 
       len1000_holes_temporal > 0 and len1000_holes_temporal <= 3 ->
-        if len1000_holes_temporal > 1 do
+        if len1000_holes_temporal > 2 do
           IO.puts "Syncing #{len1000_holes_temporal} temporal entries"
         end
         #IO.inspect next1000_holes_temporal
@@ -269,7 +269,7 @@ defmodule FabricSyncGen do
       !isQuorumSyncedOffBy1() -> nil
 
       len1000_holes > 0 ->
-        if len1000_holes > 2 do
+        if len1000_holes > 10 do
           IO.puts "Syncing #{len1000_holes} attestations"
         end
         #IO.inspect next1000_holes
@@ -314,7 +314,7 @@ defmodule FabricSyncGen do
       !hasQuorum() -> nil
 
       len1000_holes > 0 ->
-        if len1000_holes > 2 do
+        if len1000_holes > 10 do
           IO.puts "Syncing #{len1000_holes} attestations"
         end
         #IO.inspect next1000_holes
