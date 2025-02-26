@@ -102,7 +102,7 @@ defmodule SpecialMeetingGen do
       state.slash_trainer.type == :entry and state.slash_trainer[:score_entry] >= 0.75 ->
         IO.inspect {:entry_with_score, state.slash_trainer[:score_entry]}
         IO.inspect state.slash_trainer.entry, limit: 1111111111, printable_limit: 1111111111
-        #send(FabricCoordinatorGen, {:insert_entry, state.slash_trainer.entry, :os.system_time(1000)})
+        send(FabricCoordinatorGen, {:insert_entry, state.slash_trainer.entry, :os.system_time(1000)})
         Map.delete(state, :slash_trainer)
       state.slash_trainer.state == :gather_entry_sigs ->
         business = %{op: "slash_trainer_entry", entry_packed: Entry.pack(state.slash_trainer.entry)}
