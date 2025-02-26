@@ -153,6 +153,12 @@ defmodule Util do
         Base.hex_encode32(b3sum, padding: false, case: :lower)
     end
 
+    def pad_bitstring_to_bytes(bitstring) do
+        bits = bit_size(bitstring)
+        padding = rem(8 - rem(bits, 8), 8)
+        <<bitstring::bitstring, 0::size(padding)>>
+    end
+
     def set_bit(bin, i) when is_bitstring(bin) and is_integer(i) do
         n = bit_size(bin)
 

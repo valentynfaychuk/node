@@ -221,16 +221,6 @@ defmodule Fabric do
             :ok = :rocksdb.transaction_put(rtx, cf.entry_by_slot, "#{e.header_unpacked.slot}:#{e.hash}", e.hash)
         end
 
-        Enum.each(e.txs, fn(tx_packed)->
-            txu = TX.unpack(tx_packed)
-            case :binary.match(entry_packed, tx_packed) do
-              {index_start, index_size} ->
-                value = %{entry_hash: e.hash, index_start: index_start, index_size: index_size}
-                value = :erlang.term_to_binary(value, [:deterministic])
-                :ok = :rocksdb.transaction_put(rtx, cf.tx, txu.hash, value)
-            end
-        end)
-
         :ok = :rocksdb.transaction_commit(rtx)
     end
 
