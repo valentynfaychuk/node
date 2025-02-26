@@ -9,8 +9,8 @@ defmodule NodeState do
   def handle(:ping, istate, term) do
     temporal = Entry.unpack(term.temporal)
     rooted = Entry.unpack(term.rooted)
-    %{error: :ok} = Entry.validate_signature(temporal.header, temporal.signature, temporal.header_unpacked.signer)
-    %{error: :ok} = Entry.validate_signature(rooted.header, rooted.signature, rooted.header_unpacked.signer)
+    %{error: :ok} = Entry.validate_signature(temporal.header, temporal.signature, temporal.header_unpacked.signer, temporal[:mask])
+    %{error: :ok} = Entry.validate_signature(rooted.header, rooted.signature, rooted.header_unpacked.signer, rooted[:mask])
 
     :erlang.spawn(fn()->
       #txs_packed = TXPool.random()
@@ -205,12 +205,21 @@ defmodule NodeState do
     op = term.business.op
     cond do
       #istate.peer.pk != <<>> -> nil
-      op == "slash_trainer" ->
-        signature = SpecialMeetingGen.check_maybe_attest("slash_trainer", term.business.epoch, term.business.malicious_pk)
+      op == "slash_trainer_tx" ->
+        signature = SpecialMeetingAttestGen.maybe_attest("slash_trainer_tx", term.business.epoch, term.business.malicious_pk)
         if signature do
           pk = Application.fetch_env!(:ama, :trainer_pk)
-          business = %{op: "slash_trainer_reply", epoch: term.business.epoch, malicious_pk: term.business.malicious_pk, 
+          business = %{op: "slash_trainer_tx_reply", epoch: term.business.epoch, malicious_pk: term.business.malicious_pk, 
             pk: pk, signature: signature}
+          msg = NodeProto.special_business_reply(business)
+          :erlang.spawn(fn()-> send(NodeGen, {:send_to_some, [istate.peer.ip], pack_message(msg)}) end)
+        end
+      op == "slash_trainer_entry" ->
+        signature = SpecialMeetingAttestGen.maybe_attest("slash_trainer_entry", term.business.entry_packed)
+        entry = Entry.unpack(term.business.entry_packed)
+        if signature do
+          pk = Application.fetch_env!(:ama, :trainer_pk)
+          business = %{op: "slash_trainer_entry_reply", entry_hash: entry.hash, pk: pk, signature: signature}
           msg = NodeProto.special_business_reply(business)
           :erlang.spawn(fn()-> send(NodeGen, {:send_to_some, [istate.peer.ip], pack_message(msg)}) end)
         end
@@ -222,12 +231,19 @@ defmodule NodeState do
     op = term.business.op
     cond do
       #istate.peer.pk != <<>> -> nil
-      op == "slash_trainer_reply" ->
+      op == "slash_trainer_tx_reply" ->
         b = term.business
         msg = <<"slash_trainer", b.epoch::32-little, b.malicious_pk::binary>>
         sigValid = BlsEx.verify?(b.pk, b.signature, msg, BLS12AggSig.dst_motion())
         if sigValid do
-          send(SpecialMeetingGen, {:add_slash_trainer_reply, term.business})
+          send(SpecialMeetingGen, {:add_slash_trainer_tx_reply, term.business.pk, term.business.signature})
+        end
+
+      op == "slash_trainer_entry_reply" ->
+        b = term.business
+        sigValid = BlsEx.verify?(b.pk, b.signature, b.entry_hash, BLS12AggSig.dst_entry())
+        if sigValid do
+          send(SpecialMeetingGen, {:add_slash_trainer_entry_reply, b.entry_hash, b.pk, b.signature})
         end
     end
   end
