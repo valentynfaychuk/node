@@ -43,6 +43,7 @@ defmodule BIC.Epoch do
         epoch_fin = Entry.epoch(env.entry)
         epoch_next = epoch_fin + 1
         top_x = cond do
+            epoch_next > 38 -> 99
             epoch_next > 3 -> 19
             true -> 9
         end
