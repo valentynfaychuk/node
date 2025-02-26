@@ -52,7 +52,7 @@ defmodule Consensus do
                 RocksDB.get("bic:epoch:trainers:#{epoch}", options)
             height <= 3195575 ->
                 RocksDB.get_prev("bic:epoch:trainers:height:", height, options)
-            true ->
+            height <= 3458964 ->
                 elements = RocksDB.get_prefix("bic:epoch:trainers:height:", options)
                 |> Enum.map(fn {k,v}-> {:erlang.binary_to_integer(k), v} end)
                 |> Enum.sort()
@@ -61,7 +61,9 @@ defmodule Consensus do
                 |> case do
                     nil -> nil
                     {_,v} -> v
-                end                
+                end
+            true ->
+                RocksDB.get_prev("bic:epoch:trainers:height:", String.pad_leading("#{height}", 12, "0"), options)
         end
     end
 
@@ -291,6 +293,17 @@ defmodule Consensus do
         :ok = :rocksdb.transaction_put(rtx, cf.sysconf, "temporal_height", :erlang.term_to_binary(next_entry.header_unpacked.height, [:deterministic]))
         #:ok = :rocksdb.transaction_put(rtx, cf.my_mutations_hash_for_entry, next_entry.hash, mutations_hash)
         :ok = :rocksdb.transaction_put(rtx, cf.muts_rev, next_entry.hash, :erlang.term_to_binary(m_rev, [:deterministic]))
+
+        {:ok, entry_packed} = :rocksdb.transaction_get(rtx, cf.default, next_entry.hash)
+        Enum.each(next_entry.txs, fn(tx_packed)->
+            txu = TX.unpack(tx_packed)
+            case :binary.match(entry_packed, tx_packed) do
+              {index_start, index_size} ->
+                value = %{entry_hash: next_entry.hash, index_start: index_start, index_size: index_size}
+                value = :erlang.term_to_binary(value, [:deterministic])
+                :ok = :rocksdb.transaction_put(rtx, cf.tx, txu.hash, value)
+            end
+        end)
 
         :ok = :rocksdb.transaction_commit(rtx)
         

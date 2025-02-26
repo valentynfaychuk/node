@@ -99,8 +99,13 @@ defmodule BIC.Epoch do
         end
         new_trainers = Enum.shuffle(new_trainers)
         kv_put("bic:epoch:trainers:#{epoch_next}", new_trainers)
-        if epoch_next > 3 do
-            kv_put("bic:epoch:trainers:height:#{env.entry.header_unpacked.height+1}", new_trainers)
+        cond do
+            env.entry.header_unpacked.height >= 3458964 ->
+                height = String.pad_leading("#{env.entry.header_unpacked.height+1}", 12, "0")
+                kv_put("bic:epoch:trainers:height:#{height}", new_trainers)
+            epoch_next > 3 -> 
+                kv_put("bic:epoch:trainers:height:#{env.entry.header_unpacked.height+1}", new_trainers)
+            true -> nil
         end
     end
 
@@ -125,7 +130,15 @@ defmodule BIC.Epoch do
             kv_put("bic:epoch:trainers:height:200000", kv_get("bic:epoch:trainers:2"))
             kv_put("bic:epoch:trainers:height:300000", kv_get("bic:epoch:trainers:3"))
         end
-        
+        if env.entry.header_unpacked.height == 3458964 do
+            kv_get_prefix("bic:epoch:trainers:height:")
+            |> Enum.each(fn({height, trainers})->
+                kv_delete("bic:epoch:trainers:height:#{height}")
+                height = String.pad_leading(height, 12, "0")
+                kv_put("bic:epoch:trainers:height:#{height}", trainers)
+            end)
+        end
+
         cur_epoch = Entry.epoch(env.entry)
         <<mask::size(mask_size)-bitstring, _::bitstring>> = mask
 
@@ -148,7 +161,14 @@ defmodule BIC.Epoch do
 
         new_trainers = trainers -- [malicious_pk]
         kv_put("bic:epoch:trainers:#{cur_epoch}", new_trainers)
-        kv_put("bic:epoch:trainers:height:#{env.entry.header_unpacked.height+1}", new_trainers)
+        cond do
+            env.entry.header_unpacked.height >= 3458964 ->
+                height = String.pad_leading("#{env.entry.header_unpacked.height+1}", 12, "0")
+                kv_put("bic:epoch:trainers:height:#{height}", new_trainers)
+            cur_epoch > 3 -> 
+                kv_put("bic:epoch:trainers:height:#{env.entry.header_unpacked.height+1}", new_trainers)
+            true -> nil
+        end
     end
 
     @doc """
