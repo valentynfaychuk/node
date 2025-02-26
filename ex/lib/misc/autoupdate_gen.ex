@@ -6,13 +6,13 @@ defmodule AutoUpdateGen do
   end
 
   def init(state) do
-    :erlang.send_after(30_000, self(), :tick)
+    :erlang.send_after(60_000, self(), :tick)
     {:ok, state}
   end
 
   def handle_info(:tick, state) do
     state = if true do tick(state) else state end
-    :erlang.send_after(30_000, self(), :tick)
+    :erlang.send_after(60_000, self(), :tick)
     {:noreply, state}
   end
 

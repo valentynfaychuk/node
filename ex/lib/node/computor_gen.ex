@@ -15,6 +15,11 @@ defmodule ComputorGen do
 
   def init(state) do
     :erlang.send_after(1000, self(), :tick)
+    case Application.fetch_env!(:ama, :computor_type) do
+      :trainer -> ComputorGen.start(:trainer)
+      :default -> ComputorGen.start()
+      _ -> nil
+    end
     {:ok, state}
   end
 

@@ -2,6 +2,7 @@
 
 
 ### AutoUpdates + Running as a systemd service
+
 ```
 cat <<EOT > /etc/systemd/system.conf
 [Manager]
@@ -45,4 +46,12 @@ systemctl enable amadeusd
 systemctl start amadeusd
 
 screen -rd amadeusd
+```
+
+```
+For computer autostart
+Environment="COMPUTOR=true"
+
+For computer autostart to be validator
+Environment="COMPUTOR=trainer"
 ```
