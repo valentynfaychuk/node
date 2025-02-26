@@ -1,8 +1,8 @@
 defmodule NodeProto do
   def ping() do
     tip = Consensus.chain_tip_entry()
-    temporal = tip |> Map.take([:header, :signature])
-    rooted = Fabric.rooted_tip_entry() |> Map.take([:header, :signature])
+    temporal = tip |> Map.take([:header, :signature, :mask])
+    rooted = Fabric.rooted_tip_entry() |> Map.take([:header, :signature, :mask])
     %{op: :ping, temporal: temporal, rooted: rooted, ts_m: :os.system_time(1000)}
   end
 

@@ -15,6 +15,7 @@ defmodule Entry do
         txs []
         hash <header>
         sig <hash>
+        optional|mask <bits>
     }
     """
 
@@ -31,7 +32,7 @@ defmodule Entry do
     def pack(entry_unpacked) when is_binary(entry_unpacked) do entry_unpacked end
     def pack(entry_unpacked) do
         entry_unpacked
-        |> Map.take([:header, :txs, :hash, :signature])
+        |> Map.take([:header, :txs, :hash, :signature, :mask])
         |> :erlang.term_to_binary([:deterministic])
     end
 
@@ -59,7 +60,7 @@ defmodule Entry do
         entry_size = Application.fetch_env!(:ama, :entry_size)
         if byte_size(entry_packed) >= entry_size, do: throw(%{error: :too_large})        
         e = :erlang.binary_to_term(entry_packed, [:safe])
-        |> Map.take([:header, :txs, :hash, :signature])
+        |> Map.take([:header, :txs, :hash, :signature, :mask])
         if entry_packed != :erlang.term_to_binary(e, [:deterministic]), do: throw %{error: :not_deterministicly_encoded}
         eh = :erlang.binary_to_term(e.header, [:safe])
         |> Map.take([:slot, :prev_slot, :height, :prev_hash, :signer, :dr, :vr, :txs_hash])
@@ -67,7 +68,7 @@ defmodule Entry do
 
         e = Map.put(e, :header_unpacked, eh)
 
-        res_sig = validate_signature(e.header, e.signature, e.header_unpacked.signer)
+        res_sig = validate_signature(e.header, e.signature, e.header_unpacked.signer, e[:mask])
         res_entry = validate_entry(e)
         cond do 
             res_sig.error != :ok -> throw res_sig
@@ -80,10 +81,19 @@ defmodule Entry do
         end
     end
 
-    def validate_signature(header, signature, signer) do
+    def validate_signature(header, signature, signer, mask \\ nil) do
         try do
         hash = Blake3.hash(header)
-        if !BlsEx.verify?(signer, signature, hash, BLS12AggSig.dst_entry()), do: throw(%{error: :invalid_signature})
+        if mask do
+            header_unpacked = :erlang.binary_to_term(header, [:safe])
+            trainers = Consensus.trainers_for_height(header_unpacked.height)
+            trainers_signed = BLS12AggSig.unmask_trainers(trainers, mask)
+            
+            aggpk = BlsEx.aggregate_public_keys!(trainers_signed)
+            if !BlsEx.verify?(aggpk, signature, hash, BLS12AggSig.dst_entry()), do: throw(%{error: :invalid_signature})
+        else
+            if !BlsEx.verify?(signer, signature, hash, BLS12AggSig.dst_entry()), do: throw(%{error: :invalid_signature})
+        end
         %{error: :ok}
         catch
             :throw,r -> r
@@ -108,11 +118,15 @@ defmodule Entry do
         if !is_binary(eh.txs_hash), do: throw(%{error: :txs_hash_not_binary})
         if byte_size(eh.txs_hash) != 32, do: throw(%{error: :txs_hash_not_256_bits})
 
+        if !!e[:mask] and !is_bitstring(e.mask), do: throw(%{error: :mask_not_bitstring})
+
         if !is_list(e.txs), do: throw(%{error: :txs_not_list})
         if length(e.txs) > 1, do: throw(%{error: :TEMPORARY_txs_only_one_per_entry})
         if eh.txs_hash != Blake3.hash(Enum.join(e.txs)), do: throw(%{error: :txs_hash_invalid})
+
+        is_special_meeting_block = !!e[:mask]
         Enum.each(e.txs, fn(tx_packed)->
-            %{error: err, txu: txu} = TX.validate(tx_packed)
+            %{error: err, txu: txu} = TX.validate(tx_packed, is_special_meeting_block)
             if err != :ok, do: throw(err)
         end)
 

@@ -29,7 +29,7 @@ defmodule TX do
       end
    end
 
-   def validate(tx_packed) do
+   def validate(tx_packed, is_special_meeting_block \\ false) do
       try do
          tx_size = Application.fetch_env!(:ama, :tx_size)
        if byte_size(tx_packed) >= tx_size, do: throw(%{error: :too_large})
@@ -65,6 +65,11 @@ defmodule TX do
       end)
       if !:lists.member(action.contract, ["Epoch", "Coin"]), do: throw %{error: :invalid_module}
       if !:lists.member(action.function, ["submit_sol", "transfer", "set_emission_address", "slash_trainer"]), do: throw %{error: :invalid_function}
+
+      if is_special_meeting_block do
+         if !:lists.member(action.contract, ["Epoch"]), do: throw %{error: :invalid_module_for_special_meeting}
+         if !:lists.member(action.function, ["slash_trainer"]), do: throw %{error: :invalid_function_for_special_meeting}
+      end
 
       #if !!txp.tx[:delay] and !is_integer(txp.tx.delay), do: throw %{error: :delay_not_integer}
       #if !!txp.tx[:delay] and txp.tx.delay <= 0, do: throw %{error: :delay_too_low}
