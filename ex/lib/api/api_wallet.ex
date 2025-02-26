@@ -1,4 +1,4 @@
-defmodule Wallet do
+defmodule API.Wallet do
     def balance() do
         pk = Application.fetch_env!(:ama, :trainer_pk)
         coins = Consensus.chain_balance(pk)
@@ -12,4 +12,9 @@ defmodule Wallet do
         TXPool.insert(tx_packed)
         NodeGen.broadcast(:txpool, :trainers, [[tx_packed]])
     end
+end
+
+defmodule Wallet do
+    def balance() do API.Wallet.balance() end
+    def transfer(to, amount) do API.Wallet.transfer(to, amount) end
 end
