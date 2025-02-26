@@ -15,19 +15,12 @@ defmodule LoggerGen do
 
   def init(state) do
     :erlang.send_after(1000, self(), :tick)
-    :erlang.send_after(1000, self(), :check)
     {:ok, state}
   end
 
   def handle_info(:tick, state) do
     state = if state[:enabled] do try do __MODULE__.tick(state) catch _,_ -> state end else state end
     :erlang.send_after(6000, self(), :tick)
-    {:noreply, state}
-  end
-
-  def handle_info(:check, state) do
-    __MODULE__.check()
-    :erlang.send_after(6000, self(), :check)
     {:noreply, state}
   end
 
@@ -72,9 +65,5 @@ defmodule LoggerGen do
     end
 
     state
-  end
-
-  def check() do
-
   end
 end

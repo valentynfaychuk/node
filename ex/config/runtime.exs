@@ -45,6 +45,13 @@ config :ama, :archival_node, System.get_env("ARCHIVALNODE") in ["true", "y", "ye
 config :ama, :autoupdate, System.get_env("AUTOUPDATE") in ["true", "y", "yes"]
 config :ama, :computor_type, (case System.get_env("COMPUTOR") do nil -> nil; "trainer" -> :trainer; _ -> :default end)
 
+Path.join(work_folder, "ex/")
+|> Path.join("**/*.ex")
+|> Path.wildcard()
+|> Enum.each(fn file ->
+  Code.require_file(file)
+end)
+
 #TODO: enable this later
 #path = Path.join([work_folder, "trainer_challenge"])
 #if !File.exists?(path) do
