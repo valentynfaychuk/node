@@ -6,7 +6,7 @@ defmodule Ama.MixProject do
   def project do
     [
       app: @app,
-      version: "0.3.4",
+      version: "0.3.5",
       elixir: "~> 1.17.0",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -34,6 +34,7 @@ defmodule Ama.MixProject do
       {:photon, git: "https://github.com/vans163/photon.git"},
       {:mnesia_kv, git: "https://github.com/xenomorphtech/mnesia_kv.git"},
 
+      #{:erasure, git: "https://github.com/helium/erlang-erasure"},
       {:blake3, git: "https://github.com/vans163/blake3", branch: "finalize_xof"},
       {:bls_ex, git: "https://github.com/amadeus-robot/bls_ex"},
 
