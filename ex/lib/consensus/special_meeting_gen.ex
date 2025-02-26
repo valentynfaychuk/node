@@ -1,11 +1,11 @@
 defmodule SpecialMeetingGen do
   use GenServer
 
-  def try_slash_trainer_block(mpk) do
-    send(SpecialMeetingGen, {:try_slash_trainer_block, mpk})
+  def try_slash_trainer_entry(mpk) do
+    send(SpecialMeetingGen, {:try_slash_trainer_entry, mpk})
   end
 
-  #SpecialMeetingGen.try_slash_trainer_tx(Base58.decode("7M8CGZF83tqtPEeDRdGsHVCKXicrfYuBzdckmHvJ3NyqhcWKA62pAmcQWrJUDETjgN"))
+  #SpecialMeetingGen.try_slash_trainer_entry(Base58.decode("7M8CGZF83tqtPEeDRdGsHVCKXicrfYuBzdckmHvJ3NyqhcWKA62pAmcQWrJUDETjgN"))
   def try_slash_trainer_tx(mpk) do
     send(SpecialMeetingGen, {:try_slash_trainer_tx, mpk})
   end
@@ -25,7 +25,7 @@ defmodule SpecialMeetingGen do
     {:noreply, state}
   end
 
-  def handle_info({:try_slash_trainer_block, mpk}, state) do
+  def handle_info({:try_slash_trainer_entry, mpk}, state) do
     slash_trainer = build_slash_tx_business(mpk)
     state = put_in(state, [:slash_trainer], slash_trainer)
     state = put_in(state, [:slash_trainer, :type], :entry)
@@ -90,15 +90,15 @@ defmodule SpecialMeetingGen do
       state.slash_trainer.type == :tx and state.slash_trainer[:score_tx] >= 0.75 ->
         # TXPool.insert(build_slash_tx(state.slash_trainer))
         Map.delete(state, :slash_trainer)
+      state.slash_trainer.type == :entry and state.slash_trainer.state == :gather_tx_sigs and state.slash_trainer[:score_tx] >= 0.75 ->
+        entry = build_slash_entry(state.slash_trainer)
+        state = put_in(state, [:slash_trainer, :entry], entry)
+        put_in(state, [:slash_trainer, :state], :gather_entry_sigs)
       state.slash_trainer.state == :gather_tx_sigs ->
         business = %{op: "slash_trainer_tx", epoch: state.slash_trainer.epoch, malicious_pk: state.slash_trainer.malicious_pk}
         NodeGen.broadcast(:special_business, :trainers, [business])
         put_in(state, [:slash_trainer, :attempts], state.slash_trainer.attempts + 1)
 
-      state.slash_trainer.type == :entry and state.slash_trainer[:score_tx] >= 0.75 ->
-        entry = build_slash_entry(state.slash_trainer)
-        state = put_in(state, [:slash_trainer, :entry], entry)
-        put_in(state, [:slash_trainer, :state], :gather_entry_sigs)
       state.slash_trainer.type == :entry and state.slash_trainer[:score_entry] >= 0.75 ->
         IO.inspect {:entry_with_score, state.slash_trainer[:score_entry]}
         IO.inspect state.slash_trainer.entry, limit: 1111111111, printable_limit: 1111111111

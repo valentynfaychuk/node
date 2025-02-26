@@ -127,11 +127,11 @@ defmodule SpecialMeetingAttestGen do
   def maybe_attest("slash_trainer_entry", entry_packed) do
     slotStallTrainer = isNextSlotStalled()
     cur_entry = Consensus.chain_tip_entry()
-    entry = Entry.unpack_and_validate(entry_packed)
+    %{error: :ok, entry: entry} = Entry.unpack_and_validate(entry_packed)
 
     1 = length(entry.txs)
-    tx = TX.unpack(hd(entry.txs))
-    %{contract: "Epoch", function: "slash_trainer", args: args} = hd(tx.txu.actions)
+    txu = TX.unpack(hd(entry.txs))
+    %{contract: "Epoch", function: "slash_trainer", args: args} = hd(txu.tx.actions)
     [epoch, malicious_pk, signature, mask_size, mask] = args
     <<mask::size(mask_size)-bitstring, _::bitstring>> = mask
 
