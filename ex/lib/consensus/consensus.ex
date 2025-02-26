@@ -191,6 +191,16 @@ defmodule Consensus do
         end
     end
 
+    def chain_tx(tx_hash) do
+        %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+        map = RocksDB.get(tx_hash, %{db: db, cf: cf.tx ,term: true})
+        if map do
+            entry_bytes = RocksDB.get(map.entry_hash, %{db: db})
+            tx_bytes = binary_part(entry_bytes, map.index_start, map.index_size)
+            TX.unpack(tx_bytes)
+        end
+    end
+
     def is_in_chain(target_hash) do
         case Fabric.entry_by_hash_w_mutsrev(target_hash) do
             nil -> false
@@ -294,7 +304,7 @@ defmodule Consensus do
         #:ok = :rocksdb.transaction_put(rtx, cf.my_mutations_hash_for_entry, next_entry.hash, mutations_hash)
         :ok = :rocksdb.transaction_put(rtx, cf.muts_rev, next_entry.hash, :erlang.term_to_binary(m_rev, [:deterministic]))
 
-        {:ok, entry_packed} = :rocksdb.transaction_get(rtx, cf.default, next_entry.hash)
+        {:ok, entry_packed} = :rocksdb.transaction_get(rtx, cf.default, next_entry.hash, [])
         Enum.each(next_entry.txs, fn(tx_packed)->
             txu = TX.unpack(tx_packed)
             case :binary.match(entry_packed, tx_packed) do
