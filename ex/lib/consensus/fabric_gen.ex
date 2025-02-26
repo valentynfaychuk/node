@@ -18,7 +18,7 @@ defmodule FabricGen do
   end
 
   def handle_info(:tick_slot, state) do
-    #state = if true do tick_slot(state) else state end
+    state = if true do tick_slot(state) else state end
     :erlang.send_after(100, self(), :tick_slot)
     {:noreply, state}
   end

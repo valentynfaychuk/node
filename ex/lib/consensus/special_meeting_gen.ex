@@ -5,7 +5,6 @@ defmodule SpecialMeetingGen do
     send(SpecialMeetingGen, {:try_slash_trainer_entry, mpk})
   end
 
-  #SpecialMeetingGen.try_slash_trainer_entry(Base58.decode("7M8CGZF83tqtPEeDRdGsHVCKXicrfYuBzdckmHvJ3NyqhcWKA62pAmcQWrJUDETjgN"))
   def try_slash_trainer_tx(mpk) do
     send(SpecialMeetingGen, {:try_slash_trainer_tx, mpk})
   end
