@@ -71,7 +71,6 @@ defmodule NodeGen do
     end)
   end
 
-
   def tick() do
     :erlang.spawn(fn()->
       NodePeers.clear_stale()

@@ -12,4 +12,15 @@ defmodule API.TX do
 
     def get_by_address(pk) do
     end
+
+    def submit(tx_packed) do
+        %{error: error} = TX.validate(tx_packed)
+        if error == :ok do
+            TXPool.insert(tx_packed)
+            NodeGen.broadcast(:txpool, :trainers, [[tx_packed]])
+            %{error: :ok}
+        else
+            %{error: error}
+        end
+    end
 end

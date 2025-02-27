@@ -75,18 +75,30 @@ defmodule Ama.MultiServer do
             r.method == "GET" and r.path == "/favicon.ico" ->
                 quick_reply(state, "")
 
-            r.method == "POST" and String.starts_with?(r.path, "/api/") ->
-                {r, body} = Photon.HTTP.read_body_all_json(state.socket, r)
-                quick_reply(state, "")
+            r.method == "GET" and String.starts_with?(r.path, "/api/chain/tip") ->
+                result = API.Chain.entry_tip()
+                quick_reply(state, result)
 
+            r.method == "GET" and String.starts_with?(r.path, "/api/wallet/balance/") ->
+                pk = String.replace(r.path, "/api/wallet/balance/", "")
+                balance = API.Wallet.balance(pk)
+                quick_reply(state, %{error: :ok, balance: balance})
 
-            r.method == "GET" ->
-                bin = build_dashboard(state)
-                quick_reply(state, bin)
+            r.method == "POST" and String.starts_with?(r.path, "/api/tx/submit") ->
+                {r, tx_packed} = Photon.HTTP.read_body_all_json(state.socket, r)
+                result = API.TX.submit(tx_packed)
+                quick_reply(state, result)
+            r.method == "GET" and String.starts_with?(r.path, "/api/tx/submit/") ->
+                tx_packed = String.replace(r.path, "/api/tx/submit/", "")
+                result = API.TX.submit(tx_packed)
+                quick_reply(state, result)
+
+            #r.method == "GET" ->
+            #    bin = build_dashboard(state)
+            #    quick_reply(state, bin)
 
             true ->
-                reply = Photon.HTTP.Response.build_cors(state.request, 404, %{}, %{error: :not_found})
-                quick_reply(state, reply)
+                quick_reply(state, %{error: :not_found}, 404)
         end
     end
 end

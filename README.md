@@ -49,9 +49,9 @@ screen -rd amadeusd
 ```
 
 ```
-For computer autostart
+For computor autostart
 Environment="COMPUTOR=true"
 
-For computer autostart to be validator
+For computor autostart to be validator
 Environment="COMPUTOR=trainer"
 ```

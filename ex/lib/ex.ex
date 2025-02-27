@@ -56,17 +56,17 @@ defmodule Ama do
       {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: atom, start: {NodeGenSocketGen, :start_link, [ip4, port, atom]}, restart: :permanent})
     end)
 
-
     #web panel
-    #ip4 = Application.fetch_env!(:ama, :http_ip4)
-    #port = Application.fetch_env!(:ama, :http_port)
-    #{a,b,c,d} = ip4
-    #ip4_string = "#{a}.#{b}.#{c}.#{d}"
-    #IO.puts "started http-api on #{ip4_string}:#{port}"
+    ipv4 = {a,b,c,d} = Application.fetch_env!(:ama, :http_ipv4)
+    if ipv4 != {0,0,0,0} do
+      ipv4_string = "#{a}.#{b}.#{c}.#{d}"
+      port = Application.fetch_env!(:ama, :http_port)
+      IO.puts "started http-api on #{ipv4_string}:#{port}"
 
-    #{:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{
-    #  id: Photon.GenTCPAcceptor, start: {Photon.GenTCPAcceptor, :start_link, [ip4, port, Ama.MultiServer]}
-    #})
+      {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{
+        id: Photon.GenTCPAcceptor, start: {Photon.GenTCPAcceptor, :start_link, [ipv4, port, Ama.MultiServer]}
+      })
+    end
 
     supervisor
   end
