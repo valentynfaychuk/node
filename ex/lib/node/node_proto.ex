@@ -57,7 +57,23 @@ defmodule NodeProto do
     %{op: :special_business_reply, business: business}
   end
 
+  def deflate_compress(data) do
+    z = :zlib.open()
+    :zlib.deflateInit(z, 6, :deflated, -15, 8, :default)
+    compressed = :zlib.deflate(z, data, :finish)
+    :zlib.deflateEnd(z)
+    :zlib.close(z)
+    :erlang.list_to_binary(compressed)
+  end
 
+  def deflate_decompress(compressed_data) do
+    z = :zlib.open()
+    :zlib.inflateInit(z, -15)
+    decompressed = :zlib.inflate(z, compressed_data)
+    :zlib.inflateEnd(z)
+    :zlib.close(z)
+    :erlang.list_to_binary(decompressed)
+  end
 
   def pack_message(msg) do
     pk = Application.fetch_env!(:ama, :trainer_pk)
@@ -76,7 +92,7 @@ defmodule NodeProto do
     msg_envelope = %{msg_packed: msg_packed, signature: signature}
     msg_envelope_packed = msg_envelope
     |> :erlang.term_to_binary([:deterministic])
-    |> :zlib.gzip()
+    |> deflate_compress()
 
     iv = :crypto.strong_rand_bytes(12)
     {ciphertext, tag} = encrypt(iv, msg_envelope_packed)
@@ -88,7 +104,7 @@ defmodule NodeProto do
       <<iv::12-binary, tag::16-binary, ciphertext::binary>> = data
       plaintext = decrypt(iv, tag, ciphertext)
       msg_envelope = plaintext
-      |> :zlib.gunzip()
+      |> deflate_decompress()
       |> :erlang.binary_to_term([:safe])
 
       msg = :erlang.binary_to_term(msg_envelope.msg_packed, [:safe])
@@ -105,7 +121,7 @@ defmodule NodeProto do
 
   #useless key to prevent udp noise
   def aes256key do
-    <<0, 3, 3, 94, 44, 225, 200, 37, 227, 180, 114, 230, 230, 219, 177, 28, 
+    <<0, 6, 2, 94, 44, 225, 200, 37, 227, 180, 114, 230, 230, 219, 177, 28, 
     80, 19, 72, 13, 196, 129, 81, 216, 161, 36, 177, 212, 199, 6, 169, 26>>
   end
 
