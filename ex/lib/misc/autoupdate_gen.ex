@@ -24,7 +24,7 @@ defmodule AutoUpdateGen do
   def upgrade() do
     url = "https://api.github.com/repos/amadeus-robot/node/releases/latest"
     {:ok, %{status_code: 200, body: body}} = :comsat_http.get(url, %{},
-        %{:ssl_options=> [{:server_name_indication, 'api.github.com'}, {:verify, :verify_none}]})
+        %{ssl_options: [{:server_name_indication, 'api.github.com'}, {:verify, :verify_none}]})
     json = JSX.decode!(body, labels: :atom)
     if Application.fetch_env!(:ama, :version) < String.trim(json.tag_name, "v") do
         download_url = Enum.find_value(json.assets, fn(asset)->
@@ -33,7 +33,7 @@ defmodule AutoUpdateGen do
         if download_url do
             IO.inspect {:downloading_upgrade, download_url}
             {:ok, %{status_code: 200, body: bin}} = :comsat_http.get(download_url, %{},
-                %{:ssl_options=> [{:server_name_indication, 'github.com'}, {:verify, :verify_none}]})
+                %{timeout: 300_000, ssl_options: [{:server_name_indication, 'github.com'}, {:verify, :verify_none}]})
 
             cwd_dir = File.cwd!()
             path_tmp = Path.join(cwd_dir, "amadeusd_tmp")
