@@ -26,7 +26,7 @@ defmodule AutoUpdateGen do
     {:ok, %{status_code: 200, body: body}} = :comsat_http.get(url, %{},
         %{:ssl_options=> [{:server_name_indication, 'api.github.com'}, {:verify, :verify_none}]})
     json = JSX.decode!(body, labels: :atom)
-    if Application.fetch_env!(:ama, :version) != String.trim(json.tag_name, "v") do
+    if Application.fetch_env!(:ama, :version) < String.trim(json.tag_name, "v") do
         download_url = Enum.find_value(json.assets, fn(asset)->
             asset.name == "amadeusd" and asset.browser_download_url
         end)
