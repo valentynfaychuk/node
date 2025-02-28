@@ -72,9 +72,7 @@ defmodule NodeGen do
   end
 
   def tick() do
-    :erlang.spawn(fn()->
-      NodePeers.clear_stale()
-    end)
+    NodePeers.clear_stale()
   end
 
   def handle_info(msg, state) do

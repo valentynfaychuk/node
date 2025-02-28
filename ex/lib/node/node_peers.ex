@@ -20,14 +20,16 @@ defmodule NodePeers do
 
   def clear_stale() do
     ts_m = :os.system_time(1000)
-    peers = :ets.tab2list(NODEPeers)
-    |> Enum.each(fn {key, v}->
+    :ets.foldl(fn({key, v}, acc)->
       lp = v[:last_ping]
       #60 minutes
       if !v[:static] and !!lp and ts_m > lp+(1_000*60*60) do
-        :ets.delete(NODEPeers, key)
+        acc ++ [key]
+      else
+        acc
       end
-    end)
+    end, [], NODEPeers)
+    |> Enum.each(& :ets.delete(NODEPeers, &1))
   end
 
   def all() do
