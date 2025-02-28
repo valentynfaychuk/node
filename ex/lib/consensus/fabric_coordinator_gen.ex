@@ -31,23 +31,6 @@ defmodule FabricCoordinatorGen do
     end)
   end
 
-  def handle_info({:insert_entry_attestation, entry, attestation, seen_time}, state) do
-    Fabric.insert_entry(entry, seen_time)
-    precalc_sols(entry)
-    Fabric.aggregate_attestation(attestation)
-    {:noreply, state}
-  end
-
-  def handle_info({:insert_entry_validate_consensus, entry, consensus, seen_time}, state) do
-    Fabric.insert_entry(entry, seen_time)
-    precalc_sols(entry)
-    :erlang.spawn(fn()->
-      %{error: :ok, consensus: consensus} = Consensus.validate_vs_chain(consensus)
-      send(FabricCoordinatorGen, {:insert_consensus, consensus})
-    end)
-    {:noreply, state}
-  end
-
   def handle_info({:insert_entry, entry, seen_time}, state) do
     Fabric.insert_entry(entry, seen_time)
     precalc_sols(entry)

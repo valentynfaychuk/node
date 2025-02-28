@@ -221,7 +221,7 @@ defmodule Fabric do
             :ok = :rocksdb.transaction_put(rtx, cf.entry_by_slot, "#{e.header_unpacked.slot}:#{e.hash}", e.hash)
         end
 
-        :ok = :rocksdb.transaction_commit(rtx)
+        :rocksdb.transaction_commit(rtx)
     end
 
     def get_or_resign_my_attestation(entry_hash) do

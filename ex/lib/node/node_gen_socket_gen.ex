@@ -7,6 +7,9 @@ defmodule NodeGenSocketGen do
 
   def init([ip_tuple, port, name]) do
     lsocket = listen(port, [{:ifaddr, ip_tuple}])
+    recbuf_mb = (get_sys_recvbuf(lsocket)/1024)/1024
+    IO.puts "recbuf: #{recbuf_mb}MB"
+
     ip = Tuple.to_list(ip_tuple) |> Enum.join(".")
     state = %{
       name: name,
@@ -22,12 +25,17 @@ defmodule NodeGenSocketGen do
       {:reuseaddr, true},
       {:reuseport, true}, #working in OTP26.1+
       {:buffer, 65536}, #max-size read
-      {:recbuf, 16777216}, #total accum
+      {:recbuf, 33554432}, #total accum
       {:sndbuf, 1048576}, #total accum
       :binary,
     ]
     {:ok, lsocket} = :gen_udp.open(port, basic_opts++opts)
     lsocket
+  end
+
+  def get_sys_recvbuf(socket) do
+    {:ok, [{:raw, 1, 8, <<size::32-little>>}]} = :inet.getopts(socket, [{:raw, 1, 8, 4}])
+    size
   end
 
   def handle_info(msg, state) do

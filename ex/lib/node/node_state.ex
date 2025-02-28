@@ -101,17 +101,21 @@ defmodule NodeState do
     seen_time = :os.system_time(1000)
 
     %{error: :ok, entry: entry} = Entry.unpack_and_validate(term.entry_packed)
+    case Fabric.insert_entry(entry, seen_time) do
+      :ok -> FabricCoordinatorGen.precalc_sols(entry)
+      {:error, {:error, ~c"Resource busy: "}} -> :ok
+        #IO.inspect {:insert_entry, :resource_busy, Base58.encode(entry.hash)}
+    end
     cond do
         !!term[:consensus_packed] ->
             c = Consensus.unpack(term.consensus_packed)
-            send(FabricCoordinatorGen, {:insert_entry_validate_consensus, entry, c, seen_time})
+            send(FabricCoordinatorGen, {:validate_consensus, c})
 
         !!term[:attestation_packed] ->
             %{error: :ok, attestation: a} = Attestation.unpack_and_validate(term.attestation_packed)
-            send(FabricCoordinatorGen, {:insert_entry_attestation, entry, a, seen_time})
+            send(FabricCoordinatorGen, {:add_attestation, a})
 
-        true ->
-            send(FabricCoordinatorGen, {:insert_entry, entry, seen_time})
+        true -> :ok
     end
   end
 
