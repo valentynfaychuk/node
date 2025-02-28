@@ -14,7 +14,11 @@ defmodule API.Peer do
 
     def all() do
         NodePeers.all
-        |> Enum.map(& [&1[:version],&1[:latency],Base58.encode(&1[:pk]),get_in(&1, [:temporal, :header_unpacked, :height])])
+        |> Enum.map(& [
+            &1[:version],&1[:latency],Base58.encode(&1[:pk]),
+            get_in(&1, [:temporal, :header_unpacked, :height]),
+            get_in(&1, [:rooted, :header_unpacked, :height]),
+        ])
         |> Enum.sort(:desc)
     end
 end

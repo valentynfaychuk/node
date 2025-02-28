@@ -26,4 +26,17 @@ defmodule API.Chain do
         entry = put_in(entry, [:header_unpacked, :prev_hash], Base58.encode(entry.header_unpacked.prev_hash))
         entry = put_in(entry, [:header_unpacked, :signer], Base58.encode(entry.header_unpacked.signer))
     end
+
+    def consensuses_by_height(height) do
+        Fabric.consensuses_by_height(height)
+        |> Enum.map(fn(c)->
+            c = put_in(c, [:mutations_hash], Base58.encode(c.mutations_hash))
+            c = put_in(c, [:entry_hash], Base58.encode(c.entry_hash))
+            c = put_in(c, [:aggsig], Base58.encode(c.aggsig))
+            signers = BLS12AggSig.unmask_trainers(Consensus.trainers_for_height(height), c.mask)
+            |> Enum.map(& Base58.encode(&1))
+            c = put_in(c, [:signers], signers)
+            Map.drop(c, [:mask])
+        end)
+    end
 end
