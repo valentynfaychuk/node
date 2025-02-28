@@ -9,6 +9,13 @@ defmodule NodeGenSocketGen do
     lsocket = listen(port, [{:ifaddr, ip_tuple}])
     recbuf_mb = (get_sys_recvbuf(lsocket)/1024)/1024
     IO.puts "recbuf: #{recbuf_mb}MB"
+    if recbuf_mb < 64 do
+      IO.puts "🔴WARNING: recbuf way too low, please edit /etc/sysctl.conf"
+      IO.puts "🔴WARNING: set values to ATLEAST and reboot or `sysctl --system`"
+      IO.puts "net.core.rmem_max = 268435456"
+      IO.puts "net.core.optmem_max = 524288"
+      IO.puts "net.core.netdev_max_backlog = 300000"
+    end
 
     ip = Tuple.to_list(ip_tuple) |> Enum.join(".")
     state = %{
