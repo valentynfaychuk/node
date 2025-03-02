@@ -133,7 +133,7 @@ defmodule Fabric do
         isTrainer = my_pk in trainers
 
         consens = consensuses_by_height(height)
-        |> Enum.filter(fn(c)-> BLS12AggSig.score(trainers, c.mask) >= 1.0 end)
+        |> Enum.filter(fn(c)-> BLS12AggSig.score(trainers, c.mask) >= 0.6 end)
         |> Enum.take(1)
 
         entries = Fabric.entries_by_height(height)
@@ -156,7 +156,7 @@ defmodule Fabric do
         isTrainer = my_pk in trainers
 
         consens = consensuses_by_height(height)
-        |> Enum.filter(fn(c)-> BLS12AggSig.score(trainers, c.mask) >= 1.0 end)
+        |> Enum.filter(fn(c)-> BLS12AggSig.score(trainers, c.mask) >= 0.6 end)
         |> Enum.take(1)
 
         cond do
@@ -280,7 +280,9 @@ defmodule Fabric do
 
     def insert_consensus(consensus) do
         entry_hash = consensus.entry_hash
-        if consensus.score >= 1.0 do
+        entry = Fabric.entry_by_hash(entry_hash)
+        {_, oldScore, _} = best_consensus_by_entryhash(Consensus.trainers_for_height(Entry.height(entry)), entry_hash)
+        if consensus.score >= 0.6 and consensus.score > (oldScore||0) do
             %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
             {:ok, rtx} = :rocksdb.transaction(db, [])
             
@@ -289,7 +291,7 @@ defmodule Fabric do
             :ok = :rocksdb.transaction_put(rtx, cf.consensus_by_entryhash, entry_hash, :erlang.term_to_binary(consensuses, [:deterministic]))
             :ok = :rocksdb.transaction_commit(rtx)
         else
-            IO.inspect {:insert_consensus, :rejected_by_score, consensus.score}
+            #IO.inspect {:insert_consensus, :rejected_by_score, oldScore, consensus.score}
         end
     end
 end
