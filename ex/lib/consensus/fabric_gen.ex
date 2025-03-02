@@ -1,6 +1,10 @@
 defmodule FabricGen do
   use GenServer
 
+  def isSyncing() do
+    :persistent_term.get(FabricSyncing, false)
+  end
+
   def start_link() do
     GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
   end
@@ -25,9 +29,10 @@ defmodule FabricGen do
 
   def tick(state) do
     #IO.inspect "tick"
-    
+    :persistent_term.put(FabricSyncing, true)
     proc_consensus()
     proc_entries()
+    :persistent_term.put(FabricSyncing, false)
 
     #TODO: check if reorg needed
     TXPool.purge_stale()
@@ -77,6 +82,7 @@ defmodule FabricGen do
 
   defp proc_consensus_1(next_height) do
     next_entries = best_entry_for_height(next_height)
+    #IO.inspect {next_entries, next_height}
     case List.first(next_entries) do
         #TODO: adjust the maliciousness rate via score
         {best_entry, mut_hash, score} when score >= 0.6 ->
@@ -94,6 +100,8 @@ defmodule FabricGen do
                 IO.puts "EMERGENCY: consensus chose entry #{Base58.encode(best_entry.hash)} for height/slot #{height}/#{slot}"
                 IO.puts "but our mutations are #{Base58.encode(mymut[:mutations_hash])} while consensus is #{Base58.encode(mut_hash)}"
                 IO.puts "EMERGENCY: consensus halted as state is out of sync with network"
+                {entry, mut_hash, score} = List.first(best_entry_for_height(next_height - 1))
+                true = Consensus.chain_rewind(entry.hash)
                 :erlang.halt()
 
               true ->
@@ -133,6 +141,8 @@ defmodule FabricGen do
         !in_slot -> false
         slot_delta != 1 -> false
         Entry.validate_next(cur_entry, next_entry) != %{error: :ok} -> false
+        next_height == 319_556 and next_entry.hash != <<62, 174, 196, 89, 223, 58, 187, 192, 204, 17, 199, 93, 106, 9, 245, 4, 59, 218, 138, 7, 34, 69, 111, 90, 100, 90, 6, 9, 54, 111, 204, 15>> -> false
+        next_height == 319_559 and next_entry.hash != <<124, 128, 101, 226, 21, 9, 196, 12, 196, 238, 91, 47, 103, 192, 169, 43, 172, 126, 167, 38, 36, 164, 93, 222, 8, 5, 172, 203, 21, 176, 135, 7>> -> false
         true -> true
       end
     end)
@@ -146,11 +156,7 @@ defmodule FabricGen do
         
         send(FabricEventGen, {:entry, entry, m_hash, m, l})
         
-        if attestation_packed do
-          map = %{entry_packed: Entry.pack(entry)}
-          NodeGen.broadcast(:entry, :trainers, [map])
-          NodeGen.broadcast(:entry, 100, [map])
-
+        if !!attestation_packed and FabricSyncAttestGen.isQuorumSyncedOffBy1() do
           NodeGen.broadcast(:attestation_bulk, :trainers, [[attestation_packed]])
           NodeGen.broadcast(:attestation_bulk, 100, [[attestation_packed]])
         end
@@ -166,7 +172,7 @@ defmodule FabricGen do
     slot_trainer = Consensus.trainer_for_slot(next_height, next_slot)
 
     cond do
-      !FabricSyncGen.isQuorumSynced() -> nil
+      !FabricSyncAttestGen.isQuorumSynced() -> nil
 
       pk == slot_trainer ->
         IO.puts "🔧 im in slot #{next_slot}, working.. *Click Clak*"
