@@ -37,6 +37,10 @@ defmodule NodeProto do
     %{op: :consensus_bulk, consensuses_packed: consensuses_packed}
   end
 
+  def catchup_entry(heights) do
+    %{op: :catchup_entry, heights: heights}
+  end
+
   def catchup_tri(heights) do
     %{op: :catchup_tri, heights: heights}
   end

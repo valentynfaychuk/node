@@ -9,19 +9,23 @@ defmodule NodeState do
   def handle(:ping, istate, term) do
     temporal = Entry.unpack(term.temporal)
     rooted = Entry.unpack(term.rooted)
-    %{error: :ok} = Entry.validate_signature(temporal.header, temporal.signature, temporal.header_unpacked.signer, temporal[:mask])
-    %{error: :ok} = Entry.validate_signature(rooted.header, rooted.signature, rooted.header_unpacked.signer, rooted[:mask])
+    try do
+      %{error: :ok} = Entry.validate_signature(temporal.header, temporal.signature, temporal.header_unpacked.signer, temporal[:mask])
+      %{error: :ok} = Entry.validate_signature(rooted.header, rooted.signature, rooted.header_unpacked.signer, rooted[:mask])
 
-    :erlang.spawn(fn()->
-      #txs_packed = TXPool.random()
-      #txs_packed && send(NodeGen, {:send_to_some, [istate.peer.ip], pack_message(NodeProto.txpool(txs_packed))})
+      :erlang.spawn(fn()->
+        #txs_packed = TXPool.random()
+        #txs_packed && send(NodeGen, {:send_to_some, [istate.peer.ip], pack_message(NodeProto.txpool(txs_packed))})
 
-      rng_peers = NodePeers.random(6) |> Enum.map(& &1.ip)
-      if rng_peers != [], do: send(NodeGen, {:send_to_some, [istate.peer.ip], pack_message(NodeProto.peers(rng_peers))})
-    end)
+        rng_peers = NodePeers.random(6) |> Enum.map(& &1.ip)
+        if rng_peers != [], do: send(NodeGen, {:send_to_some, [istate.peer.ip], pack_message(NodeProto.peers(rng_peers))})
+      end)
 
-    term = %{temporal: temporal, rooted: rooted, ts_m: term.ts_m}
-    send(NodeGen, {:handle_sync, :ping_ns, istate, term})
+      term = %{temporal: temporal, rooted: rooted, ts_m: term.ts_m}
+      send(NodeGen, {:handle_sync, :ping_ns, istate, term})
+    catch
+      e,r-> IO.inspect {:error_ping, e, r, term, istate.peer.ip}
+    end
   end
   def handle(:ping_ns, istate, term) do
     peer_ip = istate.peer.ip
@@ -92,6 +96,7 @@ defmodule NodeState do
           tx_packed1 = TX.build(sk, "Epoch", "submit_sol", [term.sol])
           tx_packed2 = TX.build(sk, "Coin", "transfer", [sol.computor, BIC.Coin.to_cents(100)])
           TXPool.insert([tx_packed1, tx_packed2])
+          NodeGen.broadcast(:txpool, :trainers, [[tx_packed1, tx_packed2]])
         end
       true -> nil
     end
@@ -100,12 +105,31 @@ defmodule NodeState do
   def handle(:entry, istate, term) do
     seen_time = :os.system_time(1000)
 
-    %{error: :ok, entry: entry} = Entry.unpack_and_validate(term.entry_packed)
-    case Fabric.insert_entry(entry, seen_time) do
-      :ok -> FabricCoordinatorGen.precalc_sols(entry)
-      {:error, {:error, ~c"Resource busy: "}} -> :ok
-        #IO.inspect {:insert_entry, :resource_busy, Base58.encode(entry.hash)}
+    #atom hash: 32 bytes hash
+    pattern = :binary.compile_pattern([<<119, 4, 104, 97, 115, 104, 109, 0, 0, 0, 32>>])
+    {exists?, hash} = case :binary.match(term.entry_packed, pattern) do
+      {pos, len} ->
+        start_pos = pos + len
+        hash = binary_part(term.entry_packed, start_pos, 32)
+        %{db: db} = :persistent_term.get({:rocksdb, Fabric})
+        {!!RocksDB.get(hash, %{db: db}), hash}
+      :nomatch ->
+        IO.inspect {:invalid_entry?}
+        {nil, nil}
     end
+
+    if !exists? do
+      %{error: :ok, entry: entry} = Entry.unpack_and_validate(term.entry_packed)
+      #IO.inspect {:insert, Base58.encode(entry.hash)}
+      case Fabric.insert_entry(entry, seen_time) do
+        :ok -> FabricCoordinatorGen.precalc_sols(entry)
+        {:error, {:error, ~c"Resource busy: "}} -> :ok
+          #IO.inspect {:insert_entry, :resource_busy, Base58.encode(entry.hash)}
+      end
+    else
+      #IO.inspect {:already_exists, Base58.encode(hash)}
+    end
+
     cond do
         !!term[:consensus_packed] ->
             c = Consensus.unpack(term.consensus_packed)
@@ -133,6 +157,20 @@ defmodule NodeState do
     Enum.each(term.consensuses_packed, fn(consensus_packed)->
         c = Consensus.unpack(consensus_packed)
         send(FabricCoordinatorGen, {:validate_consensus, c})
+    end)
+  end
+
+  def handle(:catchup_entry, istate, term) do
+    true = length(term.heights) <= 100
+    Enum.each(term.heights, fn(height)->
+        case Fabric.get_entries_by_height(height) do
+            [] -> nil
+            map_entries ->
+              Enum.each(map_entries, fn(map)->
+                msg = NodeProto.entry(%{entry_packed: Entry.pack(map.entry)})
+                :erlang.spawn(fn()-> send(NodeGen, {:send_to_some, [istate.peer.ip], pack_message(msg)}) end)
+              end)
+        end
     end)
   end
 
