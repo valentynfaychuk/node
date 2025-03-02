@@ -22,6 +22,9 @@ defmodule Consensus do
         to_sign = <<c.entry_hash::binary, c.mutations_hash::binary>>
 
         entry = Fabric.entry_by_hash(c.entry_hash)
+        if !entry, do: throw(%{error: :invalid_entry})
+        if entry.header_unpacked.height > Consensus.chain_height(), do: throw(%{error: :too_far_in_future})
+        
         #TODO: race here if entry is not proced
         trainers = trainers_for_height(Entry.height(entry))
         score = BLS12AggSig.score(trainers, c.mask)
@@ -47,12 +50,12 @@ defmodule Consensus do
         end
 
         cond do
-            height <= 319556 ->
+            height <= 319556 and Consensus.chain_height() <= 319556 ->
                 epoch = div(height, 100_000)
                 RocksDB.get("bic:epoch:trainers:#{epoch}", options)
-            height <= 3195575 ->
+            height <= 3195575 and Consensus.chain_height() <= 3195575 ->
                 RocksDB.get_prev("bic:epoch:trainers:height:", height, options)
-            height <= 3458964 ->
+            height <= 3458964 and Consensus.chain_height() <= 3458964 ->
                 elements = RocksDB.get_prefix("bic:epoch:trainers:height:", options)
                 |> Enum.map(fn {k,v}-> {:erlang.binary_to_integer(k), v} end)
                 |> Enum.sort()
