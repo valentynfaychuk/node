@@ -64,7 +64,11 @@ defmodule BIC.Epoch do
         |> Enum.reduce(%{}, fn({_sol, pk}, acc)->
             Map.put(acc, pk, Map.get(acc, pk, 0) + 1)
         end)
-        |> Enum.sort_by(& elem(&1,1), :desc)
+        leaders = if epoch_next <= 40 do
+            Enum.sort_by(leaders, & elem(&1,1), :desc)
+        else
+            Enum.sort_by(leaders, & {elem(&1,1), elem(&1,0)}, :desc)
+        end
         
         trainers = kv_get("bic:epoch:trainers:#{epoch_fin}")
         trainers_to_recv_emissions = leaders
@@ -166,7 +170,7 @@ defmodule BIC.Epoch do
             env.entry.header_unpacked.height >= 3458964 ->
                 height = String.pad_leading("#{env.entry.header_unpacked.height+1}", 12, "0")
                 kv_put("bic:epoch:trainers:height:#{height}", new_trainers)
-            cur_epoch > 3 -> 
+            env.entry.header_unpacked.height >= 319556 -> 
                 kv_put("bic:epoch:trainers:height:#{env.entry.header_unpacked.height+1}", new_trainers)
             true -> nil
         end
