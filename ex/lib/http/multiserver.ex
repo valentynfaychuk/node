@@ -90,7 +90,7 @@ defmodule Ama.MultiServer do
                 quick_reply(state, result)
             r.method == "GET" and String.starts_with?(r.path, "/api/tx/submit/") ->
                 tx_packed = String.replace(r.path, "/api/tx/submit/", "")
-                result = API.TX.submit(tx_packed)
+                result = API.TX.submit(Base58.decode(tx_packed))
                 quick_reply(state, result)
 
             #r.method == "GET" ->
