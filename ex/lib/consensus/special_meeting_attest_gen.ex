@@ -32,7 +32,7 @@ defmodule SpecialMeetingAttestGen do
   end
 
   def tick_stalled(state) do
-    isSynced = FabricSyncGen.isQuorumSyncedOffBy1()
+    isSynced = FabricSyncAttestGen.isQuorumSyncedOffBy1()
 
     entry = Consensus.chain_tip_entry()
     next_slot = entry.header_unpacked.slot + 1
@@ -72,7 +72,7 @@ defmodule SpecialMeetingAttestGen do
   end
 
   def tick_offline(state) do
-    isSynced = FabricSyncGen.isQuorumSyncedOffBy1()
+    isSynced = FabricSyncAttestGen.isQuorumSyncedOffBy1()
 
     trainers = Consensus.trainers_for_height(Consensus.chain_height()+1)
     onlineTrainers = trainers

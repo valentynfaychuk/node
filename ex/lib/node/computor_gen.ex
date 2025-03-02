@@ -26,7 +26,7 @@ defmodule ComputorGen do
   def handle_info(:tick, state) do
     state = cond do
       !state[:enabled] -> state
-      !FabricSyncGen.isQuorumIsInEpoch() ->
+      !FabricSyncAttestGen.isQuorumIsInEpoch() ->
         IO.puts "🔴 cannot compute: out_of_sync"
         state
       true ->

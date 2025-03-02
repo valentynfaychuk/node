@@ -140,7 +140,7 @@ defmodule SpecialMeetingGen do
     my_pk = Application.fetch_env!(:ama, :trainer_pk)
     packed_tx = build_slash_tx(st)
 
-    true = FabricSyncGen.isQuorumSynced()
+    true = FabricSyncAttestGen.isQuorumSynced()
     cur_entry = Consensus.chain_tip_entry()
     cur_height = cur_entry.header_unpacked.height
     cur_slot = cur_entry.header_unpacked.slot
