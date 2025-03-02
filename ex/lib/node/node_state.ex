@@ -34,6 +34,7 @@ defmodule NodeState do
         ip: peer_ip,
         pk: istate.peer.signer, version: istate.peer.version,
         last_ping: :os.system_time(1000),
+        last_msg: :os.system_time(1000),
         temporal: term.temporal, rooted: term.rooted,
     })
     :ets.insert(NODEPeers, {peer_ip, peer})
@@ -52,7 +53,9 @@ defmodule NodeState do
     peer_ip = istate.peer.ip
     peer = :ets.lookup_element(NODEPeers, peer_ip, 2, %{})
     latency = term.seen_time - term.ts_m
-    peer = Map.merge(peer, %{latency: latency, last_pong: term.seen_time})
+    peer = Map.merge(peer, %{latency: latency,
+      ip: peer_ip, pk: istate.peer.signer,
+      last_pong: term.seen_time, last_msg: :os.system_time(1000)})
     :ets.insert(NODEPeers, {peer_ip, peer})
 
     istate.ns

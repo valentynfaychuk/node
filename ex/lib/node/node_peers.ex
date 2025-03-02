@@ -21,7 +21,7 @@ defmodule NodePeers do
   def clear_stale() do
     ts_m = :os.system_time(1000)
     :ets.foldl(fn({key, v}, acc)->
-      lp = v[:last_ping]
+      lp = v[:last_msg]
       #60 minutes
       if !v[:static] and !!lp and ts_m > lp+(1_000*60*60) do
         acc ++ [key]
