@@ -49,7 +49,6 @@ defmodule FabricSyncGen do
       |> Enum.each(fn(chunk)->
         msg = NodeProto.catchup_tri(chunk)
         peer_ips = Enum.shuffle(highest_peers_temporal) |> Enum.map(& hd(&1)) |> Enum.take(1)
-        #peer_ips = ["72.9.144.110"]
         send(NodeGen, {:send_to_some, peer_ips, NodeProto.pack_message(msg)})
       end)
     end
@@ -76,7 +75,6 @@ defmodule FabricSyncGen do
       |> Enum.each(fn(chunk)->
         msg = NodeProto.catchup_bi(chunk)
         peer_ips = Enum.shuffle(highest_peers_rooted) |> Enum.map(& hd(&1)) |> Enum.take(1)
-        peer_ips = ["72.9.144.110"]
         send(NodeGen, {:send_to_some, peer_ips, NodeProto.pack_message(msg)})
       end)
     end
