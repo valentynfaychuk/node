@@ -50,6 +50,9 @@ defmodule Consensus do
         end
 
         cond do
+            height == 0 -> [EntryGenesis.signer()]
+            height in 3195570..3195575 and Consensus.chain_height() <= 3458964 -> RocksDB.get("bic:epoch:trainers:height:319557", options)
+            height in 3195570..3195575 -> RocksDB.get("bic:epoch:trainers:height:000000319557", options)
             height <= 319556 and Consensus.chain_height() <= 319556 ->
                 epoch = div(height, 100_000)
                 RocksDB.get("bic:epoch:trainers:#{epoch}", options)
@@ -201,6 +204,7 @@ defmodule Consensus do
             entry_bytes = RocksDB.get(map.entry_hash, %{db: db})
             tx_bytes = binary_part(entry_bytes, map.index_start, map.index_size)
             TX.unpack(tx_bytes)
+            |> Map.put(:result, map[:result])
         end
     end
 
@@ -308,15 +312,19 @@ defmodule Consensus do
         :ok = :rocksdb.transaction_put(rtx, cf.muts_rev, next_entry.hash, :erlang.term_to_binary(m_rev, [:deterministic]))
 
         {:ok, entry_packed} = :rocksdb.transaction_get(rtx, cf.default, next_entry.hash, [])
-        Enum.each(next_entry.txs, fn(tx_packed)->
+        Enum.each(Enum.zip(next_entry.txs, l), fn({tx_packed, result})->
             txu = TX.unpack(tx_packed)
             case :binary.match(entry_packed, tx_packed) do
               {index_start, index_size} ->
-                value = %{entry_hash: next_entry.hash, index_start: index_start, index_size: index_size}
+                value = %{entry_hash: next_entry.hash, result: result, index_start: index_start, index_size: index_size}
                 value = :erlang.term_to_binary(value, [:deterministic])
                 :ok = :rocksdb.transaction_put(rtx, cf.tx, txu.hash, value)
             end
         end)
+
+        if Application.fetch_env!(:ama, :archival_node) do
+            :ok = :rocksdb.transaction_put(rtx, cf.muts, next_entry.hash, :erlang.term_to_binary(m, [:deterministic]))
+        end
 
         :ok = :rocksdb.transaction_commit(rtx)
         

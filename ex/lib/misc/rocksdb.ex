@@ -38,6 +38,18 @@ defmodule RocksDB do
         end
     end
 
+    def delete(key, opts) do
+        db = opts[:db]
+        cf = opts[:cf]
+        rtx = opts[:rtx]
+        cond do
+            !!rtx and !!cf -> :rocksdb.transaction_delete(rtx, cf, key)
+            !!rtx -> :rocksdb.transaction_delete(rtx, key)
+            !!db and !!cf -> :rocksdb.delete(db, cf, key, [])
+            !!db -> :rocksdb.delete(db, key, [])
+        end
+    end
+
     def get_prefix(prefix, opts) do
         {:ok, it} = iterator(opts)
         res = :rocksdb.iterator_move(it, {:seek, prefix})

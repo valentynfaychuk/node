@@ -34,6 +34,7 @@ defmodule Fabric do
             {'consensus_by_entryhash|Map<mutationshash,consensus>', @args},
 
             {'contractstate', @args},
+            {'muts', @args},
             {'muts_rev', @args},
 
             {'sysconf', @args},
@@ -44,7 +45,7 @@ defmodule Fabric do
             my_seen_time_for_entry_cf, my_attestation_for_entry_cf, 
             #my_mutations_hash_for_entry_cf,
             consensus_cf, consensus_by_entryhash_cf,
-            contractstate_cf, muts_rev_cf,
+            contractstate_cf, muts_cf, muts_rev_cf,
             sysconf_cf
         ] = cf_ref_list
         cf = %{
@@ -52,7 +53,7 @@ defmodule Fabric do
             my_seen_time_for_entry: my_seen_time_for_entry_cf, my_attestation_for_entry: my_attestation_for_entry_cf,
             #my_mutations_hash_for_entry: my_mutations_hash_for_entry_cf,
             consensus: consensus_cf, consensus_by_entryhash: consensus_by_entryhash_cf,
-            contractstate: contractstate_cf, muts_rev: muts_rev_cf,
+            contractstate: contractstate_cf, muts: muts_cf, muts_rev: muts_rev_cf,
             sysconf: sysconf_cf
         }
         :persistent_term.put({:rocksdb, Fabric}, %{db: db_ref, cf_list: cf_ref_list, cf: cf, path: path})
@@ -72,6 +73,11 @@ defmodule Fabric do
         if !!mutsrev and !!entry do
             entry
         end
+    end
+
+    def entry_muts(hash) do
+        %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+        RocksDB.get(hash, %{db: db, cf: cf.muts, term: true})
     end
 
     def entry_seentime(hash) do
@@ -117,6 +123,17 @@ defmodule Fabric do
         entry_by_hash(rooted_tip())
     end
 
+    def pruned_hash() do
+        %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+        RocksDB.get("pruned_hash", %{db: db, cf: cf.sysconf}) || EntryGenesis.get().hash
+    end
+
+    def pruned_height() do
+        pruned_hash()
+        |> entry_by_hash()
+        |> Entry.height()
+    end
+
     def my_attestation_by_entryhash(hash) do
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
         RocksDB.get(hash, %{db: db, cf: cf.my_attestation_for_entry, term: true})
@@ -133,7 +150,7 @@ defmodule Fabric do
         isTrainer = my_pk in trainers
 
         consens = consensuses_by_height(height)
-        |> Enum.filter(fn(c)-> BLS12AggSig.score(trainers, c.mask) >= 0.6 end)
+        |> Enum.filter(fn(c)-> BLS12AggSig.score(trainers, c.mask) >= 0.67 end)
         |> Enum.take(1)
 
         entries = Fabric.entries_by_height(height)
@@ -156,7 +173,7 @@ defmodule Fabric do
         isTrainer = my_pk in trainers
 
         consens = consensuses_by_height(height)
-        |> Enum.filter(fn(c)-> BLS12AggSig.score(trainers, c.mask) >= 0.6 end)
+        |> Enum.filter(fn(c)-> BLS12AggSig.score(trainers, c.mask) >= 0.67 end)
         |> Enum.take(1)
 
         cond do
@@ -282,7 +299,7 @@ defmodule Fabric do
         entry_hash = consensus.entry_hash
         entry = Fabric.entry_by_hash(entry_hash)
         {_, oldScore, _} = best_consensus_by_entryhash(Consensus.trainers_for_height(Entry.height(entry)), entry_hash)
-        if consensus.score >= 0.6 and consensus.score > (oldScore||0) do
+        if consensus.score >= 0.67 and consensus.score > (oldScore||0) do
             %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
             {:ok, rtx} = :rocksdb.transaction(db, [])
             
