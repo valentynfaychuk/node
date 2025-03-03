@@ -50,24 +50,8 @@ defmodule Consensus do
         end
 
         cond do
-            height == 0 -> [EntryGenesis.signer()]
-            height in 3195570..3195575 and Consensus.chain_height() <= 3458964 -> RocksDB.get("bic:epoch:trainers:height:319557", options)
-            height in 3195570..3195575 -> RocksDB.get("bic:epoch:trainers:height:000000319557", options)
-            height <= 319556 and Consensus.chain_height() <= 319556 ->
-                epoch = div(height, 100_000)
-                RocksDB.get("bic:epoch:trainers:#{epoch}", options)
-            height <= 3195575 and Consensus.chain_height() <= 3195575 ->
-                RocksDB.get_prev("bic:epoch:trainers:height:", height, options)
-            height <= 3458964 and Consensus.chain_height() <= 3458964 ->
-                elements = RocksDB.get_prefix("bic:epoch:trainers:height:", options)
-                |> Enum.map(fn {k,v}-> {:erlang.binary_to_integer(k), v} end)
-                |> Enum.sort()
-                |> Enum.filter(&(elem(&1,0) <= height))
-                |> List.last()
-                |> case do
-                    nil -> nil
-                    {_,v} -> v
-                end
+            height in 3195570..3195575 ->
+                RocksDB.get("bic:epoch:trainers:height:000000319557", options)
             true ->
                 RocksDB.get_prev("bic:epoch:trainers:height:", String.pad_leading("#{height}", 12, "0"), options)
         end

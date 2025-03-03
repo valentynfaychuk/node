@@ -48,27 +48,20 @@ defmodule BIC.Epoch do
             true -> 9
         end
 
-        if epoch_next > 3 do
-            removedTrainers = kv_get("bic:epoch:trainers:removed:#{epoch_fin}") || []
-
-            # slash sols
-            kv_get_prefix("bic:epoch:solutions:")
-            |> Enum.each(fn({sol, sol_pk})->
-                if sol_pk in removedTrainers do
-                    kv_delete("bic:epoch:solutions:#{sol}")
-                end
-            end)
-        end
+        # slash sols for malicious trainers
+        removedTrainers = kv_get("bic:epoch:trainers:removed:#{epoch_fin}") || []
+        kv_get_prefix("bic:epoch:solutions:")
+        |> Enum.each(fn({sol, sol_pk})->
+            if sol_pk in removedTrainers do
+                kv_delete("bic:epoch:solutions:#{sol}")
+            end
+        end)
 
         leaders = kv_get_prefix("bic:epoch:solutions:")
         |> Enum.reduce(%{}, fn({_sol, pk}, acc)->
             Map.put(acc, pk, Map.get(acc, pk, 0) + 1)
         end)
-        leaders = if epoch_next <= 40 do
-            Enum.sort_by(leaders, & elem(&1,1), :desc)
-        else
-            Enum.sort_by(leaders, & {elem(&1,1), elem(&1,0)}, :desc)
-        end
+        |> Enum.sort_by(leaders, & {elem(&1,1), elem(&1,0)}, :desc)
         
         trainers = kv_get("bic:epoch:trainers:#{epoch_fin}")
         trainers_to_recv_emissions = leaders
@@ -104,14 +97,9 @@ defmodule BIC.Epoch do
         end
         new_trainers = Enum.shuffle(new_trainers)
         kv_put("bic:epoch:trainers:#{epoch_next}", new_trainers)
-        cond do
-            env.entry.header_unpacked.height >= 3458964 ->
-                height = String.pad_leading("#{env.entry.header_unpacked.height+1}", 12, "0")
-                kv_put("bic:epoch:trainers:height:#{height}", new_trainers)
-            epoch_next > 3 -> 
-                kv_put("bic:epoch:trainers:height:#{env.entry.header_unpacked.height+1}", new_trainers)
-            true -> nil
-        end
+        
+        height = String.pad_leading("#{env.entry.header_unpacked.height+1}", 12, "0")
+        kv_put("bic:epoch:trainers:height:#{height}", new_trainers)
     end
 
     def slash_trainer_verify(cur_epoch, malicious_pk, trainers, mask, signature) do
@@ -129,21 +117,6 @@ defmodule BIC.Epoch do
     end
 
     def call(:slash_trainer, env, [epoch, malicious_pk, signature, mask_size, mask]) do
-        if env.entry.header_unpacked.height == 319556 do
-            kv_put("bic:epoch:trainers:height:0", kv_get("bic:epoch:trainers:0"))
-            kv_put("bic:epoch:trainers:height:100000", kv_get("bic:epoch:trainers:1"))
-            kv_put("bic:epoch:trainers:height:200000", kv_get("bic:epoch:trainers:2"))
-            kv_put("bic:epoch:trainers:height:300000", kv_get("bic:epoch:trainers:3"))
-        end
-        if env.entry.header_unpacked.height == 3458964 do
-            kv_get_prefix("bic:epoch:trainers:height:")
-            |> Enum.each(fn({height, trainers})->
-                kv_delete("bic:epoch:trainers:height:#{height}")
-                height = String.pad_leading(height, 12, "0")
-                kv_put("bic:epoch:trainers:height:#{height}", trainers)
-            end)
-        end
-
         cur_epoch = Entry.epoch(env.entry)
         <<mask::size(mask_size)-bitstring, _::bitstring>> = mask
 
@@ -166,14 +139,9 @@ defmodule BIC.Epoch do
 
         new_trainers = trainers -- [malicious_pk]
         kv_put("bic:epoch:trainers:#{cur_epoch}", new_trainers)
-        cond do
-            env.entry.header_unpacked.height >= 3458964 ->
-                height = String.pad_leading("#{env.entry.header_unpacked.height+1}", 12, "0")
-                kv_put("bic:epoch:trainers:height:#{height}", new_trainers)
-            env.entry.header_unpacked.height >= 319556 -> 
-                kv_put("bic:epoch:trainers:height:#{env.entry.header_unpacked.height+1}", new_trainers)
-            true -> nil
-        end
+
+        height = String.pad_leading("#{env.entry.header_unpacked.height+1}", 12, "0")
+        kv_put("bic:epoch:trainers:height:#{height}", new_trainers)
     end
 
     @doc """
