@@ -61,7 +61,7 @@ defmodule BIC.Epoch do
         |> Enum.reduce(%{}, fn({_sol, pk}, acc)->
             Map.put(acc, pk, Map.get(acc, pk, 0) + 1)
         end)
-        |> Enum.sort_by(leaders, & {elem(&1,1), elem(&1,0)}, :desc)
+        |> Enum.sort_by(& {elem(&1,1), elem(&1,0)}, :desc)
         
         trainers = kv_get("bic:epoch:trainers:#{epoch_fin}")
         trainers_to_recv_emissions = leaders
