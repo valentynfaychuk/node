@@ -141,8 +141,6 @@ defmodule FabricGen do
         !in_slot -> false
         slot_delta != 1 -> false
         Entry.validate_next(cur_entry, next_entry) != %{error: :ok} -> false
-        next_height == 319_556 and next_entry.hash != <<62, 174, 196, 89, 223, 58, 187, 192, 204, 17, 199, 93, 106, 9, 245, 4, 59, 218, 138, 7, 34, 69, 111, 90, 100, 90, 6, 9, 54, 111, 204, 15>> -> false
-        next_height == 319_559 and next_entry.hash != <<124, 128, 101, 226, 21, 9, 196, 12, 196, 238, 91, 47, 103, 192, 169, 43, 172, 126, 167, 38, 36, 164, 93, 222, 8, 5, 172, 203, 21, 176, 135, 7>> -> false
         true -> true
       end
     end)
