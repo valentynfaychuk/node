@@ -51,6 +51,7 @@ defmodule FabricSnapshot do
         {:ok, _} = :zip.unzip(body, [:verbose, {:cwd, '#{work_folder}'}])
         
         #TODO: zip structure so its only db/ at root
+        File.rm_rf!(Path.join(work_folder, "db/"))
         File.rename!(Path.join(work_folder, "archive_4059120/db/"), Path.join(work_folder, "db/"))
         File.rm_rf!(Path.join(work_folder, "archive_4059120/"))
 

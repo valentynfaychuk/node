@@ -28,6 +28,12 @@ defmodule Ama do
     IO.puts "Initing TXPool.."
     TXPool.init()
 
+    if Fabric.rooted_tip_height() < 4059120 do
+      Fabric.close()
+      FabricSnapshot.download_latest()
+      Fabric.init()
+    end
+
     pk = Application.fetch_env!(:ama, :trainer_pk)
     IO.puts "systems functional. welcome #{Base58.encode(pk)}"
 
