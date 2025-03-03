@@ -123,11 +123,13 @@ defmodule NodeState do
 
     if !exists? do
       %{error: :ok, entry: entry} = Entry.unpack_and_validate(term.entry_packed)
-      #IO.inspect {:insert, Base58.encode(entry.hash)}
-      case Fabric.insert_entry(entry, seen_time) do
-        :ok -> FabricCoordinatorGen.precalc_sols(entry)
-        {:error, {:error, ~c"Resource busy: "}} -> :ok
-          #IO.inspect {:insert_entry, :resource_busy, Base58.encode(entry.hash)}
+      if Entry.height() > Fabric.rooted_tip_height() do
+        #IO.inspect {:insert, Base58.encode(entry.hash)}
+        case Fabric.insert_entry(entry, seen_time) do
+          :ok -> FabricCoordinatorGen.precalc_sols(entry)
+          {:error, {:error, ~c"Resource busy: "}} -> :ok
+            #IO.inspect {:insert_entry, :resource_busy, Base58.encode(entry.hash)}
+        end
       end
     else
       #IO.inspect {:already_exists, Base58.encode(hash)}

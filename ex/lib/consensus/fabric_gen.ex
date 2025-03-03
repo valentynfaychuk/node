@@ -85,7 +85,7 @@ defmodule FabricGen do
     #IO.inspect {next_entries, next_height}
     case List.first(next_entries) do
         #TODO: adjust the maliciousness rate via score
-        {best_entry, mut_hash, score} when score >= 0.67 ->
+        {best_entry, mut_hash, score} when score >= 0.60 ->
             mymut = Fabric.my_attestation_by_entryhash(best_entry.hash)
             cond do
               !mymut ->

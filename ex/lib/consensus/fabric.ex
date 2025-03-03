@@ -59,6 +59,11 @@ defmodule Fabric do
         :persistent_term.put({:rocksdb, Fabric}, %{db: db_ref, cf_list: cf_ref_list, cf: cf, path: path})
     end
 
+    def close() do
+        %{db: db} = :persistent_term.get({:rocksdb, Fabric})
+        :ok = :rocksdb.close(db)
+    end
+
     def entry_by_hash(hash) do
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
         RocksDB.get(hash, %{db: db, term: true})
@@ -123,6 +128,11 @@ defmodule Fabric do
         entry_by_hash(rooted_tip())
     end
 
+    def rooted_tip_height() do
+        entry = rooted_tip_entry()
+        entry.header_unpacked.height
+    end
+
     def pruned_hash() do
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
         RocksDB.get("pruned_hash", %{db: db, cf: cf.sysconf}) || EntryGenesis.get().hash
@@ -150,7 +160,7 @@ defmodule Fabric do
         isTrainer = my_pk in trainers
 
         consens = consensuses_by_height(height)
-        |> Enum.filter(fn(c)-> BLS12AggSig.score(trainers, c.mask) >= 0.67 end)
+        |> Enum.filter(fn(c)-> BLS12AggSig.score(trainers, c.mask) >= 0.60 end)
         |> Enum.take(1)
 
         entries = Fabric.entries_by_height(height)
@@ -173,7 +183,7 @@ defmodule Fabric do
         isTrainer = my_pk in trainers
 
         consens = consensuses_by_height(height)
-        |> Enum.filter(fn(c)-> BLS12AggSig.score(trainers, c.mask) >= 0.67 end)
+        |> Enum.filter(fn(c)-> BLS12AggSig.score(trainers, c.mask) >= 0.60 end)
         |> Enum.take(1)
 
         cond do
@@ -299,7 +309,7 @@ defmodule Fabric do
         entry_hash = consensus.entry_hash
         entry = Fabric.entry_by_hash(entry_hash)
         {_, oldScore, _} = best_consensus_by_entryhash(Consensus.trainers_for_height(Entry.height(entry)), entry_hash)
-        if consensus.score >= 0.67 and consensus.score > (oldScore||0) do
+        if consensus.score >= 0.60 and consensus.score > (oldScore||0) do
             %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
             {:ok, rtx} = :rocksdb.transaction(db, [])
             
