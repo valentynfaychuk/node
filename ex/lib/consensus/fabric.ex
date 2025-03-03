@@ -160,7 +160,7 @@ defmodule Fabric do
         isTrainer = my_pk in trainers
 
         consens = consensuses_by_height(height)
-        |> Enum.filter(fn(c)-> BLS12AggSig.score(trainers, c.mask) >= 0.60 end)
+        |> Enum.filter(fn(c)-> BLS12AggSig.score(trainers, c.mask) >= 0.67 end)
         |> Enum.take(1)
 
         entries = Fabric.entries_by_height(height)
@@ -183,7 +183,7 @@ defmodule Fabric do
         isTrainer = my_pk in trainers
 
         consens = consensuses_by_height(height)
-        |> Enum.filter(fn(c)-> BLS12AggSig.score(trainers, c.mask) >= 0.60 end)
+        |> Enum.filter(fn(c)-> BLS12AggSig.score(trainers, c.mask) >= 0.67 end)
         |> Enum.take(1)
 
         cond do
@@ -309,7 +309,7 @@ defmodule Fabric do
         entry_hash = consensus.entry_hash
         entry = Fabric.entry_by_hash(entry_hash)
         {_, oldScore, _} = best_consensus_by_entryhash(Consensus.trainers_for_height(Entry.height(entry)), entry_hash)
-        if consensus.score >= 0.60 and consensus.score > (oldScore||0) do
+        if consensus.score >= 0.67 and consensus.score > (oldScore||0) do
             %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
             {:ok, rtx} = :rocksdb.transaction(db, [])
             
