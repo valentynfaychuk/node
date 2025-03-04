@@ -63,6 +63,14 @@ defmodule Consensus do
         Enum.at(trainers, index)
     end
 
+    def trainer_for_slot_current() do
+        trainer_for_slot(chain_height(), chain_height())
+    end
+
+    def trainer_for_slot_next() do
+        trainer_for_slot(chain_height()+1, chain_height()+1)
+    end
+
     def did_trainer_sign_consensus(trainer, entry_hash) do
         c = Fabric.consensuses_by_entryhash(entry_hash)
         if c do

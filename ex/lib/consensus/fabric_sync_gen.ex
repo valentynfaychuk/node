@@ -17,9 +17,9 @@ defmodule FabricSyncGen do
         :erlang.send_after(30, self(), :tick)
 
       true ->
-        {d1, d2} = tick()
+        {d1, d2, d3} = tick()
         if d1 < 100 or d2 < 100 do
-          :erlang.send_after(300, self(), :tick)
+          :erlang.send_after(600, self(), :tick)
         else
           :erlang.send_after(3000, self(), :tick)
         end
@@ -78,6 +78,36 @@ defmodule FabricSyncGen do
         send(NodeGen, {:send_to_some, peer_ips, NodeProto.pack_message(msg)})
       end)
     end
-    {highest_temporal_height-temporal_height, highest_rooted_height-rooted_height}
+
+    #roots are 0 but we are missing sigs
+    if temporal_height - rooted_height > 0 do
+    #if highest_rooted_height-rooted_height == 0 and temporal_height - rooted_height > 0 do
+      next_holes = Enum.to_list(rooted_height..temporal_height)
+      next_holes = Enum.take(next_holes, 29) |> Enum.shuffle()
+      pk_height = Enum.reduce(next_holes, %{}, fn(height, acc)->
+        entry = Fabric.entries_by_height(height) |> Enum.random()
+        trainers = Consensus.trainers_for_height(height)
+        consensuses = Fabric.consensuses_by_entryhash(entry.hash)
+        if !consensuses do acc else
+          {_, _score, c} = Consensus.best_by_weight(trainers, consensuses)
+          trainers_signed = BLS12AggSig.unmask_trainers(trainers, c.mask)
+          delta = trainers -- trainers_signed
+          Enum.reduce(delta, acc, fn(pk, acc)->
+            Map.put(acc, pk, Map.get(acc, pk, []) ++ [height])
+          end)
+        end
+      end)
+      Enum.each(pk_height, fn {pk, heights}->
+        :erlang.spawn(fn()->
+          msg = NodeProto.catchup_bi(heights)
+          peer = NodePeers.by_pk(pk)
+          if !!peer and peer[:ip] do
+            send(NodeGen, {:send_to_some, [peer.ip], NodeProto.pack_message(msg)})
+          end
+        end)
+      end)
+    end
+
+    {highest_temporal_height-temporal_height, highest_rooted_height-rooted_height, temporal_height - rooted_height}
   end
 end

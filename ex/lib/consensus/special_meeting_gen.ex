@@ -1,6 +1,13 @@
 defmodule SpecialMeetingGen do
   use GenServer
 
+  def try_slash_trainer_entry_next() do
+    if SpecialMeetingAttestGen.isNextSlotStalled() do
+      mpk = Consensus.trainer_for_slot_next()
+      send(SpecialMeetingGen, {:try_slash_trainer_entry, mpk})
+    end
+  end
+
   def try_slash_trainer_entry(mpk) do
     if SpecialMeetingAttestGen.isNextSlotStalled() do
       send(SpecialMeetingGen, {:try_slash_trainer_entry, mpk})

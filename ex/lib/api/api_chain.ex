@@ -36,6 +36,7 @@ defmodule API.Chain do
             signers = BLS12AggSig.unmask_trainers(Consensus.trainers_for_height(height), c.mask)
             |> Enum.map(& Base58.encode(&1))
             c = put_in(c, [:signers], signers)
+            c = put_in(c, [:score], length(c.signers) / bit_size(c.mask))
             Map.drop(c, [:mask])
         end)
     end
