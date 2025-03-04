@@ -1,6 +1,10 @@
 defmodule FabricCoordinatorGen do
   use GenServer
 
+  def isSyncing() do
+    :persistent_term.get(FabricCoordinatorSyncing, false)
+  end
+
   def start_link() do
     GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
   end
@@ -31,6 +35,17 @@ defmodule FabricCoordinatorGen do
     end)
   end
 
+  def calc_syncing() do
+    isSyncn = isSyncing()
+    {_, num} = Process.info(self(), :message_queue_len)
+    #IO.inspect num
+    cond do
+      num >= 10 and !isSyncn -> :persistent_term.put(FabricCoordinatorSyncing, true)
+      num < 10 and isSyncn -> :persistent_term.put(FabricCoordinatorSyncing, false)
+      true -> nil
+    end
+  end
+
   def handle_info({:insert_entry, entry, seen_time}, state) do
     Fabric.insert_entry(entry, seen_time)
     precalc_sols(entry)
@@ -49,11 +64,13 @@ defmodule FabricCoordinatorGen do
   end
 
   def handle_info({:insert_consensus, consensus}, state) do
+    calc_syncing()
     Fabric.insert_consensus(consensus)
     {:noreply, state}
   end
 
   def handle_info({:add_attestation, attestation}, state) do
+    calc_syncing()
     Fabric.aggregate_attestation(attestation)
     {:noreply, state}
   end

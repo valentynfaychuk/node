@@ -14,10 +14,10 @@ defmodule API.Peer do
 
     def version_ratio() do
         trainers()
-        |> Enum.reduce(%{}, fn([pk, version | _], acc)->
-            Map.put(acc, pk, Map.get(acc, pk, 0) + 1)
+        |> Enum.reduce(%{}, fn([_pk, version | _], acc)->
+            Map.put(acc, version, Map.get(acc, version, 0) + 1)
         end)
-        |> Enum.sort_by(& elem(&1, 1))
+        |> Enum.sort_by(& elem(&1, 1), :desc)
     end
 
     def all() do

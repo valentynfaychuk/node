@@ -13,7 +13,7 @@ defmodule FabricSyncGen do
   def handle_info(:tick, state) do
     cond do
       #true -> :erlang.send_after(300, self(), :tick)
-      FabricGen.isSyncing() or !FabricSyncAttestGen.hasQuorum() ->
+      FabricGen.isSyncing() or FabricCoordinatorGen.isSyncing() or !FabricSyncAttestGen.hasQuorum() ->
         :erlang.send_after(30, self(), :tick)
 
       true ->
