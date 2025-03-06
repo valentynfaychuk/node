@@ -57,7 +57,7 @@ defmodule SpecialMeetingGen do
 
   def handle_info({:add_slash_trainer_tx_reply, pk, signature}, state = %{slash_trainer: _}) do
     st = state.slash_trainer
-    trainers = Consensus.trainers_for_height(st.height)
+    trainers = Consensus.trainers_for_height(st.height + 1)
     ma = BLS12AggSig.add(%{mask: st.mask, aggsig: st.aggsig}, trainers, pk, signature)
     state = put_in(state, [:slash_trainer, :mask], ma.mask)
     state = put_in(state, [:slash_trainer, :aggsig], ma.aggsig)
@@ -72,7 +72,7 @@ defmodule SpecialMeetingGen do
     entry = state.slash_trainer.entry
     true = entry.hash == entry_hash
 
-    trainers = Consensus.trainers_for_height(entry.header_unpacked.height)
+    trainers = Consensus.trainers_for_height(entry.header_unpacked.height + 1)
     ma = BLS12AggSig.add(%{mask: entry.mask, aggsig: entry.signature}, trainers, pk, signature)
     state = put_in(state, [:slash_trainer, :entry, :mask], ma.mask)
     state = put_in(state, [:slash_trainer, :entry, :signature], ma.aggsig)
@@ -86,7 +86,7 @@ defmodule SpecialMeetingGen do
   def tick(state) do
     my_pk = Application.fetch_env!(:ama, :trainer_pk)
     height = Consensus.chain_height()
-    trainers = Consensus.trainers_for_height(height+1)
+    trainers = Consensus.trainers_for_height(height + 1)
 
     #IO.inspect state[:slash_trainer]
 
@@ -157,7 +157,7 @@ defmodule SpecialMeetingGen do
     next_entry = Map.put(next_entry, :txs, txs)
     next_entry = Entry.sign(next_entry)
     
-    trainers = Consensus.trainers_for_height(next_entry.header_unpacked.height)
+    trainers = Consensus.trainers_for_height(next_entry.header_unpacked.height + 1)
     mask = <<0::size(length(trainers))>>
     mask = Util.set_bit(mask, Util.index_of(trainers, my_pk))
     Map.put(next_entry, :mask, mask)
@@ -172,7 +172,7 @@ defmodule SpecialMeetingGen do
     next_slot = slot + 1
     next_height = my_height + 1
 
-    trainers = Consensus.trainers_for_height(next_height)
+    trainers = Consensus.trainers_for_height(next_height + 1)
     #TODO: make this 3 or 6 later
     ts_s = :os.system_time(1)
     sync_round_offset = rem(div(ts_s, 60), length(trainers))
