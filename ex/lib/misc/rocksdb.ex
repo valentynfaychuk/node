@@ -103,6 +103,12 @@ defmodule RocksDB do
     def restore_from_snapshot(path) do
     end
 
+    def flush_all(db, cfs) do
+        Enum.each(Map.values(cfs), fn(cf)->
+            :ok = :rocksdb.flush(db, cf, [{:wait, true},{:allow_write_stall, true}])
+        end)
+    end
+
     def compact_all(db, cfs) do
         Enum.each(Map.values(cfs), fn(cf)->
             :ok = :rocksdb.compact_range(db, cf, :undefined, :undefined, [])

@@ -44,9 +44,8 @@ defmodule FabricGen do
     #IO.inspect "tick_slot"
     if proc_if_my_slot() do
       proc_entries()
+      proc_compact()
     end
-
-    #proc_compact()
 
     state
   end
@@ -54,8 +53,12 @@ defmodule FabricGen do
   def proc_compact() do
     %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
     ts_m = :os.system_time(1000)
+    RocksDB.flush_all(db, cf)
     RocksDB.compact_all(db, cf)
-    IO.puts "compact_took #{:os.system_time(1000) - ts_m}"
+    took = :os.system_time(1000) - ts_m
+    if took > 1000 do
+      IO.puts "compact_took #{took}"
+    end
   end
 
   def proc_consensus() do
