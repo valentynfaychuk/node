@@ -1,6 +1,22 @@
 defmodule SpecialMeetingAttestGen do
   use GenServer
 
+  def getSlow() do
+    cur_epoch = Consensus.chain_epoch()
+    slow = :persistent_term.get({SpecialMeeting, :slow}, nil)
+    if !!slow and slow.epoch == cur_epoch do
+      slow
+    end
+  end
+
+  def calcSlow(pk) do
+    slow = getSlow()
+    if slow do
+      deltas = slow.running[pk]
+      Enum.sum(deltas) / length(deltas)
+    end
+  end
+
   def isNextSlotStalled() do
     :persistent_term.get({SpecialMeeting, :nextSlotStalled}, nil)
   end
@@ -14,9 +30,18 @@ defmodule SpecialMeetingAttestGen do
   end
 
   def init(state) do
+    state = Map.put(state, :slow, %{epoch: Consensus.chain_epoch(), running: %{}})
+    :erlang.send_after(6000, self(), :tick_slow)
     :erlang.send_after(6000, self(), :tick_stalled)
     :erlang.send_after(6000, self(), :tick_offline)
     {:ok, state}
+  end
+
+  def handle_info(:tick_slow, state) do
+    state = tick_slow(state)
+    milliseconds = trunc((length(Consensus.trainers_for_height(Consensus.chain_height()+1)) / 2) * 1000)
+    :erlang.send_after(milliseconds, self(), :tick_slow)
+    {:noreply, state}
   end
 
   def handle_info(:tick_stalled, state) do
@@ -29,6 +54,40 @@ defmodule SpecialMeetingAttestGen do
     true && tick_offline(state)
     :erlang.send_after(60_000, self(), :tick_offline)
     {:noreply, state}
+  end
+
+  def tick_slow(state) do
+    cur_epoch = Consensus.chain_epoch()
+    if cur_epoch != state.slow.epoch do
+      Map.put(state, :slow, %{epoch: cur_epoch})
+    else
+      tick_slow_1(state)
+    end
+  end
+  def tick_slow_1(state) do
+    cur_epoch = Consensus.chain_epoch()
+
+    trainers = Consensus.trainers_for_height(Consensus.chain_height()+1)
+    trainers_cnt = length(trainers)
+
+    entries = Fabric.entries_last_x(trainers_cnt+1)
+    entries = Enum.filter(entries, & div(&1.header_unpacked.height, 100_000) == cur_epoch)
+    [hd | entries] = entries
+
+    hd_seentime = Fabric.entry_seentime(hd.hash)
+    state = Enum.reduce(entries, {state, hd_seentime}, fn(entry, {state, last_seen})->
+      seentime = Fabric.entry_seentime(entry.hash)
+      delta = seentime - last_seen
+      
+      timings = get_in(state, [:slow, :running, entry.header_unpacked.signer]) || []
+      timings = Enum.take(timings ++ [delta], -10)
+      state = put_in(state, [:slow, :running, entry.header_unpacked.signer], timings)
+
+      {state, seentime}
+    end)
+    |> elem(0)
+    :persistent_term.put({SpecialMeeting, :slow}, state.slow)
+    state
   end
 
   def tick_stalled(state) do
@@ -115,6 +174,11 @@ defmodule SpecialMeetingAttestGen do
         #TODO: check for Slowloris
         #avg_seentimes_last_10_slots(malicious_pk) > 1second -> true
 
+        !!calcSlow(malicious_pk) and calcSlow(malicious_pk) > 1000 ->
+            msg = <<"slash_trainer", epoch::32-little, malicious_pk::binary>>
+            sk = Application.fetch_env!(:ama, :trainer_sk)
+            BlsEx.sign!(sk, msg, BLS12AggSig.dst_motion())
+
         malicious_pk == slotStallTrainer or malicious_pk in offlineTrainers()->
             msg = <<"slash_trainer", epoch::32-little, malicious_pk::binary>>
             sk = Application.fetch_env!(:ama, :trainer_sk)
@@ -144,6 +208,10 @@ defmodule SpecialMeetingAttestGen do
 
         #TODO: check for Slowloris
         #avg_seentimes_last_10_slots(malicious_pk) > 1second -> true
+        !!calcSlow(malicious_pk) and calcSlow(malicious_pk) > 1000 ->
+          h = :erlang.term_to_binary(entry.header_unpacked, [:deterministic])
+          sk = Application.fetch_env!(:ama, :trainer_sk)
+          BlsEx.sign!(sk, Blake3.hash(h), BLS12AggSig.dst_entry())
 
         malicious_pk == slotStallTrainer or malicious_pk in offlineTrainers()->
           h = :erlang.term_to_binary(entry.header_unpacked, [:deterministic])

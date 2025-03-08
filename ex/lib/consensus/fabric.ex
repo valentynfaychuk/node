@@ -96,6 +96,16 @@ defmodule Fabric do
         |> Enum.map(& Entry.unpack(entry_by_hash(elem(&1,0))))
     end
 
+    def entries_last_x(cnt) do
+        entry = Consensus.chain_tip_entry()
+        entries_last_x_1(cnt - 1, entry.header_unpacked.prev_hash, [entry])
+    end
+    def entries_last_x_1(cnt, prev_hash, acc) when cnt <= 0, do: acc
+    def entries_last_x_1(cnt, prev_hash, acc) do
+        entry = Fabric.entry_by_hash(prev_hash)
+        entries_last_x_1(cnt - 1, entry.header_unpacked.prev_hash, [entry] ++ acc)
+    end
+
     def my_attestation_by_height(height) do
         entries = Fabric.entries_by_height(height)
         Enum.find_value(entries, fn(entry)->
