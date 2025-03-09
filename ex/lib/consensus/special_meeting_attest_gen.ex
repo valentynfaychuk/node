@@ -13,7 +13,9 @@ defmodule SpecialMeetingAttestGen do
     slow = getSlow()
     if slow do
       deltas = slow.running[pk]
-      Enum.sum(deltas) / length(deltas)
+      if is_list(deltas) do
+        Enum.sum(deltas) / length(deltas)
+      end
     end
   end
 
