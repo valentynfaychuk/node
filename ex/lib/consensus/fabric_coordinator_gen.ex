@@ -47,12 +47,14 @@ defmodule FabricCoordinatorGen do
   end
 
   def handle_info({:insert_entry, entry, seen_time}, state) do
+    calc_syncing()
     Fabric.insert_entry(entry, seen_time)
     precalc_sols(entry)
     {:noreply, state}
   end
 
   def handle_info({:validate_consensus, consensus}, state) do
+    calc_syncing()
     :erlang.spawn(fn()->
       case Consensus.validate_vs_chain(consensus) do
         %{error: :ok, consensus: consensus} ->

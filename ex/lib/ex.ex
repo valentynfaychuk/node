@@ -28,7 +28,8 @@ defmodule Ama do
     IO.puts "Initing TXPool.."
     TXPool.init()
 
-    if Fabric.rooted_tip_height() < 4059120 do
+    rooted_tip_height = Fabric.rooted_tip_height()
+    if rooted_tip_height == nil or rooted_tip_height < 4059120 do
       Fabric.close()
       FabricSnapshot.download_latest()
       Fabric.init()

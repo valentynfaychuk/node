@@ -64,6 +64,7 @@ defmodule Fabric do
         :ok = :rocksdb.close(db)
     end
 
+    def entry_by_hash(nil) do nil end
     def entry_by_hash(hash) do
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
         RocksDB.get(hash, %{db: db, term: true})
@@ -140,7 +141,9 @@ defmodule Fabric do
 
     def rooted_tip_height() do
         entry = rooted_tip_entry()
-        entry.header_unpacked.height
+        if entry do
+            entry.header_unpacked.height
+        end
     end
 
     def pruned_hash() do
