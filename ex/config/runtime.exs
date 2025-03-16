@@ -1,5 +1,10 @@
 import Config
 
+[v1,v2,v3] = Application.fetch_env!(:ama, :version)
+|> String.trim("v")
+|> String.split(".")
+config :ama, :version_3b, <<:erlang.binary_to_integer(v1),:erlang.binary_to_integer(v2),:erlang.binary_to_integer(v3)>>
+
 work_folder = (System.get_env("WORKFOLDER") || Path.expand("~/.cache/amadeusd/"))
 config :ama, :work_folder, work_folder
 IO.puts "config folder is #{work_folder}"

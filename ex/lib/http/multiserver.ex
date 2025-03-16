@@ -79,6 +79,28 @@ defmodule Ama.MultiServer do
                 result = API.Chain.entry_tip()
                 quick_reply(state, result)
 
+            r.method == "GET" and String.starts_with?(r.path, "/api/chain/height/") ->
+                height = String.replace(r.path, "/api/chain/height/", "")
+                |> :erlang.binary_to_integer()
+                result = API.Chain.by_height(height)
+                quick_reply(state, result)
+
+            r.method == "GET" and String.starts_with?(r.path, "/api/chain/height_with_txs/") ->
+                height = String.replace(r.path, "/api/chain/height_with_txs/", "")
+                |> :erlang.binary_to_integer()
+                result = API.Chain.by_height_with_txs(height)
+                quick_reply(state, result)
+
+            r.method == "GET" and String.starts_with?(r.path, "/api/chain/tx/") ->
+                txid = String.replace(r.path, "/api/chain/tx/", "")
+                result = API.TX.get(txid)
+                quick_reply(state, result)
+
+            r.method == "GET" and String.starts_with?(r.path, "/api/chain/txs_in_entry/") ->
+                entry_hash = String.replace(r.path, "/api/chain/txs_in_entry/", "")
+                result = API.TX.get_by_entry(entry_hash)
+                quick_reply(state, %{error: :ok, txs: result})
+
             r.method == "GET" and String.starts_with?(r.path, "/api/wallet/balance/") ->
                 pk = String.replace(r.path, "/api/wallet/balance/", "")
                 balance = API.Wallet.balance(pk)
