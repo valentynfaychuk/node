@@ -63,7 +63,6 @@ defmodule Ama do
       atom = :'NodeGenReassemblyGen#{idx}'
       {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: atom, start: {NodeGenReassemblyGen, :start_link, [atom]}, restart: :permanent})
     end)
-    Process.sleep(1_000)
     Enum.each(0..7, fn(idx)->
       atom = :'NodeGenSocketGen#{idx}'
       {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: atom, start: {NodeGenSocketGen, :start_link, [ip4, port, atom]}, restart: :permanent})

@@ -41,7 +41,12 @@ defmodule AutoUpdateGen do
             File.write!(path_tmp, bin)
             File.rename!(path_tmp, path)
             File.chmod!(path, 0o755)
-            :erlang.halt()
+
+            if Consensus.is_trainer() do
+              FabricGen.exitAfterMySlot()
+            else
+              :erlang.halt()
+            end
         end
     end
   end

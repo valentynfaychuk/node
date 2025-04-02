@@ -41,6 +41,10 @@ defmodule Consensus do
         end
     end
 
+    def is_trainer() do
+        Application.fetch_env!(:ama, :trainer_pk) in trainers_for_height(chain_height()+1)
+    end
+
     def trainers_for_height(height, opts \\ %{}) do
         options = if opts[:rtx] do
             %{rtx: opts.rtx, cf: opts.cf.contractstate, term: true}
