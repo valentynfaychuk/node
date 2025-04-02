@@ -75,6 +75,18 @@ defmodule Ama.MultiServer do
             r.method == "GET" and r.path == "/favicon.ico" ->
                 quick_reply(state, "")
 
+            r.method == "GET" and String.starts_with?(r.path, "/api/peer/nodes") ->
+                nodes = API.Peer.all_for_web()
+                quick_reply(state, %{error: :ok, nodes: nodes})
+
+            r.method == "GET" and String.starts_with?(r.path, "/api/peer/trainers") ->
+                trainers = API.Peer.all_trainers()
+                quick_reply(state, %{error: :ok, trainers: trainers})
+
+            r.method == "GET" and String.starts_with?(r.path, "/api/peer/removed_trainers") ->
+                removed_trainers = API.Peer.removed_trainers()
+                quick_reply(state, %{error: :ok, removed_trainers: removed_trainers})
+
             r.method == "GET" and String.starts_with?(r.path, "/api/chain/tip") ->
                 result = API.Chain.entry_tip()
                 quick_reply(state, result)
