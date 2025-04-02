@@ -10,6 +10,10 @@ defmodule NodeProto do
     %{op: :pong, ts_m: ts_m}
   end
 
+  def who_are_you() do
+    %{op: :who_are_you}
+  end
+
   def txpool(txs_packed) do
     %{op: :txpool, txs_packed: txs_packed}
   end
@@ -79,6 +83,86 @@ defmodule NodeProto do
     :erlang.list_to_binary(decompressed)
   end
 
+  def compress_message_v2_test_frags(msg) do
+    padding = :crypto.strong_rand_bytes(1024*4)
+    msg = :erlang.term_to_binary(msg, [:deterministic])
+    msg = msg <> padding
+    deflate_compress(msg)
+  end
+  def compress_message_v2(msg) do
+    msg
+    |> :erlang.term_to_binary([:deterministic])
+    |> deflate_compress()
+  end
+  def encrypt_message_v2(msg_compressed, nil) do
+    pk = Application.fetch_env!(:ama, :trainer_pk)
+    sk = Application.fetch_env!(:ama, :trainer_sk)
+    version_3byte = Application.fetch_env!(:ama, :version_3b)
+    signature = BlsEx.sign!(sk, Blake3.hash(pk<>msg_compressed), BLS12AggSig.dst_node())
+
+    ts_n = :os.system_time(:nanosecond)
+
+    if byte_size(msg_compressed) < 1300 do
+      [<<"AMA", version_3byte::binary, 0::7, 1::1, pk::binary, signature::binary, 0::16, 1::16, ts_n::64, byte_size(msg_compressed)::32, msg_compressed::binary>>]
+    else
+      shards = div(byte_size(msg_compressed)+1023, 1024)
+      r = BlsEx.Native.create_resource(shards, shards, 1024)
+      BlsEx.Native.encode_shards(r, msg_compressed)
+      |> Enum.take(shards+1+div(shards,4))
+      |> Enum.map(fn {idx, shard}->
+        <<"AMA", version_3byte::binary, 0::7, 1::1, pk::binary, signature::binary, idx::16, (shards*2)::16, ts_n::64, byte_size(msg_compressed)::32, shard::binary>>
+      end)
+    end
+  end
+  def encrypt_message_v2(msg_compressed, shared_key) do
+    pk = Application.fetch_env!(:ama, :trainer_pk)
+    version_3byte = Application.fetch_env!(:ama, :version_3b)
+
+    ts_n = :os.system_time(:nanosecond)
+    iv = :crypto.strong_rand_bytes(12)
+    key = :crypto.hash(:sha256, [shared_key, :binary.encode_unsigned(ts_n), iv])
+    {ciphertext, tag} = :crypto.crypto_one_time_aead(:aes_256_gcm, key, iv, msg_compressed, <<>>, 16, true)
+
+    payload = <<iv::binary, tag::binary, ciphertext::binary>>
+    if byte_size(payload) < 1380 do
+      [<<"AMA", version_3byte::binary, 0, pk::binary, 0::16, 1::16, ts_n::64, byte_size(payload)::32, payload::binary>>]
+    else
+      shards = div(byte_size(payload)+1023, 1024)
+      r = BlsEx.Native.create_resource(shards, shards, 1024)
+      BlsEx.Native.encode_shards(r, payload)
+      |> Enum.take(shards+1+div(shards,4))
+      |> Enum.map(fn {idx, shard}->
+        <<"AMA", version_3byte::binary, 0, pk::binary, idx::16, (shards*2)::16, ts_n::64, byte_size(payload)::32, shard::binary>>
+      end)
+    end
+  end
+
+  def unpack_message_v2(<<"AMA", version_3byte::3-binary, 0::7, 1::1, pk::48-binary, signature::96-binary, 
+    shard_index::16, shard_total::16, ts_n::64, original_size::32, msg_compressed_or_shard::binary>>) do
+    if pk == Application.fetch_env!(:ama, :trainer_pk), do: throw(%{error: :msg_to_self})
+    
+    <<a,b,c>> = version_3byte
+    version = "#{a}.#{b}.#{c}" 
+
+    %{error: :signature, pk: :binary.copy(pk), ts_nano: ts_n, shard_index: shard_index, shard_total: shard_total, version: version, 
+      signature: :binary.copy(signature), original_size: original_size, payload: msg_compressed_or_shard}
+  end
+
+  def unpack_message_v2(<<"AMA", version_3byte::3-binary, 0::8, pk::48-binary,
+    shard_index::16, shard_total::16, ts_n::64, original_size::32, msg_compressed_or_shard::binary>>) do
+    if pk == Application.fetch_env!(:ama, :trainer_pk), do: throw(%{error: :msg_to_self})
+    
+    <<a,b,c>> = version_3byte
+    version = "#{a}.#{b}.#{c}" 
+    
+    %{error: :encrypted, pk: :binary.copy(pk), ts_nano: ts_n, shard_index: shard_index, shard_total: shard_total, version: version, 
+      original_size: original_size, payload: msg_compressed_or_shard}
+  end
+
+  def unpack_message_v2(data) do
+    unpack_message(data)
+  end
+
   def pack_message(msg) do
     pk = Application.fetch_env!(:ama, :trainer_pk)
     sk = Application.fetch_env!(:ama, :trainer_sk)
@@ -116,7 +200,7 @@ defmodule NodeProto do
       if !BlsEx.verify?(msg.signer, msg_envelope.signature, hash, BLS12AggSig.dst_node()), do: throw(%{error: :invalid_signature})
       if msg.signer == Application.fetch_env!(:ama, :trainer_pk), do: throw(%{error: :msg_to_self})
 
-      %{error: :ok, msg: msg}
+      %{error: :old, msg: msg}
     catch 
       throw,r -> %{error: r}
       e,r -> %{error: e, reason: r}

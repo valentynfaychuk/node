@@ -87,6 +87,19 @@ defmodule NodePeers do
     end
   end
 
+  def get_shared_secret(pk) do
+    shared_secret = :ets.select(NODEPeers, [{{:_, %{pk: pk, shared_secret: :"$1"}}, [], [:"$1"]}])
+    |> List.first()
+    if shared_secret do shared_secret else
+      BlsEx.get_shared_secret!(pk, Application.fetch_env!(:ama, :trainer_sk))
+    end
+  end
+
+  def by_ip(ip) do
+    :ets.select(NODEPeers, [{{ip, :"$1"}, [], [:"$1"]}])
+    |> List.first()
+  end
+
   def by_pk(pk) do
     ip = :ets.select(NODEPeers, [{{:"$1", %{pk: pk}}, [], [:"$1"]}])
     |> List.first()

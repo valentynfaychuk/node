@@ -23,6 +23,11 @@ defmodule NodeGen do
     :'NodeGenSocketGen#{idx}'
   end
 
+  def get_reassembly_gen(pk, ts_nano) do
+    idx = :erlang.phash2({pk, ts_nano}, 32)
+    :'NodeGenReassemblyGen#{idx}'
+  end
+
   def broadcast_ping() do
     :erlang.spawn(fn()->
       msg = NodeProto.ping()
@@ -87,6 +92,9 @@ defmodule NodeGen do
         broadcast_ping()
 
       {:send_to_some, peer_ips, packed_msg} ->
+        #if byte_size(packed_msg) >= 1460 do
+        #  IO.inspect byte_size(packed_msg)
+        #end
         send(get_socket_gen(), {:send_to_some, peer_ips, packed_msg})
 
       {:handle_sync, op, innerstate, args} ->

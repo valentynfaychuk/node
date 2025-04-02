@@ -37,6 +37,12 @@ defmodule NodeState do
         last_msg: :os.system_time(1000),
         temporal: term.temporal, rooted: term.rooted,
     })
+
+    peer = if !!peer[:shared_secret] do peer else
+      shared_key = BlsEx.get_shared_secret!(istate.peer.signer, Application.fetch_env!(:ama, :trainer_sk))
+      Map.put(peer, :shared_secret, shared_key)
+    end
+
     :ets.insert(NODEPeers, {peer_ip, peer})
 
     :erlang.spawn(fn()-> send(NodeGen, {:send_to_some, [peer_ip], pack_message(NodeProto.pong(term.ts_m))}) end)

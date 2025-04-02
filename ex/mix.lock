@@ -1,7 +1,7 @@
 %{
   "bakeware": {:git, "https://github.com/bake-bake-bake/bakeware", "67d2139fcbb74ebe7604a2cc0471c54ac2e8ac7a", [branch: "main"]},
   "blake3": {:git, "https://github.com/vans163/blake3", "d8d6213fd2bc4ffda83576b63f14c5e7c84537b1", [branch: "finalize_xof"]},
-  "bls_ex": {:git, "https://github.com/amadeus-robot/bls_ex", "5e64b226743b5cdeb330cd843d93cb9ba2082f56", []},
+  "bls_ex": {:git, "https://github.com/amadeus-robot/bls_ex", "55b3334ef636325ba653d1578c6a3c13eacd3052", []},
   "castore": {:hex, :castore, "1.0.12", "053f0e32700cbec356280c0e835df425a3be4bc1e0627b714330ad9d0f05497f", [:mix], [], "hexpm", "3dca286b2186055ba0c9449b4e95b97bf1b57b47c1f2644555879e659960c224"},
   "comsat": {:git, "https://github.com/vans163/ComSat.git", "7178d64dfda9d4669ba9f1e475dbcf6ee93e0ef5", []},
   "elixir_make": {:hex, :elixir_make, "0.9.0", "6484b3cd8c0cee58f09f05ecaf1a140a8c97670671a6a0e7ab4dc326c3109726", [:mix], [], "hexpm", "db23d4fd8b757462ad02f8aa73431a426fe6671c80b200d9710caf3d1dd0ffdb"},
