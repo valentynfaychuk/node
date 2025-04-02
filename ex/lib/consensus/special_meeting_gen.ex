@@ -9,13 +9,17 @@ defmodule SpecialMeetingGen do
   end
 
   def try_slash_trainer_entry(mpk) do
-    if SpecialMeetingAttestGen.isNextSlotStalled() do
+    slow = !!SpecialMeetingAttestGen.calcSlow(mpk) and SpecialMeetingAttestGen.calcSlow(mpk) > 600
+    if !!SpecialMeetingAttestGen.isNextSlotStalled() or slow do
       send(SpecialMeetingGen, {:try_slash_trainer_entry, mpk})
     end
   end
 
   def try_slash_trainer_tx(mpk) do
-    send(SpecialMeetingGen, {:try_slash_trainer_tx, mpk})
+    slow = !!SpecialMeetingAttestGen.calcSlow(mpk) and SpecialMeetingAttestGen.calcSlow(mpk) > 600
+    if !!SpecialMeetingAttestGen.isNextSlotStalled() or slow do
+      send(SpecialMeetingGen, {:try_slash_trainer_tx, mpk})
+    end
   end
 
   def start_link() do
@@ -96,7 +100,10 @@ defmodule SpecialMeetingGen do
       state.slash_trainer.attempts > 6 -> Map.delete(state, :slash_trainer)
       
       state.slash_trainer.type == :tx and state.slash_trainer[:score_tx] >= 0.75 ->
-        # TXPool.insert(build_slash_tx(state.slash_trainer))
+        tx_packed = build_slash_tx(state.slash_trainer)
+        IO.inspect tx_packed
+        TXPool.insert(tx_packed)
+        NodeGen.broadcast(:txpool, :trainers, [[tx_packed]])
         Map.delete(state, :slash_trainer)
       state.slash_trainer.type == :entry and state.slash_trainer.state == :gather_tx_sigs and state.slash_trainer[:score_tx] >= 0.75 ->
         entry = build_slash_entry(state.slash_trainer)

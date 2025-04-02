@@ -5,13 +5,16 @@ defmodule FabricGen do
     :persistent_term.get(FabricSyncing, false)
   end
 
+  def exitAfterMySlot() do
+    :persistent_term.put(:exit_after_my_slot, true)
+  end
+
   def start_link() do
     GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
   end
 
   def init(state) do
     :erlang.send_after(2500, self(), :tick)
-    :erlang.send_after(3000, self(), :tick_slot)
     {:ok, state}
   end
 
@@ -21,9 +24,8 @@ defmodule FabricGen do
     {:noreply, state}
   end
 
-  def handle_info(:tick_slot, state) do
-    state = if true do tick_slot(state) else state end
-    :erlang.send_after(100, self(), :tick_slot)
+  def handle_info(:tick_oneshot, state) do
+    tick(state)
     {:noreply, state}
   end
 
@@ -32,6 +34,7 @@ defmodule FabricGen do
     :persistent_term.put(FabricSyncing, true)
     proc_consensus()
     proc_entries()
+    tick_slot(state)
     :persistent_term.put(FabricSyncing, false)
 
     #TODO: check if reorg needed
@@ -45,6 +48,9 @@ defmodule FabricGen do
     if proc_if_my_slot() do
       proc_entries()
       #proc_compact()
+      if :persistent_term.get(:exit_after_my_slot, nil) do
+        :erlang.halt()
+      end
     end
 
     state

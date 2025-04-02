@@ -14,7 +14,7 @@ defmodule SpecialMeetingAttestGen do
     if slow do
       deltas = slow.running[pk]
       if is_list(deltas) do
-        Enum.sum(deltas) / length(deltas)
+        trunc(Enum.sum(deltas) / length(deltas))
       end
     end
   end
@@ -32,7 +32,7 @@ defmodule SpecialMeetingAttestGen do
   end
 
   def init(state) do
-    state = Map.put(state, :slow, %{epoch: Consensus.chain_epoch(), running: %{}})
+    state = Map.put(state, :slow, %{epoch: Consensus.chain_epoch(), last_height: Consensus.chain_height(), running: %{}})
     :erlang.send_after(6000, self(), :tick_slow)
     :erlang.send_after(6000, self(), :tick_stalled)
     :erlang.send_after(6000, self(), :tick_offline)
@@ -61,35 +61,38 @@ defmodule SpecialMeetingAttestGen do
   def tick_slow(state) do
     cur_epoch = Consensus.chain_epoch()
     if cur_epoch != state.slow.epoch do
-      Map.put(state, :slow, %{epoch: cur_epoch})
+      Map.put(state, :slow, %{epoch: cur_epoch, last_height: Consensus.chain_height(), running: %{}})
     else
       tick_slow_1(state)
     end
   end
   def tick_slow_1(state) do
     cur_epoch = Consensus.chain_epoch()
+    cur_height = Consensus.chain_height()
 
-    trainers = Consensus.trainers_for_height(Consensus.chain_height()+1)
-    trainers_cnt = length(trainers)
+    last_entries_cnt = cur_height - state.slow.last_height
+    if last_entries_cnt <= 0 do state else
+      state = put_in(state, [:slow, :last_height], cur_height)
 
-    entries = Fabric.entries_last_x(trainers_cnt+1)
-    entries = Enum.filter(entries, & div(&1.header_unpacked.height, 100_000) == cur_epoch)
-    [hd | entries] = entries
+      entries = Fabric.entries_last_x(last_entries_cnt+1)
+      entries = Enum.filter(entries, & div(&1.header_unpacked.height, 100_000) == cur_epoch)
+      [hd | entries] = entries
 
-    hd_seentime = Fabric.entry_seentime(hd.hash)
-    state = Enum.reduce(entries, {state, hd_seentime}, fn(entry, {state, last_seen})->
-      seentime = Fabric.entry_seentime(entry.hash)
-      delta = seentime - last_seen
-      
-      timings = get_in(state, [:slow, :running, entry.header_unpacked.signer]) || []
-      timings = Enum.take(timings ++ [delta], -10)
-      state = put_in(state, [:slow, :running, entry.header_unpacked.signer], timings)
+      hd_seentime = Fabric.entry_seentime(hd.hash)
+      state = Enum.reduce(entries, {state, hd_seentime}, fn(entry, {state, last_seen})->
+        seentime = Fabric.entry_seentime(entry.hash)
+        delta = seentime - last_seen
+        
+        timings = get_in(state, [:slow, :running, entry.header_unpacked.signer]) || []
+        timings = Enum.take(timings ++ [delta], -10)
+        state = put_in(state, [:slow, :running, entry.header_unpacked.signer], timings)
 
-      {state, seentime}
-    end)
-    |> elem(0)
-    :persistent_term.put({SpecialMeeting, :slow}, state.slow)
-    state
+        {state, seentime}
+      end)
+      |> elem(0)
+      :persistent_term.put({SpecialMeeting, :slow}, state.slow)
+      state
+    end
   end
 
   def tick_stalled(state) do
@@ -112,10 +115,12 @@ defmodule SpecialMeetingAttestGen do
     #TODO: make this tighter later
     #no entry in 30seconds
 
+    timeout = if rem(next_height, 100_000) == 99_999 do 120_000 else 30_000 end
+
     cond do
         !isSynced -> nil
-        delta < 30_000 and nextSlotStalled -> :persistent_term.erase({SpecialMeeting, :nextSlotStalled})
-        delta >= 30_000 and !nextSlotStalled -> :persistent_term.put({SpecialMeeting, :nextSlotStalled}, next_slot_trainer)
+        delta < timeout and nextSlotStalled -> :persistent_term.erase({SpecialMeeting, :nextSlotStalled})
+        delta >= timeout and !nextSlotStalled -> :persistent_term.put({SpecialMeeting, :nextSlotStalled}, next_slot_trainer)
         true -> nil
     end
     #check for the last entry time, if we have not
@@ -176,7 +181,7 @@ defmodule SpecialMeetingAttestGen do
         #TODO: check for Slowloris
         #avg_seentimes_last_10_slots(malicious_pk) > 1second -> true
 
-        !!calcSlow(malicious_pk) and calcSlow(malicious_pk) > 1000 ->
+        !!calcSlow(malicious_pk) and calcSlow(malicious_pk) > 600 ->
             msg = <<"slash_trainer", epoch::32-little, malicious_pk::binary>>
             sk = Application.fetch_env!(:ama, :trainer_sk)
             BlsEx.sign!(sk, msg, BLS12AggSig.dst_motion())
@@ -210,7 +215,7 @@ defmodule SpecialMeetingAttestGen do
 
         #TODO: check for Slowloris
         #avg_seentimes_last_10_slots(malicious_pk) > 1second -> true
-        !!calcSlow(malicious_pk) and calcSlow(malicious_pk) > 1000 ->
+        !!calcSlow(malicious_pk) and calcSlow(malicious_pk) > 600 ->
           h = :erlang.term_to_binary(entry.header_unpacked, [:deterministic])
           sk = Application.fetch_env!(:ama, :trainer_sk)
           BlsEx.sign!(sk, Blake3.hash(h), BLS12AggSig.dst_entry())
