@@ -20,10 +20,8 @@ defmodule BIC.Base do
         #thank you come again
         kv_increment("bic:coin:balance:#{signer}", BIC.Coin.to_flat(1))
 
-        if env.entry.header_unpacked.height >= 100_000 do
-            if rem(env.entry.header_unpacked.height, 1000) == 0 do
-                kv_put("bic:epoch:segment_vr", env.entry.header_unpacked.vr)
-            end
+        if rem(env.entry.header_unpacked.height, 1000) == 0 do
+            kv_put("bic:epoch:segment_vr", env.entry.header_unpacked.vr)
         end
 
         cond do
@@ -38,15 +36,16 @@ defmodule BIC.Base do
         {Process.get(:mutations, []), Process.get(:mutations_reverse, [])}
     end
 
-    def call_tx_pre(env) do
+    def call_txs_pre_parallel(env, txus) do
         Process.delete(:mutations)
         Process.delete(:mutations_reverse)
-        seed_random(env.entry.header_unpacked.vr, env.txu.hash, "")
 
-        kv_put("bic:base:nonce:#{env.txu.tx.signer}", env.txu.tx.nonce)
-        exec_cost = exec_cost(env.txu)
-        kv_increment("bic:coin:balance:#{env.txu.tx.signer}", -exec_cost)
-        kv_increment("bic:coin:balance:#{env.entry.header_unpacked.signer}", exec_cost)
+        Enum.each(txus, fn(txu)->
+            kv_put("bic:base:nonce:#{txu.tx.signer}", txu.tx.nonce)
+            exec_cost = exec_cost(txu)
+            kv_increment("bic:coin:balance:#{txu.tx.signer}", -exec_cost)
+            kv_increment("bic:coin:balance:#{env.entry.header_unpacked.signer}", exec_cost)
+        end)
 
         {Process.get(:mutations, []), Process.get(:mutations_reverse, [])}
     end

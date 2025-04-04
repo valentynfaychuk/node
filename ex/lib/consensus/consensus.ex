@@ -260,13 +260,10 @@ defmodule Consensus do
     def apply_entry_1(next_entry, cf, rtx) do
         Process.put({RocksDB, :ctx}, %{rtx: rtx, cf: cf})
 
-        {m, m_rev, l} = Enum.reduce(next_entry.txs, {[], [], []}, fn(tx_packed, {m, m_rev, l})->
-            txu = TX.unpack(tx_packed)
-            
-            {m2, m_rev2} = BIC.Base.call_tx_pre(%{entry: next_entry, txu: txu})
-            m = m ++ m2
-            m_rev = m_rev ++ m_rev2
+        txus = Enum.map(next_entry.txs, & TX.unpack(&1))
+        {m_pre, m_rev_pre} = BIC.Base.call_txs_pre_parallel(%{entry: next_entry}, txus)
 
+        {m, m_rev, l} = Enum.reduce(txus, {m_pre, m_rev_pre, []}, fn(txu, {m, m_rev, l})->
             #ts_m = :os.system_time(1000)
             {m3, m_rev3, result} = BIC.Base.call_tx_actions(%{entry: next_entry, txu: txu})
             #IO.inspect {:call_tx, :os.system_time(1000) - ts_m}

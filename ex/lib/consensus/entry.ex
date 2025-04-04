@@ -121,7 +121,7 @@ defmodule Entry do
         if !!e[:mask] and !is_bitstring(e.mask), do: throw(%{error: :mask_not_bitstring})
 
         if !is_list(e.txs), do: throw(%{error: :txs_not_list})
-        if length(e.txs) > 1, do: throw(%{error: :TEMPORARY_txs_only_one_per_entry})
+        if length(e.txs) > 30, do: throw(%{error: :TEMPORARY_txs_only_30_per_entry})
         if eh.txs_hash != Blake3.hash(Enum.join(e.txs)), do: throw(%{error: :txs_hash_invalid})
 
         is_special_meeting_block = !!e[:mask]
@@ -148,8 +148,27 @@ defmodule Entry do
         if Blake3.hash(ceh.dr) != neh.dr, do: throw(%{error: :invalid_dr})
         if !BlsEx.verify?(neh.signer, neh.vr, ceh.vr, BLS12AggSig.dst_vrf()), do: throw(%{error: :invalid_vr})
 
-        Enum.each(cur_entry.txs, fn(tx_packed)->
-            if !TX.chain_valid(tx_packed), do: %{error: :invalid_tx}
+        txus = Enum.map(next_entry.txs, & TX.unpack(&1))
+        chain_epoch = Consensus.chain_epoch()
+        Enum.reduce(txus, %{}, fn(txu, state)->
+            chainNonce = Map.get(state, {:chain_nonce, txu.tx.signer}, Consensus.chain_nonce(txu.tx.signer))
+            nonceValid = !chainNonce or txu.tx.nonce > chainNonce
+            if !nonceValid, do: throw(%{error: :invalid_tx_nonce})
+            state = Map.put(state, {:chain_nonce, txu.tx.signer}, txu.tx.nonce)
+
+            balance = Map.get(state, {:balance, txu.tx.signer}, Consensus.chain_balance(txu.tx.signer))
+            balance = balance - BIC.Base.exec_cost(txu)
+            if balance < 0, do: throw(%{error: :not_enough_tx_exec_balance})
+            state = Map.put(state, {:balance, txu.tx.signer}, balance)
+
+            hasSol = Enum.find_value(txu.tx.actions, fn(a)-> a.function == "submit_sol" and hd(a.args) end)
+            epochSolValid = if !hasSol do true else
+                <<sol_epoch::32-little, _::binary>> = hasSol
+                chain_epoch == sol_epoch
+            end
+            if !epochSolValid, do: throw(%{error: :invalid_tx_sol_epoch})
+
+            state
         end)
 
         %{error: :ok}
