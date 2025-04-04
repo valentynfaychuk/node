@@ -20,16 +20,20 @@ defmodule FabricCoordinatorGen do
         if isSol do
           txu = TX.unpack(tx_packed)
           [%{args: [sol]}] = txu.tx.actions
-          isVerified = :ets.lookup_element(SOLVerifyCache, sol, 2, nil)
-          if !isVerified do
-            :ets.insert(SOLVerifyCache, {sol, :inprogress})
-            valid = BIC.Sol.verify(sol)
-            if valid do
-              :ets.insert(SOLVerifyCache, {sol, :valid})
-            else
-              :ets.insert(SOLVerifyCache, {sol, :invalid})
+          
+          :erlang.spawn(fn()->
+            isVerified = :ets.lookup_element(SOLVerifyCache, sol, 2, nil)
+            if !isVerified do
+              :ets.insert(SOLVerifyCache, {sol, :inprogress})
+              valid = BIC.Sol.verify(sol)
+              if valid do
+                :ets.insert(SOLVerifyCache, {sol, :valid})
+              else
+                :ets.insert(SOLVerifyCache, {sol, :invalid})
+              end
             end
-          end
+          end)
+
         end
       end)
     end)
