@@ -15,6 +15,7 @@ defmodule FabricGen do
 
   def init(state) do
     :erlang.send_after(2500, self(), :tick)
+    :erlang.send_after(2500, self(), :tick_purge_txpool)
     {:ok, state}
   end
 
@@ -24,21 +25,27 @@ defmodule FabricGen do
     {:noreply, state}
   end
 
+  def handle_info(:tick_purge_txpool, state) do
+    #TODO: check if reorg needed
+    :erlang.spawn(fn()->
+      TXPool.purge_stale()
+    end)
+    :erlang.send_after(6000, self(), :tick_purge_txpool)
+    {:noreply, state}
+  end
+
   def handle_info(:tick_oneshot, state) do
     tick(state)
     {:noreply, state}
   end
 
   def tick(state) do
-    #IO.inspect "tick"
+    #IO.inspect {"tick", :os.system_time(1000)}
     :persistent_term.put(FabricSyncing, true)
     proc_consensus()
     proc_entries()
     tick_slot(state)
     :persistent_term.put(FabricSyncing, false)
-
-    #TODO: check if reorg needed
-    TXPool.purge_stale()
 
     state
   end
@@ -127,7 +134,6 @@ defmodule FabricGen do
     cur_slot = cur_entry.header_unpacked.slot
     height = cur_entry.header_unpacked.height
     next_height = height + 1
-
     next_entries = next_height
     |> Fabric.entries_by_height()
     |> Enum.filter(fn(next_entry)->
@@ -161,13 +167,15 @@ defmodule FabricGen do
       entry ->
         %{error: :ok, attestation_packed: attestation_packed, 
           mutations_hash: m_hash, logs: l, muts: m} = Consensus.apply_entry(entry)
-        
         send(FabricEventGen, {:entry, entry, m_hash, m, l})
         
         if !!attestation_packed and FabricSyncAttestGen.isQuorumSyncedOffBy1() do
           NodeGen.broadcast(:attestation_bulk, :trainers, [[attestation_packed]])
-          NodeGen.broadcast(:attestation_bulk, 100, [[attestation_packed]])
+          NodeGen.broadcast(:attestation_bulk, {:not_trainers, 10}, [[attestation_packed]])
         end
+        
+        TXPool.delete_packed(entry.txs)
+
         proc_entries()
     end
   end
@@ -204,7 +212,7 @@ defmodule FabricGen do
     end
 
     NodeGen.broadcast(:entry, :trainers, [map])
-    NodeGen.broadcast(:entry, 100, [map])
+    NodeGen.broadcast(:entry, {:not_trainers, 10}, [map])
     next_entry
   end
 end

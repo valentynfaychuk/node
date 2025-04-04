@@ -117,12 +117,22 @@ defmodule NodePeers do
     peer_ips
   end
   def by_who(:trainers) do
-    height = Consensus.chain_height()
-    NodePeers.for_height(height)
+    NodePeers.for_height(Consensus.chain_height())
     |> Enum.map(& &1.ip)
     |> case do
       [] -> []
       peers -> Enum.shuffle(peers)
+    end
+  end
+  def by_who({:not_trainers, cnt}) do
+    trainers = NodePeers.for_height(Consensus.chain_height())
+    |> Enum.map(& &1.ip)
+    peers = :ets.tab2list(NODEPeers)
+    |> Enum.map(& elem(&1,1).ip)
+    not_trainers = peers -- trainers
+    case not_trainers do
+      [] -> []
+      peers -> Enum.shuffle(peers) |> Enum.take(cnt)
     end
   end
   def by_who(no_random) do
