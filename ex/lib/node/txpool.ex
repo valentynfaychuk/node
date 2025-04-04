@@ -14,6 +14,15 @@ defmodule TXPool do
         :ets.insert(TXPool, txus)
     end
 
+    def delete_packed(tx_packed) when is_binary(tx_packed) do delete_packed([tx_packed]) end
+    def delete_packed([]) do :ok end
+    def delete_packed(txs_packed) do
+        Enum.each(txs_packed, fn(tx_packed)->
+            txu = TX.unpack(tx_packed)
+            :ets.delete(TXPool, {txu.tx.nonce, txu.hash})
+        end)
+    end
+
     def purge_stale() do
         :ets.tab2list(TXPool)
         |> Enum.each(fn {key, txu} ->
@@ -23,34 +32,46 @@ defmodule TXPool do
         end)
     end
 
-    def grab_next_valid() do
+    def grab_next_valid(amt \\ 1) do
         try do
-            :ets.foldl(fn({key, txu}, _nil)->
-                if TX.chain_valid(txu) do
-                    throw {:choose, TX.pack(txu)}
+            chain_epoch = Consensus.chain_epoch()
+            :ets.foldl(fn({key, txu}, {acc, state_old})->
+                try do
+                    state = state_old
+
+                    chainNonce = Map.get(state, {:chain_nonce, txu.tx.signer}, Consensus.chain_nonce(txu.tx.signer))
+                    nonceValid = !chainNonce or txu.tx.nonce > chainNonce
+                    if !nonceValid, do: throw(%{error: :invalid_tx_nonce})
+                    state = Map.put(state, {:chain_nonce, txu.tx.signer}, txu.tx.nonce)
+
+                    balance = Map.get(state, {:balance, txu.tx.signer}, Consensus.chain_balance(txu.tx.signer))
+                    balance = balance - BIC.Base.exec_cost(txu)
+                    if balance < 0, do: throw(%{error: :not_enough_tx_exec_balance})
+                    state = Map.put(state, {:balance, txu.tx.signer}, balance)
+
+                    hasSol = Enum.find_value(txu.tx.actions, fn(a)-> a.function == "submit_sol" and hd(a.args) end)
+                    epochSolValid = if !hasSol do true else
+                        <<sol_epoch::32-little, _::binary>> = hasSol
+                        chain_epoch == sol_epoch
+                    end
+                    if !epochSolValid, do: throw(%{error: :invalid_tx_sol_epoch})
+
+                    acc = acc ++ [TX.pack(txu)]
+                    if length(acc) == amt do
+                        throw {:choose, acc}
+                    end
+
+                    {acc, state}
+                catch
+                    :throw,{:choose, txs_packed} -> throw {:choose, txs_packed}
+                    :throw,_ -> {acc, state_old}
                 end
-            end, nil, TXPool)
+            end, {[], %{}}, TXPool)
             []
         catch
-            :throw,{:choose, tx_packed} -> [tx_packed]
+            :throw,{:choose, txs_packed} -> txs_packed
         end
     end
-
-        #:ets.tab2list(TXPool)
-        #|> Enum.map(& elem(&1,1))
-        #|> Enum.filter(fn(txu) ->
-        #    chainValid = TX.chain_valid(txu)
-        #    chainValid
-        #end)
-        #|> Enum.sort_by(& &1.tx.nonce)
-        #|> Enum.uniq_by(& &1.tx.signer)
-        #|> Enum.map(& TX.pack(&1))
-        #|> case do
-        #    [] -> []
-        #    txs -> 
-        #        Enum.shuffle(txs)
-        #        |> Enum.take(1)
-        #end
 
     def is_stale(txu) do
         chainNonce = Consensus.chain_nonce(txu.tx.signer)
