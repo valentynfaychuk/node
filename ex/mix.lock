@@ -1,8 +1,7 @@
 %{
   "bakeware": {:git, "https://github.com/bake-bake-bake/bakeware", "67d2139fcbb74ebe7604a2cc0471c54ac2e8ac7a", [branch: "main"]},
   "blake3": {:git, "https://github.com/vans163/blake3", "d8d6213fd2bc4ffda83576b63f14c5e7c84537b1", [branch: "finalize_xof"]},
-  "bls_ex": {:git, "https://github.com/amadeus-robot/bls_ex", "55b3334ef636325ba653d1578c6a3c13eacd3052", []},
-  "castore": {:hex, :castore, "1.0.12", "053f0e32700cbec356280c0e835df425a3be4bc1e0627b714330ad9d0f05497f", [:mix], [], "hexpm", "3dca286b2186055ba0c9449b4e95b97bf1b57b47c1f2644555879e659960c224"},
+  "bls_ex": {:git, "https://github.com/amadeus-robot/bls_ex", "f583750d85884d85f46079600c9b609966b1ab68", []},
   "comsat": {:git, "https://github.com/vans163/ComSat.git", "7178d64dfda9d4669ba9f1e475dbcf6ee93e0ef5", []},
   "elixir_make": {:hex, :elixir_make, "0.9.0", "6484b3cd8c0cee58f09f05ecaf1a140a8c97670671a6a0e7ab4dc326c3109726", [:mix], [], "hexpm", "db23d4fd8b757462ad02f8aa73431a426fe6671c80b200d9710caf3d1dd0ffdb"},
   "exjsx": {:hex, :exjsx, "4.0.0", "60548841e0212df401e38e63c0078ec57b33e7ea49b032c796ccad8cde794b5c", [:mix], [{:jsx, "~> 2.8.0", [hex: :jsx, repo: "hexpm", optional: false]}], "hexpm", "32e95820a97cffea67830e91514a2ad53b888850442d6d395f53a1ac60c82e07"},
@@ -11,9 +10,10 @@
   "mnesia_kv": {:git, "https://github.com/xenomorphtech/mnesia_kv.git", "890109669975807b72506adceea7f20682bc6a67", []},
   "parse_trans": {:git, "https://github.com/uwiger/parse_trans", "d99fb36755c813a5db23e6f93741aa58323ef911", []},
   "photon": {:git, "https://github.com/vans163/photon.git", "ade980985b8a7b0f8076c9c40d37f1650b349f4f", []},
+  "reedsolomon_ex": {:git, "https://github.com/amadeus-robot/reedsolomon_ex", "e11ddb33a50a4a3ccb1419a438fcc00b3c7ba8d4", []},
   "rocksdb": {:git, "https://gitlab.com/vans/erlang-rocksdb.git", "18add8e992a374771e6f1e97b1f50db6bf31a16f", [branch: "fix-gcc13"]},
   "rustler": {:hex, :rustler, "0.36.1", "2d4b1ff57ea2789a44756a40dbb5fbb73c6ee0a13d031dcba96d0a5542598a6a", [:mix], [{:jason, "~> 1.0", [hex: :jason, repo: "hexpm", optional: false]}, {:toml, "~> 0.7", [hex: :toml, repo: "hexpm", optional: false]}], "hexpm", "f3fba4ad272970e0d1bc62972fc4a99809651e54a125c5242de9bad4574b2d02"},
-  "rustler_precompiled": {:hex, :rustler_precompiled, "0.8.2", "5f25cbe220a8fac3e7ad62e6f950fcdca5a5a5f8501835d2823e8c74bf4268d5", [:mix], [{:castore, "~> 0.1 or ~> 1.0", [hex: :castore, repo: "hexpm", optional: false]}, {:rustler, "~> 0.23", [hex: :rustler, repo: "hexpm", optional: true]}], "hexpm", "63d1bd5f8e23096d1ff851839923162096364bac8656a4a3c00d1fff8e83ee0a"},
   "ssl_verify_fun": {:hex, :ssl_verify_fun, "1.1.7", "354c321cf377240c7b8716899e182ce4890c5938111a1296add3ec74cf1715df", [:make, :mix, :rebar3], [], "hexpm", "fe4c190e8f37401d30167c8c405eda19469f34577987c76dde613e838bbc67f8"},
   "toml": {:hex, :toml, "0.7.0", "fbcd773caa937d0c7a02c301a1feea25612720ac3fa1ccb8bfd9d30d822911de", [:mix], [], "hexpm", "0690246a2478c1defd100b0c9b89b4ea280a22be9a7b313a8a058a2408a2fa70"},
+  "wasmer_ex": {:git, "https://github.com/amadeus-robot/wasmer_ex", "7860904a39b527ae5765ba3199a33773138179ce", []},
 }

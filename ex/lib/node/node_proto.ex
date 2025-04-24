@@ -106,8 +106,8 @@ defmodule NodeProto do
       [<<"AMA", version_3byte::binary, 0::7, 1::1, pk::binary, signature::binary, 0::16, 1::16, ts_n::64, byte_size(msg_compressed)::32, msg_compressed::binary>>]
     else
       shards = div(byte_size(msg_compressed)+1023, 1024)
-      r = BlsEx.Native.create_resource(shards, shards, 1024)
-      BlsEx.Native.encode_shards(r, msg_compressed)
+      r = ReedSolomonEx.create_resource(shards, shards, 1024)
+      ReedSolomonEx.encode_shards(r, msg_compressed)
       |> Enum.take(shards+1+div(shards,4))
       |> Enum.map(fn {idx, shard}->
         <<"AMA", version_3byte::binary, 0::7, 1::1, pk::binary, signature::binary, idx::16, (shards*2)::16, ts_n::64, byte_size(msg_compressed)::32, shard::binary>>
@@ -128,8 +128,8 @@ defmodule NodeProto do
       [<<"AMA", version_3byte::binary, 0, pk::binary, 0::16, 1::16, ts_n::64, byte_size(payload)::32, payload::binary>>]
     else
       shards = div(byte_size(payload)+1023, 1024)
-      r = BlsEx.Native.create_resource(shards, shards, 1024)
-      BlsEx.Native.encode_shards(r, payload)
+      r = ReedSolomonEx.create_resource(shards, shards, 1024)
+      ReedSolomonEx.encode_shards(r, payload)
       |> Enum.take(shards+1+div(shards,4))
       |> Enum.map(fn {idx, shard}->
         <<"AMA", version_3byte::binary, 0, pk::binary, idx::16, (shards*2)::16, ts_n::64, byte_size(payload)::32, shard::binary>>

@@ -15,6 +15,8 @@ IO.puts "config folder is #{work_folder}"
 #Envvar.load(Path.join([work_folder, ".env"]))
 
 #Bind Interaces
+config :ama, :offline, (!!System.get_env("OFFLINE") || nil)
+
 config :ama, :http_ipv4, ((System.get_env("HTTP_IPV4") || "0.0.0.0") |> :unicode.characters_to_list() |> :inet.parse_ipv4_address() |> (case do {:ok, addr}-> addr end))
 config :ama, :http_port, (System.get_env("HTTP_PORT") || "80") |> :erlang.binary_to_integer()
 

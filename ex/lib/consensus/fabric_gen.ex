@@ -187,10 +187,18 @@ defmodule FabricGen do
     next_height = entry.header_unpacked.height + 1
     slot_trainer = Consensus.trainer_for_slot(next_height, next_slot)
 
+    #prevent double-entries due to severe system lag (you shouldnt be validator in the first place)
+    lastSlot = :persistent_term.get(:last_made_entry_slot, nil)
+    emptyHeight = Fabric.entries_by_height(next_height) == []
+
     cond do
       !FabricSyncAttestGen.isQuorumSynced() -> nil
 
+      lastSlot == next_slot -> nil
+      !emptyHeight -> nil
+
       pk == slot_trainer ->
+        :persistent_term.put(:last_made_entry_slot, next_slot)
         IO.puts "🔧 im in slot #{next_slot}, working.. *Click Clak*"
         proc_if_my_slot_1(next_slot)
 

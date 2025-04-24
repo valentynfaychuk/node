@@ -46,38 +46,40 @@ defmodule Ama do
     {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: PG, start: {:pg, :start_link, []}})
     {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: PGWSPanel, start: {:pg, :start_link, [PGWSPanel]}})
     
-    {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: ComputorGen, start: {ComputorGen, :start_link, []}})
-    {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: LoggerGen, start: {LoggerGen, :start_link, []}})
-    {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: FabricGen, start: {FabricGen, :start_link, []}})
-    {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: FabricSyncAttestGen, start: {FabricSyncAttestGen, :start_link, []}})
-    {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: FabricSyncGen, start: {FabricSyncGen, :start_link, []}})
-    {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: FabricCoordinatorGen, start: {FabricCoordinatorGen, :start_link, []}})
-    {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: FabricEventGen, start: {FabricEventGen, :start_link, []}})
-    {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: SpecialMeetingAttestGen, start: {SpecialMeetingAttestGen, :start_link, []}})
-    {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: SpecialMeetingGen, start: {SpecialMeetingGen, :start_link, []}})
-    
-    ip4 = Application.fetch_env!(:ama, :udp_ipv4_tuple)
-    port = Application.fetch_env!(:ama, :udp_port)
-    {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: NodeGen, start: {NodeGen, :start_link, [ip4, port]}, restart: :permanent})
-    Enum.each(0..31, fn(idx)->
-      atom = :'NodeGenReassemblyGen#{idx}'
-      {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: atom, start: {NodeGenReassemblyGen, :start_link, [atom]}, restart: :permanent})
-    end)
-    Enum.each(0..7, fn(idx)->
-      atom = :'NodeGenSocketGen#{idx}'
-      {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: atom, start: {NodeGenSocketGen, :start_link, [ip4, port, atom]}, restart: :permanent})
-    end)
+    if !Application.fetch_env!(:ama, :offline) do
+      {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: ComputorGen, start: {ComputorGen, :start_link, []}})
+      {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: LoggerGen, start: {LoggerGen, :start_link, []}})
+      {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: FabricGen, start: {FabricGen, :start_link, []}})
+      {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: FabricSyncAttestGen, start: {FabricSyncAttestGen, :start_link, []}})
+      {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: FabricSyncGen, start: {FabricSyncGen, :start_link, []}})
+      {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: FabricCoordinatorGen, start: {FabricCoordinatorGen, :start_link, []}})
+      {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: FabricEventGen, start: {FabricEventGen, :start_link, []}})
+      {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: SpecialMeetingAttestGen, start: {SpecialMeetingAttestGen, :start_link, []}})
+      {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: SpecialMeetingGen, start: {SpecialMeetingGen, :start_link, []}})
+      
+      ip4 = Application.fetch_env!(:ama, :udp_ipv4_tuple)
+      port = Application.fetch_env!(:ama, :udp_port)
+      {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: NodeGen, start: {NodeGen, :start_link, [ip4, port]}, restart: :permanent})
+      Enum.each(0..31, fn(idx)->
+        atom = :'NodeGenReassemblyGen#{idx}'
+        {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: atom, start: {NodeGenReassemblyGen, :start_link, [atom]}, restart: :permanent})
+      end)
+      Enum.each(0..7, fn(idx)->
+        atom = :'NodeGenSocketGen#{idx}'
+        {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: atom, start: {NodeGenSocketGen, :start_link, [ip4, port, atom]}, restart: :permanent})
+      end)
 
-    #web panel
-    ipv4 = {a,b,c,d} = Application.fetch_env!(:ama, :http_ipv4)
-    if ipv4 != {0,0,0,0} do
-      ipv4_string = "#{a}.#{b}.#{c}.#{d}"
-      port = Application.fetch_env!(:ama, :http_port)
-      IO.puts "started http-api on #{ipv4_string}:#{port}"
+      #web panel
+      ipv4 = {a,b,c,d} = Application.fetch_env!(:ama, :http_ipv4)
+      if ipv4 != {0,0,0,0} do
+        ipv4_string = "#{a}.#{b}.#{c}.#{d}"
+        port = Application.fetch_env!(:ama, :http_port)
+        IO.puts "started http-api on #{ipv4_string}:#{port}"
 
-      {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{
-        id: Photon.GenTCPAcceptor, start: {Photon.GenTCPAcceptor, :start_link, [ipv4, port, Ama.MultiServer]}
-      })
+        {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{
+          id: Photon.GenTCPAcceptor, start: {Photon.GenTCPAcceptor, :start_link, [ipv4, port, Ama.MultiServer]}
+        })
+      end
     end
 
     supervisor

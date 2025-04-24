@@ -37,6 +37,8 @@ defmodule Ama.MixProject do
       #{:erasure, git: "https://github.com/helium/erlang-erasure"},
       {:blake3, git: "https://github.com/vans163/blake3", branch: "finalize_xof"},
       {:bls_ex, git: "https://github.com/amadeus-robot/bls_ex"},
+      {:reedsolomon_ex, git: "https://github.com/amadeus-robot/reedsolomon_ex"},
+      {:wasmer_ex, git: "https://github.com/amadeus-robot/wasmer_ex"},
 
       {:comsat, git: "https://github.com/vans163/ComSat.git"},
     ]

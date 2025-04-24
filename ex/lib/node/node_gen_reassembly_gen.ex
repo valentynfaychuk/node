@@ -40,8 +40,8 @@ defmodule NodeGenReassemblyGen do
             shards = :maps.to_list(old_shards) ++ [{shard_index, shard}]
 
             try do
-                r = BlsEx.Native.create_resource(div(shard_total,2), div(shard_total,2), 1024)
-                payload = BlsEx.Native.decode_shards(r, shards, shard_total, original_size)
+                r = ReedSolomonEx.create_resource(div(shard_total,2), div(shard_total,2), 1024)
+                payload = ReedSolomonEx.decode_shards(r, shards, shard_total, original_size)
                 proc_msg(pk, shared_secret, signature, ts_nano, ip, version_3byte, payload)
             catch
                 e,r -> IO.inspect {:msg_reassemble_failed, e, r, __STACKTRACE__}
