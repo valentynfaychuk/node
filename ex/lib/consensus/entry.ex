@@ -158,6 +158,7 @@ defmodule Entry do
 
             balance = Map.get(state, {:balance, txu.tx.signer}, Consensus.chain_balance(txu.tx.signer))
             balance = balance - BIC.Base.exec_cost(txu)
+            balance = balance - BIC.Coin.to_cents(1)
             if balance < 0, do: throw(%{error: :not_enough_tx_exec_balance})
             state = Map.put(state, {:balance, txu.tx.signer}, balance)
 
