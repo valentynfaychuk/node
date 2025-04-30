@@ -100,6 +100,10 @@ defmodule RocksDB do
         end
     end
 
+    def checkpoint(db_ref, path) do
+        :rocksdb.checkpoint(db_ref, path)
+    end
+
     def snapshot(output_path) do
         %{args: args} = :persistent_term.get({:flatkv_fd, Fabric})
         File.mkdir_p!(output_path)
