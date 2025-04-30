@@ -1,4 +1,48 @@
 defmodule Util do
+    def hexdump(binary) when is_binary(binary) do
+        :binary.bin_to_list(binary)
+        |> Enum.chunk_every(16, 16, [])
+        |> Enum.with_index()
+        |> Enum.map(fn {chunk, index} ->
+            # Calculate the offset in bytes
+            address = index * 16
+
+            # Convert offset to hex, zero-padded to 8 characters
+            offset_str = address
+            |> Integer.to_string(16)
+            |> String.upcase()
+            |> String.pad_leading(8, "0")
+
+            # Convert each byte in the chunk to 2-digit hex (upper-case)
+            hex_bytes = chunk
+            |> Enum.map(fn byte ->
+                byte
+                |> Integer.to_string(16)
+                |> String.upcase()
+                |> String.pad_leading(2, "0")
+            end)
+            |> Enum.join(" ")
+
+            # Pad the hex field so the ASCII section is always aligned
+            # Each byte takes up 2 hex chars + 1 space = 3 chars
+            # For 16 bytes, that's 16 * 3 = 48 chars total.
+            # If we have fewer than 16 bytes in this chunk, add enough spaces to reach 48.
+            needed_spaces = 48 - String.length(hex_bytes)
+            hex_bytes_padded = hex_bytes <> String.duplicate(" ", needed_spaces)
+
+            # Convert to ASCII, replacing non-printable characters with "."
+            ascii = chunk
+            |> Enum.map(fn byte ->
+                if byte in 32..126 do <<byte>> else "." end
+            end)
+            |> Enum.join()
+
+            # Build the final line
+            "#{offset_str}  #{hex_bytes_padded}  #{ascii}"
+        end)
+        |> Enum.join("\n")
+    end
+
     def sbash(term) do
         term = "#{term}"
         term = String.replace(term, "'", "")
