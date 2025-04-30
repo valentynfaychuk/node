@@ -57,17 +57,12 @@ defmodule FabricSnapshot do
         work_folder = Application.fetch_env!(:ama, :work_folder)
         {:ok, _} = :zip.unzip(body, [:verbose, {:cwd, '#{work_folder}'}])
         
-        #TODO: zip structure so its only db/ at root
-        File.rm_rf!(Path.join(work_folder, "db/"))
-        File.rename!(Path.join(work_folder, "archive_#{height}/db/"), Path.join(work_folder, "db/"))
-        File.rm_rf!(Path.join(work_folder, "archive_#{height}/"))
-
         IO.puts "quick-sync done"
     end
 
     def upload_latest() do
         height_padded = String.pad_leading("10168922", 12, "0")
-        "zip -9 -r 000010168922.zip archive/db/"
+        "cd archive && zip -9 -r ../000010168922.zip db/ && cd .."
         "aws s3 cp --checksum-algorithm=CRC32 --endpoint-url https://20bf2f5d11d26a322e389687896a6601.r2.cloudflarestorage.com #{height_padded}.zip s3://ama-snapshot"
         "aws s3 cp --checksum-algorithm=CRC32 --endpoint-url https://20bf2f5d11d26a322e389687896a6601.r2.cloudflarestorage.com 000010168922.zip s3://ama-snapshot"
     end

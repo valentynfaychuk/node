@@ -6,8 +6,8 @@ defmodule Ama.MixProject do
   def project do
     [
       app: @app,
-      version: "0.7.8",
-      elixir: "~> 1.17.0",
+      version: "0.7.9",
+      elixir: ">= 1.18.0",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       build_embedded: Mix.env == :prod,
