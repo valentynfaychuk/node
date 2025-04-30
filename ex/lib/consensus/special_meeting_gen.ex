@@ -155,7 +155,7 @@ defmodule SpecialMeetingGen do
     packed_tx = build_slash_tx(st)
 
     true = FabricSyncAttestGen.isQuorumSynced()
-    cur_entry = Consensus.chain_tip_entry()
+    cur_entry = Fabric.rooted_tip_entry()
     cur_height = cur_entry.header_unpacked.height
     cur_slot = cur_entry.header_unpacked.slot
 

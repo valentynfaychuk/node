@@ -197,7 +197,7 @@ defmodule SpecialMeetingAttestGen do
 
   def maybe_attest("slash_trainer_entry", entry_packed) do
     slotStallTrainer = isNextSlotStalled()
-    cur_entry = Consensus.chain_tip_entry()
+    cur_entry = Fabric.rooted_tip_entry()
     %{error: :ok, entry: entry} = Entry.unpack_and_validate(entry_packed)
 
     1 = length(entry.txs)
