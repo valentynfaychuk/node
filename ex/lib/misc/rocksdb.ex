@@ -11,7 +11,12 @@ defmodule RocksDB do
         end
         |> case do
             :not_found -> nil
-            {:ok, value} -> if opts[:term] do :erlang.binary_to_term(value, [:safe]) else value end
+            {:ok, value} ->
+                cond do
+                    opts[:term] -> :erlang.binary_to_term(value, [:safe])
+                    opts[:to_integer] -> :erlang.binary_to_integer(value)
+                    true -> value
+                end
         end
     end
 
@@ -30,6 +35,7 @@ defmodule RocksDB do
         cf = opts[:cf]
         rtx = opts[:rtx]
         value = if opts[:term] do :erlang.term_to_binary(value, [:deterministic]) else value end
+        value = if opts[:to_integer] do :erlang.integer_to_binary(value) else value end
         cond do
             !!rtx and !!cf -> :rocksdb.transaction_put(rtx, cf, key, value)
             !!rtx -> :rocksdb.transaction_put(rtx, key, value)
