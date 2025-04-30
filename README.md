@@ -1,6 +1,13 @@
 # node
 
 
+### Building
+Using podman or docker
+```
+podman build --tag erlang_builder -f build.Dockerfile
+./build.sh
+```
+
 ### AutoUpdates + Running as a systemd service
 
 ```

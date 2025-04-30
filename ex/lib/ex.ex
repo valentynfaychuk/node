@@ -23,13 +23,13 @@ defmodule Ama do
 
     IO.puts "Initing Fabric.."
     Fabric.init()
-    Fabric.insert_genesis()
+    #Fabric.insert_genesis()
 
     IO.puts "Initing TXPool.."
     TXPool.init()
 
     rooted_tip_height = Fabric.rooted_tip_height()
-    if rooted_tip_height == nil or rooted_tip_height < 4059120 do
+    if rooted_tip_height == nil or rooted_tip_height < Application.fetch_env!(:ama, :snapshot_height) do
       Fabric.close()
       FabricSnapshot.download_latest()
       Fabric.init()

@@ -26,13 +26,7 @@ defmodule FabricSnapshot do
 
         Enum.each(entries, fn(entry)->
             IO.inspect {:delete, height, Base58.encode(entry.hash)}
-            RocksDB.delete(entry.hash, %{db: opts.db, cf: opts.cf.default})
-            RocksDB.delete("#{height}:#{entry.hash}", %{db: opts.db, cf: opts.cf.entry_by_height})
-            RocksDB.delete("#{height}:#{entry.hash}", %{db: opts.db, cf: opts.cf.entry_by_slot})
-            RocksDB.delete(entry.hash, %{db: opts.db, cf: opts.cf.consensus_by_entryhash})
-            RocksDB.delete(entry.hash, %{db: opts.db, cf: opts.cf.my_attestation_for_entry})
-            RocksDB.delete(entry.hash, %{db: opts.db, cf: opts.cf.muts})
-            RocksDB.delete(entry.hash, %{db: opts.db, cf: opts.cf.muts_rev})
+            delete_entry_and_metadata(entry, opts)
         end)
 
         case entry do
@@ -42,9 +36,22 @@ defmodule FabricSnapshot do
         end
     end
 
+   def delete_entry_and_metadata(entry, opts) do
+        height = Entry.height(entry)
+        RocksDB.delete(entry.hash, %{db: opts.db, cf: opts.cf.default})
+        RocksDB.delete("#{height}:#{entry.hash}", %{db: opts.db, cf: opts.cf.entry_by_height})
+        RocksDB.delete("#{height}:#{entry.hash}", %{db: opts.db, cf: opts.cf.entry_by_slot})
+        RocksDB.delete(entry.hash, %{db: opts.db, cf: opts.cf.consensus_by_entryhash})
+        RocksDB.delete(entry.hash, %{db: opts.db, cf: opts.cf.my_attestation_for_entry})
+        RocksDB.delete(entry.hash, %{db: opts.db, cf: opts.cf.muts})
+        RocksDB.delete(entry.hash, %{db: opts.db, cf: opts.cf.muts_rev})
+    end
+
     def download_latest() do
-        IO.puts "quick-syncing chain snapshot height 4059120.. this can take a while"
-        url = "https://snapshots.amadeus.bot/000004059120.zip"
+        height = Application.fetch_env!(:ama, :snapshot_height)
+        height_padded = String.pad_leading("#{height}", 12, "0")
+        IO.puts "quick-syncing chain snapshot height #{height}.. this can take a while"
+        url = "https://snapshots.amadeus.bot/#{height_padded}.zip"
         {:ok, %{status_code: 200, body: body}} = :comsat_http.get(url, %{},
             %{timeout: 60_000*60, ssl_options: [{:server_name_indication, 'snapshots.amadeus.bot'}, {:verify, :verify_none}]})
         work_folder = Application.fetch_env!(:ama, :work_folder)
@@ -52,9 +59,16 @@ defmodule FabricSnapshot do
         
         #TODO: zip structure so its only db/ at root
         File.rm_rf!(Path.join(work_folder, "db/"))
-        File.rename!(Path.join(work_folder, "archive_4059120/db/"), Path.join(work_folder, "db/"))
-        File.rm_rf!(Path.join(work_folder, "archive_4059120/"))
+        File.rename!(Path.join(work_folder, "archive_#{height}/db/"), Path.join(work_folder, "db/"))
+        File.rm_rf!(Path.join(work_folder, "archive_#{height}/"))
 
         IO.puts "quick-sync done"
+    end
+
+    def upload_latest() do
+        height_padded = String.pad_leading("10168922", 12, "0")
+        "zip -9 -r 000010168922.zip archive/db/"
+        "aws s3 cp --checksum-algorithm=CRC32 --endpoint-url https://20bf2f5d11d26a322e389687896a6601.r2.cloudflarestorage.com #{height_padded}.zip s3://ama-snapshot"
+        "aws s3 cp --checksum-algorithm=CRC32 --endpoint-url https://20bf2f5d11d26a322e389687896a6601.r2.cloudflarestorage.com 000010168922.zip s3://ama-snapshot"
     end
 end
