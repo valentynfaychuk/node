@@ -44,7 +44,9 @@ defmodule FabricGen do
     :persistent_term.put(FabricSyncing, true)
     proc_consensus()
     proc_entries()
-    tick_slot(state)
+    if Consensus.chain_height() < 103_00000 do
+      tick_slot(state)
+    end
     :persistent_term.put(FabricSyncing, false)
 
     state
@@ -200,6 +202,10 @@ defmodule FabricGen do
       pk == slot_trainer ->
         :persistent_term.put(:last_made_entry_slot, next_slot)
         IO.puts "🔧 im in slot #{next_slot}, working.. *Click Clak*"
+        
+        #%{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+        #:rocksdb.checkpoint(db, '/tmp/mig/db/fabric/')
+
         proc_if_my_slot_1(next_slot)
 
       true ->

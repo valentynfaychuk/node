@@ -19,6 +19,23 @@ defmodule ConsensusKV do
         :ok = :rocksdb.transaction_put(db.rtx, db.cf.contractstate, key, :erlang.term_to_binary(value, [:deterministic]))
     end
 
+    def kv_put2(key, value \\ "") do
+        db = Process.get({RocksDB, :ctx})
+        {old_value, exists} = case :rocksdb.transaction_get(db.rtx, db.cf.contractstate, key, []) do
+            :not_found -> {"", false}
+            {:ok, value} -> {value, true}
+        end
+        
+        Process.put(:mutations, Process.get(:mutations, []) ++ [%{op: :put, key: key, value: value}])
+        if exists do
+            Process.put(:mutations_reverse, Process.get(:mutations_reverse, []) ++ [%{op: :put, key: key, value: old_value}])
+        else
+            Process.put(:mutations_reverse, Process.get(:mutations_reverse, []) ++ [%{op: :delete, key: key}])
+        end
+
+        :ok = :rocksdb.transaction_put(db.rtx, db.cf.contractstate, key, value)
+    end
+
     def kv_merge(key, value \\ %{}) do
         db = Process.get({RocksDB, :ctx})
         {old_value, exists} = case :rocksdb.transaction_get(db.rtx, db.cf.contractstate, key, []) do

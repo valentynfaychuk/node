@@ -33,6 +33,10 @@ defmodule BIC.Base do
             true -> :ok
         end
 
+        if env.entry.header_unpacked.height == (103_00000-1) do
+            BIC.Migrate.migrate(103)
+        end
+
         {Process.get(:mutations, []), Process.get(:mutations_reverse, [])}
     end
 
