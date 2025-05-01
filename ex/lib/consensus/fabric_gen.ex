@@ -44,9 +44,13 @@ defmodule FabricGen do
     :persistent_term.put(FabricSyncing, true)
     proc_consensus()
     proc_entries()
-    if Consensus.chain_height() < 103_00000 do
-      tick_slot(state)
-    end
+    #tick_slot(state)
+    #cond do
+    #  Consensus.chain_height() < (103_00000-1) -> tick_slot(state)
+    #  true ->
+    #    IO.puts "upgrade to v0.8.1 now - wait for release"
+    #    :erlang.halt()        
+    #end
     :persistent_term.put(FabricSyncing, false)
 
     state

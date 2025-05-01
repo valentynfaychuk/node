@@ -55,6 +55,12 @@ systemctl start amadeusd
 screen -rd amadeusd
 ```
 
+For non-root change:
+```
+WorkingDirectory=/home/youruser
+User=youruser
+```
+
 ```
 For computor autostart
 Environment="COMPUTOR=true"

@@ -8,24 +8,24 @@ defmodule BIC.Migrate do
                 String.starts_with?(k, "bic:base:nonce:") ->
                     kv_delete(k)
                     value = :erlang.integer_to_binary(v)
-                    kv_put2(k, value)
+                    kv_put(k, value)
                 String.starts_with?(k, "bic:coin:balance:") ->
                     kv_delete(k)
                     key = k <> ":AMA"
                     value = :erlang.integer_to_binary(v)
-                    kv_put2(key, value)
+                    kv_put(key, value)
                 String.starts_with?(k, "bic:epoch:emission_address:") ->
                     kv_delete(k)
-                    kv_put2(k, v)
+                    kv_put(k, v)
                 String.starts_with?(k, "bic:epoch:pop:") ->
                     kv_delete(k)
-                    kv_put2(k, v)
+                    kv_put(k, v)
                 String.starts_with?(k, "bic:epoch:segment_vr") ->
                     kv_delete(k)
-                    kv_put2(k, v)
+                    kv_put(k, v)
                 String.starts_with?(k, "bic:epoch:solutions:") ->
                     kv_delete(k)
-                    kv_put2(k, v)
+                    kv_put(k, v)
                 String.starts_with?(k, "bic:epoch:trainers:removed:") ->
                     nil
                 String.starts_with?(k, "bic:epoch:trainers:height:") ->

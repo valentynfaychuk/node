@@ -62,6 +62,7 @@ defmodule TX do
       if !is_list(action[:args]), do: throw %{error: :args_must_be_list}
       Enum.each(action.args, fn(arg)->
          if !is_integer(arg) and !is_binary(arg), do: throw(%{error: :arg_invalid_type})
+         #if !is_binary(arg), do: throw(%{error: :arg_must_be_binary})
       end)
       if !:lists.member(action.contract, ["Epoch", "Coin"]), do: throw %{error: :invalid_module}
       if !:lists.member(action.function, ["submit_sol", "transfer", "set_emission_address", "slash_trainer"]), do: throw %{error: :invalid_function}
@@ -120,29 +121,15 @@ defmodule TX do
       end
    end
 
-    def pack(txu) do
-      txu = Map.take(txu, [:tx_encoded, :hash, :signature])
-      VanillaSer.encode(txu)
-    end
+   def pack(txu) do
+     txu = Map.take(txu, [:tx_encoded, :hash, :signature])
+     VanillaSer.encode(txu)
+   end
 
-    def unpack(tx_packed) do
-      txu = VanillaSer.decode!(tx_packed)
-      tx = VanillaSer.decode!(Map.fetch!(txu, "tx_encoded"))
-      txu = Map.put(txu, "tx", tx)
-      normalize_atoms(txu)
-    end
-
-   def test() do
-      pk = Application.fetch_env!(:ama, :trainer_pk)
-      tx = %{
-         signer: pk,
-         nonce: :os.system_time(:nanosecond),
-         actions: [%{op: "call", contract: "Epoch", function: "fake", args: []}]
-      }
-      tx_encoded = VanillaSer.encode(tx)
-      tx_packed = VanillaSer.encode(%{tx_encoded: tx_encoded})
-
-      sk = Application.fetch_env!(:ama, :trainer_sk)
-      tx_packed = TX.build(sk, "Epoch", "submit_sol", [:crypto.strong_rand_bytes(256)])
+   def unpack(tx_packed) do
+     txu = VanillaSer.decode!(tx_packed)
+     tx = VanillaSer.decode!(Map.fetch!(txu, "tx_encoded"))
+     txu = Map.put(txu, "tx", tx)
+     normalize_atoms(txu)
    end
 end
