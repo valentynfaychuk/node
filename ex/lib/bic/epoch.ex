@@ -31,10 +31,10 @@ defmodule BIC.Epoch do
         if !BIC.Sol.verify(sol), do: throw(%{error: :invalid_sol})
 
         su = BIC.Sol.unpack(sol)
-        if su.epoch != Entry.epoch(env.entry), do: throw(%{error: :invalid_epoch})
+        if su.epoch != env.entry_epoch, do: throw(%{error: :invalid_epoch})
 
         if !kv_get("bic:epoch:pop:#{su.pk}") do
-            if !BlsEx.verify?(su.pk, su.pop, su.pk, BLS12AggSig.dst_pop()), do: throw %{error: :invalid_pop}
+            if !BlsEx.verify?(su.pk, su.pop, su.pk, BLS12AggSig.dst_pop()), do: throw(%{error: :invalid_pop})
             kv_put("bic:epoch:pop:#{su.pk}", su.pop)
         end
         kv_put("bic:epoch:solutions:#{sol}", su.pk)
@@ -42,11 +42,11 @@ defmodule BIC.Epoch do
 
     def call(:set_emission_address, env, [address]) do
         if byte_size(address) != 48, do: throw(%{error: :invalid_address_pk})
-        kv_put("bic:epoch:emission_address:#{env.txu.tx.signer}", address)
+        kv_put("bic:epoch:emission_address:#{env.caller_account}", address)
     end
 
     def next(env) do
-        epoch_fin = Entry.epoch(env.entry)
+        epoch_fin = env.entry_epoch
         epoch_next = epoch_fin + 1
         top_x = cond do
             epoch_next > 38 -> 99
@@ -101,7 +101,7 @@ defmodule BIC.Epoch do
         new_trainers = Enum.shuffle(new_trainers)
         kv_put("bic:epoch:trainers:#{epoch_next}", new_trainers, %{term: true})
         
-        height = String.pad_leading("#{env.entry.header_unpacked.height+1}", 12, "0")
+        height = String.pad_leading("#{env.entry_height+1}", 12, "0")
         kv_put("bic:epoch:trainers:height:#{height}", new_trainers, %{term: true})
     end
 
@@ -123,7 +123,7 @@ defmodule BIC.Epoch do
         epoch = if is_binary(epoch) do :erlang.binary_to_integer(epoch) else epoch end
         mask_size = if is_binary(mask_size) do :erlang.binary_to_integer(mask_size) else mask_size end
 
-        cur_epoch = Entry.epoch(env.entry)
+        cur_epoch = env.entry_epoch
         <<mask::size(mask_size)-bitstring, _::bitstring>> = mask
 
         if cur_epoch != epoch, do: throw(%{error: :invalid_epoch})
@@ -134,11 +134,11 @@ defmodule BIC.Epoch do
         # 75% vote
         signers = BLS12AggSig.unmask_trainers(trainers, mask)
         consensus_pct = length(signers) / length(trainers)
-        if consensus_pct < 0.75, do: throw %{error: :invalid_amount_of_signatures}
+        if consensus_pct < 0.75, do: throw(%{error: :invalid_amount_of_signatures})
 
         apk = BlsEx.aggregate_public_keys!(signers)
         msg = <<"slash_trainer", cur_epoch::32-little, malicious_pk::binary>>
-        if !BlsEx.verify?(apk, signature, msg, BLS12AggSig.dst_motion()), do: throw %{error: :invalid_signature}
+        if !BlsEx.verify?(apk, signature, msg, BLS12AggSig.dst_motion()), do: throw(%{error: :invalid_signature})
 
         removed = kv_get("bic:epoch:trainers:removed:#{cur_epoch}", %{term: true}) || []
         kv_put("bic:epoch:trainers:removed:#{cur_epoch}", removed ++ [malicious_pk])
@@ -146,7 +146,7 @@ defmodule BIC.Epoch do
         new_trainers = trainers -- [malicious_pk]
         kv_put("bic:epoch:trainers:#{cur_epoch}", new_trainers, %{term: true})
 
-        height = String.pad_leading("#{env.entry.header_unpacked.height+1}", 12, "0")
+        height = String.pad_leading("#{env.entry_height+1}", 12, "0")
         kv_put("bic:epoch:trainers:height:#{height}", new_trainers, %{term: true})
     end
 

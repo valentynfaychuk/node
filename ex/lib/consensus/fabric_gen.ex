@@ -44,7 +44,7 @@ defmodule FabricGen do
     :persistent_term.put(FabricSyncing, true)
     proc_consensus()
     proc_entries()
-    #tick_slot(state)
+    tick_slot(state)
     #cond do
     #  Consensus.chain_height() < (103_00000-1) -> tick_slot(state)
     #  true ->

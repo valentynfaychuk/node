@@ -260,12 +260,30 @@ defmodule Consensus do
     def apply_entry_1(next_entry, cf, rtx) do
         Process.put({RocksDB, :ctx}, %{rtx: rtx, cf: cf})
 
+        mapenv = %{
+            #:seed" => :binary.encode_unsigned(abs(seed)),
+            :entry_signer => next_entry.header_unpacked.signer,
+            :entry_prev_hash => next_entry.header_unpacked.prev_hash,
+            :entry_slot => next_entry.header_unpacked.slot,
+            :entry_prev_slot => next_entry.header_unpacked.prev_slot,
+            :entry_height => next_entry.header_unpacked.height,
+            :entry_epoch => div(next_entry.header_unpacked.height, 100_000),
+            :entry_vr => next_entry.header_unpacked.vr,
+            :entry_dr => next_entry.header_unpacked.dr,
+            :tx_signer => nil, #env.txu.tx.signer,
+            :tx_nonce => nil, #env.txu.tx.nonce,
+            :tx_hash => nil, #env.txu.hash,
+            :caller_account => nil, #env.txu.tx.signer,
+            :current_account => nil, #action.contract,
+        }
+
         txus = Enum.map(next_entry.txs, & TX.unpack(&1))
-        {m_pre, m_rev_pre} = BIC.Base.call_txs_pre_parallel(%{entry: next_entry}, txus)
+        {m_pre, m_rev_pre} = BIC.Base.call_txs_pre_parallel(mapenv, txus)
 
         {m, m_rev, l} = Enum.reduce(txus, {m_pre, m_rev_pre, []}, fn(txu, {m, m_rev, l})->
             #ts_m = :os.system_time(1000)
-            {m3, m_rev3, result} = BIC.Base.call_tx_actions(%{entry: next_entry, txu: txu})
+            mapenv = Map.merge(mapenv, %{tx_signer: txu.tx.signer, tx_nonce: txu.tx.nonce, tx_hash: txu.hash, caller_account: txu.tx.signer})
+            {m3, m_rev3, result} = BIC.Base.call_tx_actions(mapenv, txu)
             #IO.inspect {:call_tx, :os.system_time(1000) - ts_m}
             if result == %{error: :ok} do
                 m = m ++ m3
@@ -276,7 +294,7 @@ defmodule Consensus do
                 {m, m_rev, l ++ [result]}
             end
         end)
-        {m_exit, m_exit_rev} = BIC.Base.call_exit(%{entry: next_entry})
+        {m_exit, m_exit_rev} = BIC.Base.call_exit(mapenv)
 
         m = m ++ m_exit
         m_rev = m_rev ++ m_exit_rev

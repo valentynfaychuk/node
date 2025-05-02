@@ -62,11 +62,11 @@ defmodule FabricSnapshot do
 
     def upload_latest() do
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
-        :ok = File.mkdir_p!("/tmp/000010299001/db/")
-        :rocksdb.checkpoint(db, '/tmp/000010299001/db/fabric/')
+        :ok = File.mkdir_p!("/tmp/000010300000/db/")
+        :rocksdb.checkpoint(db, '/tmp/000010300000/db/fabric/')
 
         height_padded = String.pad_leading("10168922", 12, "0")
-        "cd archive && zip -9 -r 000010299001.zip db/ && cd .."
+        "cd /tmp/000010300000/ && zip -9 -r 000010300000.zip db/ && cd /root"
         "aws s3 cp --checksum-algorithm=CRC32 --endpoint-url https://20bf2f5d11d26a322e389687896a6601.r2.cloudflarestorage.com #{height_padded}.zip s3://ama-snapshot"
         "aws s3 cp --checksum-algorithm=CRC32 --endpoint-url https://20bf2f5d11d26a322e389687896a6601.r2.cloudflarestorage.com 000010299001.zip s3://ama-snapshot"
     end
