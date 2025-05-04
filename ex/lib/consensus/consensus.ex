@@ -308,11 +308,8 @@ defmodule Consensus do
         :ok = :rocksdb.transaction_put(rtx, cf.my_attestation_for_entry, next_entry.hash, attestation_packed)
         
         pk = Application.fetch_env!(:ama, :trainer_pk)
-        ap = if pk in trainers_for_height(Entry.height(next_entry), %{rtx: rtx, cf: cf}) do
-            #TODO: not ideal in super tight latency constrains but its 1 line and it works
-            send(FabricCoordinatorGen, {:add_attestation, attestation})
-            attestation_packed
-        end
+        trainers = trainers_for_height(Entry.height(next_entry), %{rtx: rtx, cf: cf})
+        is_trainer = pk in trainers
 
         seen_time = :os.system_time(1000)
         :ok = :rocksdb.transaction_put(rtx, cf.my_seen_time_for_entry, next_entry.hash, :erlang.term_to_binary(seen_time, [:deterministic]))
@@ -338,6 +335,12 @@ defmodule Consensus do
         end
 
         :ok = :rocksdb.transaction_commit(rtx)
+        
+        ap = if is_trainer do
+            #TODO: not ideal in super tight latency constrains but its 1 line and it works
+            send(FabricCoordinatorGen, {:add_attestation, attestation})
+            attestation_packed
+        end
         
         %{error: :ok, attestation_packed: ap, mutations_hash: mutations_hash, logs: l, muts: m}
     end

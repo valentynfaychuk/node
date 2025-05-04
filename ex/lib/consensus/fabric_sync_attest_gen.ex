@@ -26,11 +26,21 @@ defmodule FabricSyncAttestGen do
   end
 
   def isQuorumSynced() do
-    hasQuorum() and isSynced() == :full
+    cond do
+      !hasQuorum() -> false
+      isSynced() != :full -> false
+      Fabric.rooted_tip_height() < Consensus.chain_height() -> false
+      true -> true
+    end
   end
 
   def isQuorumSyncedOffBy1() do
-    hasQuorum() and isSynced()
+    cond do
+      !hasQuorum() -> false
+      isSynced() not in [:full, :off_by_1] -> false
+      Fabric.rooted_tip_height() < (Consensus.chain_height() - 1) -> false
+      true -> true
+    end
   end
 
   def isQuorumIsInEpoch() do

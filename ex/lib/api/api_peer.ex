@@ -52,7 +52,7 @@ defmodule API.Peer do
     end
 
     def all() do
-        NodePeers.all
+        NodePeers.all()
         |> Enum.map(& [
             &1[:version],&1[:latency],Base58.encode(&1[:pk]),
             get_in(&1, [:temporal, :header_unpacked, :height]),

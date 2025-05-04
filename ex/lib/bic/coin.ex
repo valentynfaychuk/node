@@ -99,4 +99,18 @@ defmodule BIC.Coin do
         kv_increment("bic:coin:balance:#{env.caller_account}:#{symbol}", amount)
         kv_increment("bic:coin:totalSupply:#{symbol}", amount)
     end
+
+    def call(:pause, env, [symbol, direction]) do
+        if !is_binary(symbol), do: throw(%{error: :invalid_symbol})
+        if direction not in ["true", "false"], do: throw(%{error: :invalid_direction})
+
+        if !kv_get("bic:coin:totalSupply:#{symbol}"), do: throw(%{error: :symbol_doesnt_exist})
+        
+        admins = kv_get("bic:coin:permission:#{symbol}", %{term: true})
+        if env.caller_account not in admins, do: throw(%{error: :no_permissions})
+
+        if kv_get("bic:coin:pausable:#{symbol}") != "true", do: throw(%{error: :not_pausable})
+
+        kv_put("bic:coin:paused:#{symbol}", direction)
+    end
 end
