@@ -59,7 +59,7 @@ defmodule LoggerGen do
     highest_height = max(FabricSyncAttestGen.highestTemporalHeight() || height, height)
 
     if !isSynced do
-      IO.puts "⛓️  #{height} / #{highest_height} R: #{height-rooted_height} S: #{slot} | T: #{txpool_size} P: #{peer_cnt} 🔴 NOT SYNCED"
+      IO.puts "⛓️  #{height} / #{highest_height} R: #{height-rooted_height} S: #{slot} | T: #{txpool_size} P: #{peer_cnt} 🔴 NOT-SYNCED #{Base58.encode(pk)}"
     else
       IO.puts "⛓️  #{height} / #{highest_height} R: #{height-rooted_height} S: #{slot} | T: #{txpool_size} P: #{peer_cnt} | #{Base58.encode(pk)} #{isTrainer} #{coins}"
     end
