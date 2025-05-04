@@ -21,7 +21,7 @@ defmodule AutoUpdateGen do
     state
   end
 
-  def upgrade() do
+  def upgrade(is_boot \\ false) do
     url = "https://api.github.com/repos/amadeus-robot/node/releases/latest"
     {:ok, %{status_code: 200, body: body}} = :comsat_http.get(url, %{},
         %{ssl_options: [{:server_name_indication, 'api.github.com'}, {:verify, :verify_none}]})
@@ -42,10 +42,20 @@ defmodule AutoUpdateGen do
             File.rename!(path_tmp, path)
             File.chmod!(path, 0o755)
 
-            if Consensus.is_trainer() do
-              FabricGen.exitAfterMySlot()
-            else
-              :erlang.halt()
+            cond do
+              is_boot -> :erlang.halt()
+              Consensus.is_trainer() ->
+                FabricGen.exitAfterMySlot()
+
+                #incase
+                now_height = Consensus.chain_height()
+                Process.sleep(30*1000)
+                delta = Consensus.chain_height() - now_height
+                if delta <= 3 do
+                  :erlang.halt()
+                end
+
+              true -> :erlang.halt()
             end
         end
     end

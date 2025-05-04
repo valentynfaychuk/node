@@ -17,7 +17,7 @@ defmodule Ama do
 
     if Application.fetch_env!(:ama, :autoupdate) do
       IO.puts "🟢 auto-update enabled"
-      AutoUpdateGen.upgrade()
+      AutoUpdateGen.upgrade(true)
       {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: AutoUpdateGen, start: {AutoUpdateGen, :start_link, []}})
     end
 
