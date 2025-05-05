@@ -204,6 +204,9 @@ defmodule SpecialMeetingAttestGen do
     txu = TX.unpack(hd(entry.txs))
     %{contract: "Epoch", function: "slash_trainer", args: args} = hd(txu.tx.actions)
     [epoch, malicious_pk, signature, mask_size, mask] = args
+    epoch = if is_binary(epoch) do :erlang.binary_to_integer(epoch) else epoch end
+    mask_size = if is_binary(mask_size) do :erlang.binary_to_integer(mask_size) else mask_size end
+
     <<mask::size(mask_size)-bitstring, _::bitstring>> = mask
 
     trainers = Consensus.trainers_for_height(entry.header_unpacked.height)

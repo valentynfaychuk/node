@@ -68,7 +68,7 @@ defmodule SpecialMeetingGen do
 
     score = BLS12AggSig.score(trainers, state.slash_trainer.mask)
     state = put_in(state, [:slash_trainer, :score_tx], score)
-
+    IO.inspect {:tx, score}
     {:noreply, state}
   end
 

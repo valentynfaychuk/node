@@ -1,6 +1,16 @@
 defmodule BIC.Migrate do
     import ConsensusKV
 
+    def test() do
+        %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+        RocksDB.get_prefix "", %{db: db, cf: cf.contractstate}
+        |> Enum.each(fn({k,v})->
+            #IO.puts Util.hexdump(k)
+            File.write!("/tmp/dump", Util.hexdump(k), [:append])
+            File.write!("/tmp/dump", v, [:append])
+        end)
+    end
+
     def migrate(103) do
         kv_get_prefix("")
         |> Enum.each(fn({k,v})->
