@@ -56,11 +56,12 @@ defmodule BIC.Base do
             if !action, do: throw(%{error: :no_actions})
 
             env = Map.put(env, :current_account, action.contract)
-            if BlsEx.Native.validate_public_key(action.contract) do
+            if BlsEx.validate_public_key(action.contract) do
             else
                 seed_random(env.entry_vr, env.tx_hash, "0")
                 module = String.to_existing_atom("Elixir.BIC.#{action.contract}")
                 function = String.to_existing_atom(action.function)
+
                 :erlang.apply(module, :call, [function, env, action.args])
             end
             %{error: :ok}
