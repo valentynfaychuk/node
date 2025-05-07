@@ -65,6 +65,7 @@ defmodule RocksDB do
         case res do
             {:ok, <<^prefix::binary, key::binary>>, value} ->
                 value = if opts[:term] do :erlang.binary_to_term(value, [:safe]) else value end
+                value = if opts[:to_integer] do :erlang.binary_to_integer(value) else value end
                 res = :rocksdb.iterator_move(it, :next)
                 get_prefix_1(prefix, it, res, opts, acc ++ [{key, value}])
             {:error, :invalid_iterator} -> acc

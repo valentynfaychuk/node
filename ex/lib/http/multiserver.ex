@@ -115,8 +115,16 @@ defmodule Ama.MultiServer do
 
             r.method == "GET" and String.starts_with?(r.path, "/api/wallet/balance/") ->
                 pk = String.replace(r.path, "/api/wallet/balance/", "")
-                balance = API.Wallet.balance(pk)
+                balance = case String.split(pk, "/") do
+                    [pk] -> API.Wallet.balance(pk, "AMA")
+                    [pk, symbol] -> API.Wallet.balance(pk, symbol)
+                end
                 quick_reply(state, %{error: :ok, balance: balance})
+
+            r.method == "GET" and String.starts_with?(r.path, "/api/wallet/balance_all/") ->
+                pk = String.replace(r.path, "/api/wallet/balance_all/", "")
+                balances = API.Wallet.balance_all(pk)
+                quick_reply(state, %{error: :ok, balances: balances})
 
             r.method == "POST" and String.starts_with?(r.path, "/api/tx/submit") ->
                 {r, tx_packed} = Photon.HTTP.read_body_all_json(state.socket, r)

@@ -141,7 +141,7 @@ defmodule BIC.Epoch do
         if !BlsEx.verify?(apk, signature, msg, BLS12AggSig.dst_motion()), do: throw(%{error: :invalid_signature})
 
         removed = kv_get("bic:epoch:trainers:removed:#{cur_epoch}", %{term: true}) || []
-        kv_put("bic:epoch:trainers:removed:#{cur_epoch}", removed ++ [malicious_pk])
+        kv_put("bic:epoch:trainers:removed:#{cur_epoch}", removed ++ [malicious_pk], %{term: true})
 
         new_trainers = trainers -- [malicious_pk]
         kv_put("bic:epoch:trainers:#{cur_epoch}", new_trainers, %{term: true})
