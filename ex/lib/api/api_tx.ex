@@ -14,6 +14,30 @@ defmodule API.TX do
     end
 
     def get_by_address(pk) do
+        txs = get_by_address_sent(pk) ++ get_by_address_recv(pk)
+        Enum.sort_by(txs, & &1.tx.nonce)
+    end
+
+    def get_by_address_sent(pk) do
+        pk = if byte_size(pk) != 48, do: Base58.decode(pk), else: pk
+
+        %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+        RocksDB.get_prefix("#{pk}:", %{db: db, cf: cf.tx_account_nonce})
+        |> Enum.map(fn {nonce, txid}->
+            API.TX.get(txid)
+            |> Map.put(:metadata, %{tx_event: :sent})
+        end)
+    end
+
+    def get_by_address_recv(pk) do
+        pk = if byte_size(pk) != 48, do: Base58.decode(pk), else: pk
+
+        %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+        RocksDB.get_prefix("#{pk}:", %{db: db, cf: cf.tx_receiver_nonce})
+        |> Enum.map(fn {nonce, txid}->
+            API.TX.get(txid)
+            |> Map.put(:metadata, %{tx_event: :sent})
+        end)
     end
 
     def submit(tx_packed) do
