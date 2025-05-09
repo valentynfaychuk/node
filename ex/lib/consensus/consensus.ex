@@ -172,6 +172,12 @@ defmodule Consensus do
         Enum.each(current_entry.txs, fn(tx_packed)->
             txu = TX.unpack(tx_packed)
             :ok = :rocksdb.transaction_delete(rtx, cf.tx, txu.hash)
+            nonce_padded = String.pad_leading("#{txu.tx.nonce}", 20, "0")
+            :ok = :rocksdb.transaction_delete(rtx, cf.tx_account_nonce, "#{txu.tx.signer}:#{nonce_padded}")
+            TX.known_receivers(txu)
+            |> Enum.each(fn(receiver)->
+                :ok = :rocksdb.transaction_put(rtx, cf.tx_receiver_nonce, "#{receiver}:#{nonce_padded}", txu.hash)
+            end)
         end)
 
         if current_entry.hash == target_hash do
@@ -261,7 +267,9 @@ defmodule Consensus do
         Process.put({RocksDB, :ctx}, %{rtx: rtx, cf: cf})
 
         mapenv = %{
-            #:seed" => :binary.encode_unsigned(abs(seed)),
+            :readonly => false,
+            :seed => nil,
+            :seedf64 => 1.0,
             :entry_signer => next_entry.header_unpacked.signer,
             :entry_prev_hash => next_entry.header_unpacked.prev_hash,
             :entry_slot => next_entry.header_unpacked.slot,
@@ -273,8 +281,11 @@ defmodule Consensus do
             :tx_signer => nil, #env.txu.tx.signer,
             :tx_nonce => nil, #env.txu.tx.nonce,
             :tx_hash => nil, #env.txu.hash,
-            :caller_account => nil, #env.txu.tx.signer,
-            :current_account => nil, #action.contract,
+            :account_origin => nil, #env.txu.tx.signer,
+            :account_caller => nil, #env.txu.tx.signer,
+            :account_current => nil, #action.contract,
+            :call_counter => 0,
+            :call_exec_points => 10_000_000,
         }
 
         txus = Enum.map(next_entry.txs, & TX.unpack(&1))
@@ -282,7 +293,8 @@ defmodule Consensus do
 
         {m, m_rev, l} = Enum.reduce(txus, {m_pre, m_rev_pre, []}, fn(txu, {m, m_rev, l})->
             #ts_m = :os.system_time(1000)
-            mapenv = Map.merge(mapenv, %{tx_signer: txu.tx.signer, tx_nonce: txu.tx.nonce, tx_hash: txu.hash, caller_account: txu.tx.signer})
+            mapenv = Map.merge(mapenv, %{tx_signer: txu.tx.signer, tx_nonce: txu.tx.nonce, tx_hash: txu.hash,
+                account_origin: txu.tx.signer, account_caller: txu.tx.signer})
             {m3, m_rev3, result} = BIC.Base.call_tx_actions(mapenv, txu)
             #IO.inspect {:call_tx, :os.system_time(1000) - ts_m}
             if result == %{error: :ok} do
@@ -327,6 +339,13 @@ defmodule Consensus do
                 value = %{entry_hash: next_entry.hash, result: result, index_start: index_start, index_size: index_size}
                 value = :erlang.term_to_binary(value, [:deterministic])
                 :ok = :rocksdb.transaction_put(rtx, cf.tx, txu.hash, value)
+
+                nonce_padded = String.pad_leading("#{txu.tx.nonce}", 20, "0")
+                :ok = :rocksdb.transaction_put(rtx, cf.tx_account_nonce, "#{txu.tx.signer}:#{nonce_padded}", txu.hash)
+                TX.known_receivers(txu)
+                |> Enum.each(fn(receiver)->
+                    :ok = :rocksdb.transaction_put(rtx, cf.tx_receiver_nonce, "#{receiver}:#{nonce_padded}", txu.hash)
+                end)
             end
         end)
 

@@ -9,6 +9,13 @@ defmodule BIC.Base do
         #BIC.Coin.to_tenthousandth( 18 + div(bytes, 256) * 3 )
     end
 
+    defp seed_random(vr, txhash, action_index, call_cnt) do
+        seed_bin = <<seed::256-little>> = Blake3.hash(
+            <<vr::binary, txhash::binary, action_index::binary, call_cnt::binary>>)
+        :rand.seed(:exsss, seed)
+        seed_bin
+    end
+
     def call_txs_pre_parallel(env, txus) do
         Process.delete(:mutations)
         Process.delete(:mutations_reverse)
@@ -26,7 +33,7 @@ defmodule BIC.Base do
     def call_exit(env) do
         Process.delete(:mutations)
         Process.delete(:mutations_reverse)
-        seed_random(env.entry_vr, "", "")
+        seed_random(env.entry_vr, "", "", "")
 
         #thank you come again
         kv_increment("bic:coin:balance:#{env.entry_signer}:AMA", BIC.Coin.to_flat(1))
@@ -55,11 +62,12 @@ defmodule BIC.Base do
             action = List.first(txu.tx.actions)
             if !action, do: throw(%{error: :no_actions})
 
-            env = Map.put(env, :current_account, action.contract)
+            env = Map.put(env, :account_current, action.contract)
             if BlsEx.validate_public_key(action.contract) do
             else
-                seed_random(env.entry_vr, env.tx_hash, "0")
-                module = String.to_existing_atom("Elixir.BIC.#{action.contract}")
+                seed_random(env.entry_vr, env.tx_hash, "0", "")
+                contract = if String.starts_with?("Elixir.BIC.") do action.contract else "Elixir.BIC.#{action.contract}" end
+                module = String.to_existing_atom(contract)
                 function = String.to_existing_atom(action.function)
 
                 :erlang.apply(module, :call, [function, env, action.args])
@@ -73,10 +81,5 @@ defmodule BIC.Base do
         end
 
         {Process.get(:mutations, []), Process.get(:mutations_reverse, []), result}
-    end
-
-    defp seed_random(vr, txhash, action_index) do
-        <<seed::256-little>> = Blake3.hash(<<vr::binary, txhash::binary, action_index::binary>>)
-        :rand.seed(:exsss, seed)
     end
 end

@@ -41,14 +41,14 @@ defmodule BIC.Coin do
         amount = if is_binary(amount) do :erlang.binary_to_integer(amount) else amount end
         if !is_integer(amount), do: throw(%{error: :invalid_amount})
         if amount <= 0, do: throw(%{error: :invalid_amount})
-        if amount > balance(env.caller_account, symbol), do: throw(%{error: :insufficient_funds})
+        if amount > balance(env.account_caller, symbol), do: throw(%{error: :insufficient_funds})
 
         #Not necessary as balance check would fail
         #if symbol != "AMA" and !kv_get("bic:coin:totalSupply:#{symbol}"), do: throw(%{error: :abort, reason: :symbol_doesnt_exist})
 
         if kv_get("bic:coin:pausable:#{symbol}") == "true" and kv_get("bic:coin:paused:#{symbol}") == "true", do: throw(%{error: :paused})
 
-        kv_increment("bic:coin:balance:#{env.caller_account}:#{symbol}", -amount)
+        kv_increment("bic:coin:balance:#{env.account_caller}:#{symbol}", -amount)
         kv_increment("bic:coin:balance:#{receiver}:#{symbol}", amount)
     end
 
@@ -63,13 +63,13 @@ defmodule BIC.Coin do
         if !is_integer(amount), do: throw(%{error: :invalid_amount})
         if amount <= 0, do: throw(%{error: :invalid_amount})
 
-        if !BIC.CoinSymbolReserved.is_free(symbol, env.caller_account), do: throw(%{error: :symbol_reserved})
+        if !BIC.CoinSymbolReserved.is_free(symbol, env.account_caller), do: throw(%{error: :symbol_reserved})
         if kv_get("bic:coin:totalSupply:#{symbol}"), do: throw(%{error: :symbol_exists})
 
-        kv_increment("bic:coin:balance:#{env.caller_account}:#{symbol}", amount)
+        kv_increment("bic:coin:balance:#{env.account_caller}:#{symbol}", amount)
         kv_increment("bic:coin:totalSupply:#{symbol}", amount)
 
-        kv_put("bic:coin:permission:#{symbol}", [env.caller_account], %{term: true})
+        kv_put("bic:coin:permission:#{symbol}", [env.account_caller], %{term: true})
         mintable == "true" && kv_put("bic:coin:mintable:#{symbol}", "true")
         pausable == "true" && kv_put("bic:coin:pausable:#{symbol}", "true")
     end
@@ -84,12 +84,12 @@ defmodule BIC.Coin do
         if !kv_get("bic:coin:totalSupply:#{symbol}"), do: throw(%{error: :symbol_doesnt_exist})
         
         admins = kv_get("bic:coin:permission:#{symbol}", %{term: true})
-        if env.caller_account not in admins, do: throw(%{error: :no_permissions})
+        if env.account_caller not in admins, do: throw(%{error: :no_permissions})
 
         if kv_get("bic:coin:mintable:#{symbol}") != "true", do: throw(%{error: :not_mintable})
         if kv_get("bic:coin:pausable:#{symbol}") == "true" and kv_get("bic:coin:paused:#{symbol}") == "true", do: throw(%{error: :paused})
 
-        kv_increment("bic:coin:balance:#{env.caller_account}:#{symbol}", amount)
+        kv_increment("bic:coin:balance:#{env.account_caller}:#{symbol}", amount)
         kv_increment("bic:coin:totalSupply:#{symbol}", amount)
     end
 
@@ -100,7 +100,7 @@ defmodule BIC.Coin do
         if !kv_get("bic:coin:totalSupply:#{symbol}"), do: throw(%{error: :symbol_doesnt_exist})
         
         admins = kv_get("bic:coin:permission:#{symbol}", %{term: true})
-        if env.caller_account not in admins, do: throw(%{error: :no_permissions})
+        if env.account_caller not in admins, do: throw(%{error: :no_permissions})
 
         if kv_get("bic:coin:pausable:#{symbol}") != "true", do: throw(%{error: :not_pausable})
 

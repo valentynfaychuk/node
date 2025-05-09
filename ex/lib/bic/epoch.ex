@@ -42,7 +42,7 @@ defmodule BIC.Epoch do
 
     def call(:set_emission_address, env, [address]) do
         if byte_size(address) != 48, do: throw(%{error: :invalid_address_pk})
-        kv_put("bic:epoch:emission_address:#{env.caller_account}", address)
+        kv_put("bic:epoch:emission_address:#{env.account_caller}", address)
     end
 
     def next(env) do

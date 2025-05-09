@@ -21,6 +21,8 @@ defmodule Fabric do
             {'entry_by_height|height:entryhash', @args},
             {'entry_by_slot|slot:entryhash', @args},
             {'tx|txhash:entryhash', @args},
+            {'tx_account_nonce|account:nonce->txhash', @args},
+            {'tx_receiver_nonce|receiver:nonce->txhash', @args},
 
             {'my_seen_time_entry|entryhash', @args},
             {'my_attestation_for_entry|entryhash', @args},
@@ -41,15 +43,17 @@ defmodule Fabric do
           ]
         )
         [
-            default_cf, entry_height_cf, entry_slot_cf, tx_cf,
-            my_seen_time_for_entry_cf, my_attestation_for_entry_cf, 
+            default_cf, entry_height_cf, entry_slot_cf,
+            tx_cf, tx_account_nonce_cf, tx_receiver_nonce_cf,
+            my_seen_time_for_entry_cf, my_attestation_for_entry_cf,
             #my_mutations_hash_for_entry_cf,
             consensus_cf, consensus_by_entryhash_cf,
             contractstate_cf, muts_cf, muts_rev_cf,
             sysconf_cf
         ] = cf_ref_list
         cf = %{
-            default: default_cf, entry_by_height: entry_height_cf, entry_by_slot: entry_slot_cf, tx: tx_cf,
+            default: default_cf, entry_by_height: entry_height_cf, entry_by_slot: entry_slot_cf,
+            tx: tx_cf, tx_account_nonce: tx_account_nonce_cf, tx_receiver_nonce: tx_receiver_nonce_cf,
             my_seen_time_for_entry: my_seen_time_for_entry_cf, my_attestation_for_entry: my_attestation_for_entry_cf,
             #my_mutations_hash_for_entry: my_mutations_hash_for_entry_cf,
             consensus: consensus_cf, consensus_by_entryhash: consensus_by_entryhash_cf,
