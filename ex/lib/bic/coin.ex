@@ -32,19 +32,12 @@ defmodule BIC.Coin do
         kv_get("bic:coin:balance:#{pubkey}:#{symbol}", %{to_integer: true}) || 0
     end
 
-    def call(:transfer, env, [receiver, amount]) do
-        if byte_size(receiver) != 48, do: throw(%{error: :invalid_receiver_pk})
-        amount = if is_binary(amount) do :erlang.binary_to_integer(amount) else amount end
-        if !is_integer(amount), do: throw(%{error: :invalid_amount})
-        if amount <= 0, do: throw(%{error: :invalid_amount})
-        if amount > balance(env.caller_account), do: throw(%{error: :insufficient_funds})
+    def call(:transfer, env, [receiver, amount]), do: call(:transfer, env, [receiver, amount, "AMA"])
+    def call(:transfer, env, [receiver, amount, symbol]) do
+        {receiver, amount, symbol} = if receiver == "AMA" do {amount, symbol, receiver} else {receiver, amount, symbol} end
 
-        kv_increment("bic:coin:balance:#{env.caller_account}:AMA", -amount)
-        kv_increment("bic:coin:balance:#{receiver}:AMA", amount)
-    end
-
-    def call(:transfer, env, [symbol, receiver, amount]) do
         if byte_size(receiver) != 48, do: throw(%{error: :invalid_receiver_pk})
+        if !BlsEx.validate_public_key(receiver) and receiver != @burn_address, do: throw(%{error: :invalid_receiver_pk})
         amount = if is_binary(amount) do :erlang.binary_to_integer(amount) else amount end
         if !is_integer(amount), do: throw(%{error: :invalid_amount})
         if amount <= 0, do: throw(%{error: :invalid_amount})

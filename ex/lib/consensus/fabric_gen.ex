@@ -175,7 +175,7 @@ defmodule FabricGen do
           mutations_hash: m_hash, logs: l, muts: m} = Consensus.apply_entry(entry)
         send(FabricEventGen, {:entry, entry, m_hash, m, l})
         
-        if !!attestation_packed and FabricSyncAttestGen.isQuorumSyncedOffBy1() do
+        if !!attestation_packed and FabricSyncAttestGen.isQuorumSyncedOffByX(6) do
           NodeGen.broadcast(:attestation_bulk, :trainers, [[attestation_packed]])
           NodeGen.broadcast(:attestation_bulk, {:not_trainers, 10}, [[attestation_packed]])
         end
@@ -225,9 +225,10 @@ defmodule FabricGen do
 
     next_trainer = Consensus.trainer_for_slot(Entry.height(next_entry)+1, next_slot+1)
     peer = NodePeers.by_pk(next_trainer)
-    if peer do
-      NodeGen.broadcast(:entry, {:some, [peer.ip]}, [map])
-    end
+    if peer do NodeGen.broadcast(:entry, {:some, [peer.ip]}, [map]) end
+    next_trainer = Consensus.trainer_for_slot(Entry.height(next_entry)+2, next_slot+2)
+    peer2 = NodePeers.by_pk(next_trainer)
+    if peer2 do NodeGen.broadcast(:entry, {:some, [peer2.ip]}, [map]) end
 
     NodeGen.broadcast(:entry, :trainers, [map])
     NodeGen.broadcast(:entry, {:not_trainers, 10}, [map])

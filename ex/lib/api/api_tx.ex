@@ -2,6 +2,7 @@ defmodule API.TX do
     def get(tx_id) do
         tx_id = if byte_size(tx_id) != 32, do: Base58.decode(tx_id), else: tx_id
         Consensus.chain_tx(tx_id)
+        |> format_tx_for_client()
     end
 
     def get_by_entry(entry_hash) do
@@ -33,8 +34,9 @@ defmodule API.TX do
         tx = put_in(tx, [:tx, :signer], Base58.encode(tx.tx.signer))
         actions = Enum.map(tx.tx.actions, fn(a)->
             args = Enum.map(a.args, fn(arg)->
-                if !is_binary(arg) do arg else
-                    Base58.encode(arg)
+                cond do
+                    !is_binary(arg) or Util.ascii?(arg) -> arg
+                    true -> Base58.encode(arg)
                 end
             end)
             Map.put(a, :args, args)

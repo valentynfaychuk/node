@@ -49,18 +49,37 @@ defmodule Util do
         if term == "" do "" else "'#{term}'" end
     end
 
-    def alphanumeric(string) do
-        string
-        |> String.to_charlist()
-        |> Enum.filter(fn(char)->
-            char in 97..122
-            || char in 65..90
-            || char in 48..57
-        end)
-        |> List.to_string()
+    def ascii(string) do
+        for <<c <- string>>,
+            c == 32
+            or c in 123..126
+            or c in ?!..?@
+            or c in ?[..?_
+            or c in ?0..?9
+            or c in ?A..?Z
+            or c in ?a..?z,
+        into: "" do
+            <<c>>
+        end
+    end
+    def ascii?(string) do
+        string == alphanumeric(string)
     end
 
-    def ascii(string) do
+    def alphanumeric(string) do
+        for <<c <- string>>,
+            c in ?0..?9
+            or c in ?A..?Z
+            or c in ?a..?z,
+        into: "" do
+            <<c>>
+        end
+    end
+    def alphanumeric?(string) do
+        string == alphanumeric(string)
+    end
+
+    def ascii_dash_underscore(string) do
         string
         |> String.to_charlist()
         |> Enum.filter(fn(char)->

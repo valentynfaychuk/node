@@ -53,6 +53,7 @@ defmodule TX do
       if !BlsEx.verify?(txu.tx.signer, signature, hash, BLS12AggSig.dst_tx()), do: throw(%{error: :invalid_signature})
 
       if !is_integer(txu.tx.nonce), do: throw(%{error: :nonce_not_integer})
+      if txu.tx.nonce > 99_999_999_999_999_999_999, do: throw(%{error: :nonce_too_high})
       if !is_list(txu.tx.actions), do: throw(%{error: :actions_must_be_list})
       if length(txu.tx.actions) != 1, do: throw(%{error: :actions_length_must_be_1})
       action = hd(txu.tx.actions)
@@ -60,9 +61,14 @@ defmodule TX do
       if !is_binary(action[:contract]), do: throw %{error: :contract_must_be_binary}
       if !is_binary(action[:function]), do: throw %{error: :function_must_be_binary}
       if !is_list(action[:args]), do: throw %{error: :args_must_be_list}
+
+      epoch = Consensus.chain_epoch()
       Enum.each(action.args, fn(arg)->
-         if !is_integer(arg) and !is_binary(arg), do: throw(%{error: :arg_invalid_type})
-         #if !is_binary(arg), do: throw(%{error: :arg_must_be_binary})
+         if epoch >= 107 do
+            if !is_binary(arg), do: throw(%{error: :arg_must_be_binary})
+         else
+            if !is_integer(arg) and !is_binary(arg), do: throw(%{error: :arg_invalid_type})
+         end
       end)
       if !:lists.member(action.contract, ["Epoch", "Coin"]), do: throw %{error: :invalid_module}
       if !:lists.member(action.function, ["submit_sol", "transfer", "set_emission_address", "slash_trainer"]), do: throw %{error: :invalid_function}
@@ -119,6 +125,24 @@ defmodule TX do
          !hasBalance -> false
          true -> true
       end
+   end
+
+   def valid_pk(pk) do
+      pk == BIC.Coin.burn_address() or BlsEx.validate_public_key(pk)
+   end
+
+   def known_receivers(txu) do
+      action = hd(txu.tx.actions)
+      c = action.contract
+      f = action.function
+      a = action.args
+      case {c,f,a} do
+         {"Coin", "transfer", [receiver, _amount]} -> valid_pk(receiver) && [receiver]
+         {"Coin", "transfer", ["AMA", receiver, _amount]} -> valid_pk(receiver) && [receiver]
+         {"Coin", "transfer", [receiver, _amount, _symbol]} -> valid_pk(receiver) && [receiver]
+         {"Epoch", "slash_trainer", [_epoch, malicious_pk, _signature, _mask_size, _mask]} -> valid_pk(malicious_pk) && [malicious_pk]
+         _ -> nil
+      end || []
    end
 
    def pack(txu) do
