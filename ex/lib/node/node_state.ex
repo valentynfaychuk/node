@@ -103,7 +103,7 @@ defmodule NodeState do
         if Consensus.chain_balance(trainer_pk) >= BIC.Coin.to_flat(1) do
           #IO.inspect {:peer_sent_sol, Base58.encode(istate.peer.signer)}
           tx_packed1 = TX.build(sk, "Epoch", "submit_sol", [term.sol])
-          tx_packed2 = TX.build(sk, "Coin", "transfer", ["AMA", sol.computor, BIC.Coin.to_cents(100) |> :erlang.integer_to_binary()])
+          tx_packed2 = TX.build(sk, "Coin", "transfer", [sol.computor, :erlang.integer_to_binary(BIC.Coin.to_cents(100)), "AMA"])
           TXPool.insert([tx_packed1, tx_packed2])
           NodeGen.broadcast(:txpool, :trainers, [[tx_packed1, tx_packed2]])
         end
@@ -211,26 +211,20 @@ defmodule NodeState do
     true = length(term.heights) <= 30
 
     {attestations_packed, consensuses_packed} = Enum.reduce(term.heights, {[], []}, fn(height, {a, c})->
-        {attests, consens} = Fabric.get_attestations_or_consensuses_by_height(height)
+        {attests, consens} = Fabric.get_attestations_and_consensuses_by_height(height)
         attests = Enum.map(attests, & Attestation.pack(&1))
         consens = Enum.map(consens, & Consensus.pack(&1))
         {a ++ attests, c ++ consens}
     end)
 
     if length(attestations_packed) > 0 do
-        Enum.chunk_every(attestations_packed, 3)
-        |> Enum.each(fn(bulk)->
-            msg = NodeProto.attestation_bulk(bulk)
-            :erlang.spawn(fn()-> send(NodeGen.get_socket_gen(), {:send_to_some, [istate.peer.ip], compress(msg)}) end)
-        end)
+        msg = NodeProto.attestation_bulk(attestations_packed)
+        :erlang.spawn(fn()-> send(NodeGen.get_socket_gen(), {:send_to_some, [istate.peer.ip], compress(msg)}) end)
     end
 
     if length(consensuses_packed) > 0 do
-        Enum.chunk_every(consensuses_packed, 3)
-        |> Enum.each(fn(bulk)->
-            msg = NodeProto.consensus_bulk(bulk)
-            :erlang.spawn(fn()-> send(NodeGen.get_socket_gen(), {:send_to_some, [istate.peer.ip], compress(msg)}) end)
-        end)
+        msg = NodeProto.consensus_bulk(consensuses_packed)
+        :erlang.spawn(fn()-> send(NodeGen.get_socket_gen(), {:send_to_some, [istate.peer.ip], compress(msg)}) end)
     end
   end
 

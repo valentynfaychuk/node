@@ -64,11 +64,7 @@ defmodule TX do
 
       epoch = Consensus.chain_epoch()
       Enum.each(action.args, fn(arg)->
-         if epoch >= 107 do
             if !is_binary(arg), do: throw(%{error: :arg_must_be_binary})
-         else
-            if !is_integer(arg) and !is_binary(arg), do: throw(%{error: :arg_invalid_type})
-         end
       end)
       if !:lists.member(action.contract, ["Epoch", "Coin"]), do: throw %{error: :invalid_module}
       if !:lists.member(action.function, ["submit_sol", "transfer", "set_emission_address", "slash_trainer"]), do: throw %{error: :invalid_function}

@@ -194,26 +194,18 @@ defmodule Fabric do
         end)
     end
 
-    def get_attestations_or_consensuses_by_height(height) do
+    def get_attestations_and_consensuses_by_height(height) do
         my_pk = Application.fetch_env!(:ama, :trainer_pk)
         trainers = Consensus.trainers_for_height(height) || []
         isTrainer = my_pk in trainers
+
+        attest = my_attestation_by_height(height)
 
         consens = consensuses_by_height(height)
         |> Enum.filter(fn(c)-> BLS12AggSig.score(trainers, c.mask) >= 0.67 end)
         |> Enum.take(1)
 
-        cond do
-            consens != [] -> {[], consens}
-            isTrainer ->
-                attest = my_attestation_by_height(height)
-                if attest do
-                    {[attest], []}
-                else
-                    {[], []}
-                end
-            true -> {[], []}
-        end
+        {List.wrap(attest), List.wrap(consens)}
     end
 
     def best_consensus_by_entryhash(trainers, hash) do
