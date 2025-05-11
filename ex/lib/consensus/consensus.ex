@@ -281,7 +281,7 @@ defmodule Consensus do
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
         {:ok, rtx} = :rocksdb.transaction(db, [])
         height = RocksDB.get("temporal_height", %{rtx: rtx, cf: cf.sysconf, term: true})
-        if !height or height + 1 == Entry.height(next_entry) do
+        if !height or (height + 1) == Entry.height(next_entry) do
             apply_entry_1(next_entry, cf, rtx)
         else
             %{error: :invalid_height}
