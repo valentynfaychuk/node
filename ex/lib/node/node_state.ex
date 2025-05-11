@@ -15,10 +15,10 @@ defmodule NodeState do
 
       :erlang.spawn(fn()->
         #txs_packed = TXPool.random()
-        #txs_packed && send(NodeGen, {:send_to_some, [istate.peer.ip], pack_message(NodeProto.txpool(txs_packed))})
+        #txs_packed && send(NodeGen.get_socket_gen(), {:send_to_some, [istate.peer.ip], compress(NodeProto.txpool(txs_packed))})
 
         rng_peers = NodePeers.random(6) |> Enum.map(& &1.ip)
-        if rng_peers != [], do: send(NodeGen, {:send_to_some, [istate.peer.ip], pack_message(NodeProto.peers(rng_peers))})
+        if rng_peers != [], do: send(NodeGen.get_socket_gen(), {:send_to_some, [istate.peer.ip], compress(NodeProto.peers(rng_peers))})
       end)
 
       term = %{temporal: temporal, rooted: rooted, ts_m: term.ts_m}
@@ -45,7 +45,7 @@ defmodule NodeState do
 
     :ets.insert(NODEPeers, {peer_ip, peer})
 
-    :erlang.spawn(fn()-> send(NodeGen, {:send_to_some, [peer_ip], pack_message(NodeProto.pong(term.ts_m))}) end)
+    :erlang.spawn(fn()-> send(NodeGen.get_socket_gen(), {:send_to_some, [peer_ip], compress(NodeProto.pong(term.ts_m))}) end)
 
     istate.ns
   end
@@ -179,7 +179,7 @@ defmodule NodeState do
             map_entries ->
               Enum.each(map_entries, fn(map)->
                 msg = NodeProto.entry(%{entry_packed: Entry.pack(map.entry)})
-                :erlang.spawn(fn()-> send(NodeGen, {:send_to_some, [istate.peer.ip], pack_message(msg)}) end)
+                :erlang.spawn(fn()-> send(NodeGen.get_socket_gen(), {:send_to_some, [istate.peer.ip], compress(msg)}) end)
               end)
         end
     end)
@@ -201,7 +201,7 @@ defmodule NodeState do
                   true ->
                     NodeProto.entry(%{entry_packed: Entry.pack(map.entry)})
                 end
-                :erlang.spawn(fn()-> send(NodeGen, {:send_to_some, [istate.peer.ip], pack_message(msg)}) end)
+                :erlang.spawn(fn()-> send(NodeGen.get_socket_gen(), {:send_to_some, [istate.peer.ip], compress(msg)}) end)
               end)
         end
     end)
@@ -221,7 +221,7 @@ defmodule NodeState do
         Enum.chunk_every(attestations_packed, 3)
         |> Enum.each(fn(bulk)->
             msg = NodeProto.attestation_bulk(bulk)
-            :erlang.spawn(fn()-> send(NodeGen, {:send_to_some, [istate.peer.ip], pack_message(msg)}) end)
+            :erlang.spawn(fn()-> send(NodeGen.get_socket_gen(), {:send_to_some, [istate.peer.ip], compress(msg)}) end)
         end)
     end
 
@@ -229,7 +229,7 @@ defmodule NodeState do
         Enum.chunk_every(consensuses_packed, 3)
         |> Enum.each(fn(bulk)->
             msg = NodeProto.consensus_bulk(bulk)
-            :erlang.spawn(fn()-> send(NodeGen, {:send_to_some, [istate.peer.ip], pack_message(msg)}) end)
+            :erlang.spawn(fn()-> send(NodeGen.get_socket_gen(), {:send_to_some, [istate.peer.ip], compress(msg)}) end)
         end)
     end
   end
@@ -249,7 +249,7 @@ defmodule NodeState do
         Enum.chunk_every(attestations_packed, 3)
         |> Enum.each(fn(bulk)->
             msg = NodeProto.attestation_bulk(bulk)
-            :erlang.spawn(fn()-> send(NodeGen, {:send_to_some, [istate.peer.ip], pack_message(msg)}) end)
+            :erlang.spawn(fn()-> send(NodeGen.get_socket_gen(), {:send_to_some, [istate.peer.ip], compress(msg)}) end)
         end)
     end
   end
@@ -265,7 +265,7 @@ defmodule NodeState do
           business = %{op: "slash_trainer_tx_reply", epoch: term.business.epoch, malicious_pk: term.business.malicious_pk, 
             pk: pk, signature: signature}
           msg = NodeProto.special_business_reply(business)
-          :erlang.spawn(fn()-> send(NodeGen, {:send_to_some, [istate.peer.ip], pack_message(msg)}) end)
+          :erlang.spawn(fn()-> send(NodeGen.get_socket_gen(), {:send_to_some, [istate.peer.ip], compress(msg)}) end)
         end
       op == "slash_trainer_entry" ->
         signature = SpecialMeetingAttestGen.maybe_attest("slash_trainer_entry", term.business.entry_packed)
@@ -274,7 +274,7 @@ defmodule NodeState do
           pk = Application.fetch_env!(:ama, :trainer_pk)
           business = %{op: "slash_trainer_entry_reply", entry_hash: entry.hash, pk: pk, signature: signature}
           msg = NodeProto.special_business_reply(business)
-          :erlang.spawn(fn()-> send(NodeGen, {:send_to_some, [istate.peer.ip], pack_message(msg)}) end)
+          :erlang.spawn(fn()-> send(NodeGen.get_socket_gen(), {:send_to_some, [istate.peer.ip], compress(msg)}) end)
         end
     end
   end

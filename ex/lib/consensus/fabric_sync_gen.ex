@@ -49,7 +49,7 @@ defmodule FabricSyncGen do
       |> Enum.each(fn(chunk)->
         msg = NodeProto.catchup_tri(chunk)
         peer_ips = Enum.shuffle(highest_peers_temporal) |> Enum.map(& hd(&1)) |> Enum.take(1)
-        send(NodeGen, {:send_to_some, peer_ips, NodeProto.pack_message(msg)})
+        send(NodeGen.get_socket_gen(), {:send_to_some, peer_ips, NodeProto.compress(msg)})
       end)
     end
 
@@ -75,7 +75,7 @@ defmodule FabricSyncGen do
       |> Enum.each(fn(chunk)->
         msg = NodeProto.catchup_bi(chunk)
         peer_ips = Enum.shuffle(highest_peers_rooted) |> Enum.map(& hd(&1)) |> Enum.take(1)
-        send(NodeGen, {:send_to_some, peer_ips, NodeProto.pack_message(msg)})
+        send(NodeGen.get_socket_gen(), {:send_to_some, peer_ips, NodeProto.compress(msg)})
       end)
     end
 
@@ -102,7 +102,7 @@ defmodule FabricSyncGen do
           msg = NodeProto.catchup_bi(heights)
           peer = NodePeers.by_pk(pk)
           if !!peer and peer[:ip] do
-            send(NodeGen, {:send_to_some, [peer.ip], NodeProto.pack_message(msg)})
+            send(NodeGen.get_socket_gen(), {:send_to_some, [peer.ip], NodeProto.compress(msg)})
           end
         end)
       end)

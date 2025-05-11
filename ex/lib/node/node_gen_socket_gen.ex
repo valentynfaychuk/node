@@ -101,35 +101,15 @@ defmodule NodeGenSocketGen do
           end
         end)
 
-      {:send_to_some, peer_ips, packed_msg} ->
+      {:send_to_some, peer_ips, msg_compressed} ->
         port = Application.fetch_env!(:ama, :udp_port)
-
-        <<iv::12-binary, tag::16-binary, ciphertext::binary>> = packed_msg
-        plaintext = NodeProto.decrypt(iv, tag, ciphertext)
-        msg_envelope = plaintext
-        |> NodeProto.deflate_decompress()
-        |> :erlang.binary_to_term([:safe])
-
-        msg = :erlang.binary_to_term(msg_envelope.msg_packed, [:safe])
-        msg = Map.drop(msg, [:version, :signer])
-        #IO.inspect msg
-        msg_compressed = NodeProto.compress_message_v2(msg)
-
         Enum.each(peer_ips, fn(ip)->
           peer = NodePeers.by_ip(ip)
           {:ok, ip} = :inet.parse_address(~c'#{ip}')
-          cond do
-            !peer or !peer[:version] or !peer[:pk] or peer.version <= "0.7.6" -> :ok = :gen_udp.send(state.socket, ip, port, packed_msg)
-            peer.version > "0.7.6" ->
-              #IO.inspect {:peer_modern, Base58.encode(peer.pk)}
-
-              msgs_packed = NodeProto.encrypt_message_v2(msg_compressed, peer[:shared_secret])
-              Enum.each(msgs_packed, fn(msg_packed)->
-                :ok = :gen_udp.send(state.socket, ip, port, msg_packed)
-              end)
-
-              #:gen_udp.send(state.socket, ip, port, packed_msg)
-          end
+          msgs_packed = NodeProto.encrypt_message_v2(msg_compressed, peer[:shared_secret])
+          Enum.each(msgs_packed, fn(msg_packed)->
+            :ok = :gen_udp.send(state.socket, ip, port, msg_packed)
+          end)
         end)
 
       {:udp_passive, _socket} ->

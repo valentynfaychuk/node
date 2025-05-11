@@ -83,13 +83,7 @@ defmodule NodeProto do
     :erlang.list_to_binary(decompressed)
   end
 
-  def compress_message_v2_test_frags(msg) do
-    padding = :crypto.strong_rand_bytes(1024*4)
-    msg = :erlang.term_to_binary(msg, [:deterministic])
-    msg = msg <> padding
-    deflate_compress(msg)
-  end
-  def compress_message_v2(msg) do
+  def compress(msg) do
     msg
     |> :erlang.term_to_binary([:deterministic])
     |> deflate_compress()
@@ -98,6 +92,7 @@ defmodule NodeProto do
     pk = Application.fetch_env!(:ama, :trainer_pk)
     sk = Application.fetch_env!(:ama, :trainer_sk)
     version_3byte = Application.fetch_env!(:ama, :version_3b)
+
     signature = BlsEx.sign!(sk, Blake3.hash(pk<>msg_compressed), BLS12AggSig.dst_node())
 
     ts_n = :os.system_time(:nanosecond)
@@ -139,24 +134,34 @@ defmodule NodeProto do
 
   def unpack_message_v2(<<"AMA", version_3byte::3-binary, 0::7, 1::1, pk::48-binary, signature::96-binary, 
     shard_index::16, shard_total::16, ts_n::64, original_size::32, msg_compressed_or_shard::binary>>) do
-    if pk == Application.fetch_env!(:ama, :trainer_pk), do: throw(%{error: :msg_to_self})
-    
-    <<a,b,c>> = version_3byte
-    version = "#{a}.#{b}.#{c}" 
+    try do
+      if pk == Application.fetch_env!(:ama, :trainer_pk), do: throw(%{error: :msg_to_self})
 
-    %{error: :signature, pk: :binary.copy(pk), ts_nano: ts_n, shard_index: shard_index, shard_total: shard_total, version: version, 
-      signature: :binary.copy(signature), original_size: original_size, payload: msg_compressed_or_shard}
+      <<a,b,c>> = version_3byte
+      version = "#{a}.#{b}.#{c}"
+
+      %{error: :signature, pk: :binary.copy(pk), ts_nano: ts_n, shard_index: shard_index, shard_total: shard_total, version: version,
+        signature: :binary.copy(signature), original_size: original_size, payload: msg_compressed_or_shard}
+    catch
+      throw,r -> %{error: r}
+      e,r -> %{error: e, reason: r}
+    end
   end
 
   def unpack_message_v2(<<"AMA", version_3byte::3-binary, 0::8, pk::48-binary,
     shard_index::16, shard_total::16, ts_n::64, original_size::32, msg_compressed_or_shard::binary>>) do
-    if pk == Application.fetch_env!(:ama, :trainer_pk), do: throw(%{error: :msg_to_self})
-    
-    <<a,b,c>> = version_3byte
-    version = "#{a}.#{b}.#{c}" 
-    
-    %{error: :encrypted, pk: :binary.copy(pk), ts_nano: ts_n, shard_index: shard_index, shard_total: shard_total, version: version, 
-      original_size: original_size, payload: msg_compressed_or_shard}
+    try do
+      if pk == Application.fetch_env!(:ama, :trainer_pk), do: throw(%{error: :msg_to_self})
+
+      <<a,b,c>> = version_3byte
+      version = "#{a}.#{b}.#{c}"
+
+      %{error: :encrypted, pk: :binary.copy(pk), ts_nano: ts_n, shard_index: shard_index, shard_total: shard_total, version: version,
+        original_size: original_size, payload: msg_compressed_or_shard}
+    catch
+      throw,r -> %{error: r}
+      e,r -> %{error: e, reason: r}
+    end
   end
 
   def unpack_message_v2(data) do

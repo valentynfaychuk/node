@@ -32,7 +32,7 @@ defmodule NodeGen do
     :erlang.spawn(fn()->
       msg = NodeProto.ping()
       ips = NodePeers.all() |> Enum.map(& &1.ip)
-      send(get_socket_gen(), {:send_to_some, ips, NodeProto.pack_message(msg)})
+      send(get_socket_gen(), {:send_to_some, ips, NodeProto.compress(msg)})
     end)
   end
 
@@ -40,7 +40,7 @@ defmodule NodeGen do
     :erlang.spawn(fn()->
       msg = NodeProto.txpool(txs_packed)
       ips = NodePeers.by_who(who)
-      send(get_socket_gen(), {:send_to_some, ips, NodeProto.pack_message(msg)})
+      send(get_socket_gen(), {:send_to_some, ips, NodeProto.compress(msg)})
     end)
   end
 
@@ -48,7 +48,7 @@ defmodule NodeGen do
     :erlang.spawn(fn()->
       msg = NodeProto.entry(map)
       ips = NodePeers.by_who(who)
-      send(get_socket_gen(), {:send_to_some, ips, NodeProto.pack_message(msg)})
+      send(get_socket_gen(), {:send_to_some, ips, NodeProto.compress(msg)})
     end)
   end
 
@@ -56,7 +56,7 @@ defmodule NodeGen do
     :erlang.spawn(fn()->
       msg = NodeProto.attestation_bulk(attestations_packed)
       ips = NodePeers.by_who(who)
-      send(get_socket_gen(), {:send_to_some, ips, NodeProto.pack_message(msg)})
+      send(get_socket_gen(), {:send_to_some, ips, NodeProto.compress(msg)})
     end)
   end
 
@@ -64,7 +64,7 @@ defmodule NodeGen do
     :erlang.spawn(fn()->
       msg = NodeProto.sol(sol)
       ips = NodePeers.by_who(who)
-      send(get_socket_gen(), {:send_to_some, ips, NodeProto.pack_message(msg)})
+      send(get_socket_gen(), {:send_to_some, ips, NodeProto.compress(msg)})
     end)
   end
 
@@ -72,7 +72,7 @@ defmodule NodeGen do
     :erlang.spawn(fn()->
       msg = NodeProto.special_business(business)
       ips = NodePeers.by_who(who)
-      send(get_socket_gen(), {:send_to_some, ips, NodeProto.pack_message(msg)})
+      send(get_socket_gen(), {:send_to_some, ips, NodeProto.compress(msg)})
     end)
   end
 
@@ -90,12 +90,6 @@ defmodule NodeGen do
       :tick_ping ->
         :erlang.send_after(500, self(), :tick_ping)
         broadcast_ping()
-
-      {:send_to_some, peer_ips, packed_msg} ->
-        #if byte_size(packed_msg) >= 1460 do
-        #  IO.inspect byte_size(packed_msg)
-        #end
-        send(get_socket_gen(), {:send_to_some, peer_ips, packed_msg})
 
       {:handle_sync, op, innerstate, args} ->
         #TODO: ns dropped
