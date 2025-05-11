@@ -36,7 +36,7 @@ defmodule API.TX do
         RocksDB.get_prefix("#{pk}:", %{db: db, cf: cf.tx_receiver_nonce})
         |> Enum.map(fn {nonce, txid}->
             API.TX.get(txid)
-            |> Map.put(:metadata, %{tx_event: :sent})
+            |> Map.put(:metadata, %{tx_event: :recv})
         end)
     end
 

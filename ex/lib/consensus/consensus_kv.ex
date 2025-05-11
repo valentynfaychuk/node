@@ -87,17 +87,23 @@ defmodule ConsensusKV do
         end
     end
 
-    def kv_get_prev(prefix, key) do
+    def kv_get_prev(prefix, key, opts \\ %{}) do
         db = Process.get({RocksDB, :ctx})
         {:ok, it} = :rocksdb.transaction_iterator(db.rtx, db.cf.contractstate, [])
         res = :rocksdb.iterator_move(it, {:seek_for_prev, prefix <> key})
         case res do
-            {:ok, <<^prefix::binary, prev_key::binary>>, value} -> {prev_key, value}
+            {:ok, <<^prefix::binary, prev_key::binary>>, value} ->
+                value = cond do
+                    opts[:term] -> :erlang.binary_to_term(value, [:safe])
+                    opts[:to_integer] -> :erlang.binary_to_integer(value)
+                    true -> value
+                end
+                {prev_key, value}
             _ -> {nil, nil}
         end
     end
 
-    def kv_get_next(prefix, key) do
+    def kv_get_next(prefix, key, opts \\ %{}) do
         db = Process.get({RocksDB, :ctx})
         {:ok, it} = :rocksdb.transaction_iterator(db.rtx, db.cf.contractstate, [])
         seek_string = prefix <> key
@@ -107,7 +113,13 @@ defmodule ConsensusKV do
             other -> other
         end
         |> case do
-            {:ok, <<^prefix::binary, next_key::binary>>, value} -> {next_key, value}
+            {:ok, <<^prefix::binary, next_key::binary>>, value} ->
+                value = cond do
+                    opts[:term] -> :erlang.binary_to_term(value, [:safe])
+                    opts[:to_integer] -> :erlang.binary_to_integer(value)
+                    true -> value
+                end
+                {next_key, value}
             _ -> {nil, nil}
          end
      end
@@ -116,21 +128,26 @@ defmodule ConsensusKV do
         db = Process.get({RocksDB, :ctx})
         case :rocksdb.transaction_get(db.rtx, db.cf.contractstate, key, []) do
             :not_found -> false
-            {:ok, value} -> true
+            {:ok, _value} -> true
         end
     end
 
-    def kv_get_prefix(prefix) do
+    def kv_get_prefix(prefix, opts \\ %{}) do
         db = Process.get({RocksDB, :ctx})
         {:ok, it} = :rocksdb.transaction_iterator(db.rtx, db.cf.contractstate, [])
         res = :rocksdb.iterator_move(it, {:seek, prefix})
-        kv_get_prefix_1(prefix, it, res, [])
+        kv_get_prefix_1(prefix, it, res, [], opts)
     end
-    defp kv_get_prefix_1(prefix, it, res, acc) do
+    defp kv_get_prefix_1(prefix, it, res, acc, opts) do
         case res do
             {:ok, <<^prefix::binary, key::binary>>, value} ->
+                value = cond do
+                    opts[:term] -> :erlang.binary_to_term(value, [:safe])
+                    opts[:to_integer] -> :erlang.binary_to_integer(value)
+                    true -> value
+                end
                 res = :rocksdb.iterator_move(it, :next)
-                kv_get_prefix_1(prefix, it, res, acc ++ [{key, value}])
+                kv_get_prefix_1(prefix, it, res, acc ++ [{key, value}], opts)
             {:error, :invalid_iterator} -> acc
             _ -> acc
         end

@@ -22,17 +22,17 @@ defmodule API.Wallet do
         end)
     end
 
-    def transfer(symbol, to, amount) do
+    def transfer(to, amount, symbol) do
         sk = Application.fetch_env!(:ama, :trainer_sk)
-        transfer(sk, symbol, to, amount)
+        transfer(sk, to, amount, symbol)
     end
 
-    def transfer(from_sk, symbol, to, amount) do
+    def transfer(from_sk, to, amount, symbol) do
         from_sk = if byte_size(from_sk) != 64, do: Base58.decode(from_sk), else: from_sk
         to = if byte_size(to) != 48, do: Base58.decode(to), else: to
         amount = if is_float(amount) do trunc(amount * 1_000_000_000) else amount end
         amount = if is_integer(amount) do :erlang.integer_to_binary(amount) else amount end
-        tx_packed = TX.build(from_sk, "Coin", "transfer", [symbol, to, amount])
+        tx_packed = TX.build(from_sk, "Coin", "transfer", [to, amount, symbol])
         TXPool.insert(tx_packed)
         NodeGen.broadcast(:txpool, :trainers, [[tx_packed]])
     end
