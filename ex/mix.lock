@@ -15,5 +15,5 @@
   "rustler": {:hex, :rustler, "0.36.1", "2d4b1ff57ea2789a44756a40dbb5fbb73c6ee0a13d031dcba96d0a5542598a6a", [:mix], [{:jason, "~> 1.0", [hex: :jason, repo: "hexpm", optional: false]}, {:toml, "~> 0.7", [hex: :toml, repo: "hexpm", optional: false]}], "hexpm", "f3fba4ad272970e0d1bc62972fc4a99809651e54a125c5242de9bad4574b2d02"},
   "ssl_verify_fun": {:hex, :ssl_verify_fun, "1.1.7", "354c321cf377240c7b8716899e182ce4890c5938111a1296add3ec74cf1715df", [:make, :mix, :rebar3], [], "hexpm", "fe4c190e8f37401d30167c8c405eda19469f34577987c76dde613e838bbc67f8"},
   "toml": {:hex, :toml, "0.7.0", "fbcd773caa937d0c7a02c301a1feea25612720ac3fa1ccb8bfd9d30d822911de", [:mix], [], "hexpm", "0690246a2478c1defd100b0c9b89b4ea280a22be9a7b313a8a058a2408a2fa70"},
-  "wasmer_ex": {:git, "https://github.com/amadeus-robot/wasmer_ex", "7860904a39b527ae5765ba3199a33773138179ce", []},
+  "wasmer_ex": {:git, "https://github.com/amadeus-robot/wasmer_ex", "f41ce1f4e19ed7d8bfa770a3609f22f82b97a76e", []},
 }

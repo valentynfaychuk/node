@@ -43,9 +43,27 @@ defmodule API.TX do
     def submit(tx_packed) do
         %{error: error} = TX.validate(tx_packed)
         if error == :ok do
-            TXPool.insert(tx_packed)
-            NodeGen.broadcast(:txpool, :trainers, [[tx_packed]])
-            %{error: :ok}
+            if tx_packed =~ "deploy" do
+                txu = TX.unpack(tx_packed)
+                action = hd(txu.tx.actions)
+                if action.contract == "Contract" and action.function == "deploy" do
+                    case BIC.Contract.validate(List.first(action.args)) do
+                        %{error: :ok} ->
+                            TXPool.insert(tx_packed)
+                            NodeGen.broadcast(:txpool, :trainers, [[tx_packed]])
+                            %{error: :ok}
+                        error -> error
+                    end
+                else
+                    TXPool.insert(tx_packed)
+                    NodeGen.broadcast(:txpool, :trainers, [[tx_packed]])
+                    %{error: :ok}
+                end
+            else
+                TXPool.insert(tx_packed)
+                NodeGen.broadcast(:txpool, :trainers, [[tx_packed]])
+                %{error: :ok}
+            end
         else
             %{error: error}
         end

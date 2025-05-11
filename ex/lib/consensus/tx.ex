@@ -66,8 +66,8 @@ defmodule TX do
       Enum.each(action.args, fn(arg)->
             if !is_binary(arg), do: throw(%{error: :arg_must_be_binary})
       end)
-      if !:lists.member(action.contract, ["Epoch", "Coin"]), do: throw %{error: :invalid_module}
-      if !:lists.member(action.function, ["submit_sol", "transfer", "set_emission_address", "slash_trainer"]), do: throw %{error: :invalid_function}
+      if !:lists.member(action.contract, ["Epoch", "Coin", "Contract"]), do: throw %{error: :invalid_module}
+      if !:lists.member(action.function, ["submit_sol", "transfer", "set_emission_address", "slash_trainer", "deploy"]), do: throw %{error: :invalid_function}
 
       if is_special_meeting_block do
          if !:lists.member(action.contract, ["Epoch"]), do: throw %{error: :invalid_module_for_special_meeting}

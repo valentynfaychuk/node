@@ -1,0 +1,36 @@
+defmodule BIC.Contract do
+    import ConsensusKV
+
+    def validate(wasmbytes, env \\ nil) do
+        env = if env do Map.put(env, :readonly, true) else
+            entry = Consensus.chain_tip_entry()
+            env = Consensus.make_mapenv(entry)
+
+            Map.merge(env, %{
+                readonly: true,
+                seed: :crypto.strong_rand_bytes(32),
+                tx_signer: :crypto.strong_rand_bytes(48),
+                tx_nonce: :os.system_time(:nanosecond),
+                tx_hash: :crypto.strong_rand_bytes(32),
+                account_origin: :crypto.strong_rand_bytes(48),
+                account_caller: :crypto.strong_rand_bytes(48),
+                account_current: :crypto.strong_rand_bytes(48),
+            })
+        end
+        try do
+            case WasmerEx.validate_contract(env, wasmbytes) do
+                :ok -> %{error: :ok}
+                {:error, reason} -> %{error: :abort, reason: reason}
+            end
+        catch
+            _,_ -> %{error: :system}
+        end
+    end
+
+    def call(:deploy, env, [wasmbytes]) do
+        case validate(wasmbytes, env) do
+            %{error: :ok} -> kv_put("bic:contract:account:#{env.account_caller}:bytecode", wasmbytes)
+            error -> throw(error)
+        end
+    end
+end

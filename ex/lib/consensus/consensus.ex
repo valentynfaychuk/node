@@ -253,20 +253,8 @@ defmodule Consensus do
         end)
     end
 
-    def apply_entry(next_entry) do
-        %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
-        {:ok, rtx} = :rocksdb.transaction(db, [])
-        height = RocksDB.get("temporal_height", %{rtx: rtx, cf: cf.sysconf, term: true})
-        if !height or height + 1 == Entry.height(next_entry) do
-            apply_entry_1(next_entry, cf, rtx)
-        else
-            %{error: :invalid_height}
-        end
-    end
-    def apply_entry_1(next_entry, cf, rtx) do
-        Process.put({RocksDB, :ctx}, %{rtx: rtx, cf: cf})
-
-        mapenv = %{
+    def make_mapenv(next_entry) do
+        %{
             :readonly => false,
             :seed => nil,
             :seedf64 => 1.0,
@@ -287,6 +275,22 @@ defmodule Consensus do
             :call_counter => 0,
             :call_exec_points => 10_000_000,
         }
+    end
+
+    def apply_entry(next_entry) do
+        %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+        {:ok, rtx} = :rocksdb.transaction(db, [])
+        height = RocksDB.get("temporal_height", %{rtx: rtx, cf: cf.sysconf, term: true})
+        if !height or height + 1 == Entry.height(next_entry) do
+            apply_entry_1(next_entry, cf, rtx)
+        else
+            %{error: :invalid_height}
+        end
+    end
+    def apply_entry_1(next_entry, cf, rtx) do
+        Process.put({RocksDB, :ctx}, %{rtx: rtx, cf: cf})
+
+        mapenv = make_mapenv(next_entry)
 
         txus = Enum.map(next_entry.txs, & TX.unpack(&1))
         {m_pre, m_rev_pre} = BIC.Base.call_txs_pre_parallel(mapenv, txus)

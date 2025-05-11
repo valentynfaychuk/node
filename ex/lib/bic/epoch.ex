@@ -26,7 +26,7 @@ defmodule BIC.Epoch do
     def circulating(epoch) do circulating_without_burn(epoch) - BIC.Coin.burn_balance() end
 
     def call(:submit_sol, env, [sol]) do
-        if env.entry_epoch >= 110 do
+        if env.entry_epoch >= 111 do
             call(:submit_sol2, env, [sol])
         else
             if kv_exists("bic:epoch:solutions:#{sol}"), do: throw(%{error: :sol_exists})
@@ -66,7 +66,7 @@ defmodule BIC.Epoch do
     end
 
     def next(env) do
-        if env.entry_epoch >= 110 do
+        if env.entry_epoch >= 111 do
             next2(env)
         else
             epoch_fin = env.entry_epoch
