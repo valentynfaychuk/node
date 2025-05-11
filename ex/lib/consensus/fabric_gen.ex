@@ -42,6 +42,7 @@ defmodule FabricGen do
   def tick(state) do
     #IO.inspect {"tick", :os.system_time(1000)}
     :persistent_term.put(FabricSyncing, true)
+    #tick_consensus_entries()
     proc_consensus()
     proc_entries()
     tick_slot(state)
@@ -49,7 +50,7 @@ defmodule FabricGen do
     #  Consensus.chain_height() < (103_00000-1) -> tick_slot(state)
     #  true ->
     #    IO.puts "upgrade to v0.8.1 now - wait for release"
-    #    :erlang.halt()        
+    #    :erlang.halt()
     #end
     :persistent_term.put(FabricSyncing, false)
 
@@ -67,6 +68,19 @@ defmodule FabricGen do
     end
 
     state
+  end
+
+  def tick_consensus_entries() do
+    entry_root = Fabric.rooted_tip_height()
+    entry_temp = Consensus.chain_height()
+    proc_consensus()
+    proc_entries()
+    delta = Fabric.rooted_tip_height() - entry_root
+    delta2 = Consensus.chain_height() - entry_temp
+    if delta != 0 or delta2 != 0 do
+      IO.inspect {:delta_moved_oneshot, delta, delta2}
+      :erlang.send_after(200, FabricSyncGen, :tick_oneshot)
+    end
   end
 
   def proc_compact() do

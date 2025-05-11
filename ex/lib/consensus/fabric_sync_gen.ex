@@ -27,6 +27,11 @@ defmodule FabricSyncGen do
     {:noreply, state}
   end
 
+  def handle_info(:tick_oneshot, state) do
+    tick()
+    {:noreply, state}
+  end
+
   def tick() do
     temporal = Consensus.chain_tip_entry()
     temporal_height = temporal.header_unpacked.height
