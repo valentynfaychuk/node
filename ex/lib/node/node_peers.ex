@@ -117,7 +117,7 @@ defmodule NodePeers do
     peer_ips
   end
   def by_who(:trainers) do
-    NodePeers.for_height(Consensus.chain_height())
+    NodePeers.for_height(Consensus.chain_height()+1)
     |> Enum.map(& &1.ip)
     |> case do
       [] -> []
@@ -125,7 +125,7 @@ defmodule NodePeers do
     end
   end
   def by_who({:not_trainers, cnt}) do
-    trainers = NodePeers.for_height(Consensus.chain_height())
+    trainers = NodePeers.for_height(Consensus.chain_height()+1)
     |> Enum.map(& &1.ip)
     peers = :ets.tab2list(NODEPeers)
     |> Enum.map(& elem(&1,1).ip)

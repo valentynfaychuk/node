@@ -240,11 +240,8 @@ defmodule NodeState do
     |> Enum.map(& Attestation.pack(&1))
 
     if length(attestations_packed) > 0 do
-        Enum.chunk_every(attestations_packed, 3)
-        |> Enum.each(fn(bulk)->
-            msg = NodeProto.attestation_bulk(bulk)
-            :erlang.spawn(fn()-> send(NodeGen.get_socket_gen(), {:send_to_some, [istate.peer.ip], compress(msg)}) end)
-        end)
+        msg = NodeProto.attestation_bulk(attestations_packed)
+        :erlang.spawn(fn()-> send(NodeGen.get_socket_gen(), {:send_to_some, [istate.peer.ip], compress(msg)}) end)
     end
   end
 
