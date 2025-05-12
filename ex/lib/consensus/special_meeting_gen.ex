@@ -61,15 +61,20 @@ defmodule SpecialMeetingGen do
 
   def handle_info({:add_slash_trainer_tx_reply, pk, signature}, state = %{slash_trainer: _}) do
     st = state.slash_trainer
+    
     trainers = Consensus.trainers_for_height(st.height + 1)
-    ma = BLS12AggSig.add(%{mask: st.mask, aggsig: st.aggsig}, trainers, pk, signature)
-    state = put_in(state, [:slash_trainer, :mask], ma.mask)
-    state = put_in(state, [:slash_trainer, :aggsig], ma.aggsig)
+    if pk in trainers do
+      ma = BLS12AggSig.add(%{mask: st.mask, aggsig: st.aggsig}, trainers, pk, signature)
+      state = put_in(state, [:slash_trainer, :mask], ma.mask)
+      state = put_in(state, [:slash_trainer, :aggsig], ma.aggsig)
 
-    score = BLS12AggSig.score(trainers, state.slash_trainer.mask)
-    state = put_in(state, [:slash_trainer, :score_tx], score)
-    IO.inspect {:tx, score}
-    {:noreply, state}
+      score = BLS12AggSig.score(trainers, state.slash_trainer.mask)
+      state = put_in(state, [:slash_trainer, :score_tx], score)
+      IO.inspect {:tx, score}
+      {:noreply, state}
+    else
+      {:noreply, state}
+    end
   end
 
   def handle_info({:add_slash_trainer_entry_reply, entry_hash, pk, signature}, state = %{slash_trainer: _}) do
@@ -77,14 +82,18 @@ defmodule SpecialMeetingGen do
     true = entry.hash == entry_hash
 
     trainers = Consensus.trainers_for_height(entry.header_unpacked.height + 1)
-    ma = BLS12AggSig.add(%{mask: entry.mask, aggsig: entry.signature}, trainers, pk, signature)
-    state = put_in(state, [:slash_trainer, :entry, :mask], ma.mask)
-    state = put_in(state, [:slash_trainer, :entry, :signature], ma.aggsig)
+    if pk in trainers do
+      ma = BLS12AggSig.add(%{mask: entry.mask, aggsig: entry.signature}, trainers, pk, signature)
+      state = put_in(state, [:slash_trainer, :entry, :mask], ma.mask)
+      state = put_in(state, [:slash_trainer, :entry, :signature], ma.aggsig)
 
-    score = BLS12AggSig.score(trainers, state.slash_trainer.entry.mask)
-    state = put_in(state, [:slash_trainer, :score_entry], score)
+      score = BLS12AggSig.score(trainers, state.slash_trainer.entry.mask)
+      state = put_in(state, [:slash_trainer, :score_entry], score)
 
-    {:noreply, state}
+      {:noreply, state}
+    else
+      {:noreply, state}
+    end
   end
 
   def tick(state) do

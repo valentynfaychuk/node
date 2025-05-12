@@ -75,6 +75,11 @@ defmodule Consensus do
         trainer_for_slot(chain_height()+1, chain_height()+1)
     end
 
+    def trainer_for_slot_next_me?() do
+        pk = Application.fetch_env!(:ama, :trainer_pk)
+        pk == trainer_for_slot_next()
+    end
+
     def did_trainer_sign_consensus(trainer, entry_hash) do
         c = Fabric.consensuses_by_entryhash(entry_hash)
         if c do
@@ -176,7 +181,7 @@ defmodule Consensus do
             :ok = :rocksdb.transaction_delete(rtx, cf.tx_account_nonce, "#{txu.tx.signer}:#{nonce_padded}")
             TX.known_receivers(txu)
             |> Enum.each(fn(receiver)->
-                :ok = :rocksdb.transaction_put(rtx, cf.tx_receiver_nonce, "#{receiver}:#{nonce_padded}", txu.hash)
+                :ok = :rocksdb.transaction_delete(rtx, cf.tx_receiver_nonce, "#{receiver}:#{nonce_padded}")
             end)
         end)
 

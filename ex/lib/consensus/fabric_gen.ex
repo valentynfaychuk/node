@@ -43,9 +43,11 @@ defmodule FabricGen do
     #IO.inspect {"tick", :os.system_time(1000)}
     :persistent_term.put(FabricSyncing, true)
     #tick_consensus_entries()
+
     proc_consensus()
     proc_entries()
     tick_slot(state)
+
     #cond do
     #  Consensus.chain_height() < (103_00000-1) -> tick_slot(state)
     #  true ->
@@ -185,8 +187,11 @@ defmodule FabricGen do
     case List.first(next_entries) do
       nil -> nil
       entry ->
+        #ts_s = :os.system_time(1000)
         %{error: :ok, attestation_packed: attestation_packed, 
           mutations_hash: m_hash, logs: l, muts: m} = Consensus.apply_entry(entry)
+        #IO.inspect {:took, :os.system_time(1000) - ts_s}
+
         send(FabricEventGen, {:entry, entry, m_hash, m, l})
         
         if !!attestation_packed and FabricSyncAttestGen.isQuorumSyncedOffByX(6) do
