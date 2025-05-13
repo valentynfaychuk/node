@@ -155,14 +155,28 @@ defmodule ConsensusKV do
 
     def kv_clear(prefix) do
         db = Process.get({RocksDB, :ctx})
-        kvs = kv_get_prefix(prefix)
-        Enum.each(kvs, fn({k,v})->
-            k = prefix <> k
-            Process.put(:mutations, Process.get(:mutations, []) ++ [%{op: :delete, key: k}])
-            Process.put(:mutations_reverse, Process.get(:mutations_reverse, []) ++ [%{op: :put, key: k, value: v}])
-            :ok = :rocksdb.transaction_delete(db.rtx, db.cf.contractstate, k)
-        end)
-        :erlang.integer_to_binary(length(kvs))
+        {:ok, it} = :rocksdb.transaction_iterator(db.rtx, db.cf.contractstate, [])
+        res = :rocksdb.iterator_move(it, {:seek, prefix})
+
+        {muts, muts_rev} = kv_clear_1(db, prefix, it, res, [], [])
+
+        Process.put(:mutations, Process.get(:mutations, []) ++ muts)
+        Process.put(:mutations_reverse, Process.get(:mutations_reverse, []) ++ muts_rev)
+        :erlang.integer_to_binary(length(muts))
+    end
+    def kv_clear_1(db, prefix, it, res, muts, muts_rev) do
+        case res do
+            {:ok, <<^prefix::binary, key::binary>>, value} ->
+                res = :rocksdb.iterator_move(it, :next)
+
+                key = prefix <> key
+                :ok = :rocksdb.transaction_delete(db.rtx, db.cf.contractstate, key)
+                muts = muts ++ [%{op: :delete, key: key}]
+                muts_rev = muts_rev ++ [%{op: :put, key: key, value: value}]
+                kv_clear_1(db, prefix, it, res, muts, muts_rev)
+            {:error, :invalid_iterator} -> {muts, muts_rev}
+            _ -> {muts, muts_rev}
+        end
     end
 
     def hash_mutations(m) do
