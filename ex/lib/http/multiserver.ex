@@ -108,6 +108,11 @@ defmodule Ama.MultiServer do
                 result = API.TX.get(txid)
                 quick_reply(state, result)
 
+            r.method == "GET" and String.starts_with?(r.path, "/api/epoch/score") ->
+                pk = String.replace(r.path, "/api/epoch/score/", "")
+                result = if r.path == "/api/epoch/score" do API.Epoch.score() else API.Epoch.score(pk) end
+                quick_reply(state, result)
+
             r.method == "GET" and String.starts_with?(r.path, "/api/chain/tx_events_by_account/") ->
                 account = String.replace(r.path, "/api/chain/tx_events_by_account/", "")
                 result = API.TX.get_by_address(account)

@@ -209,9 +209,11 @@ defmodule Consensus do
         map = RocksDB.get(tx_hash, %{db: db, cf: cf.tx ,term: true})
         if map do
             entry_bytes = RocksDB.get(map.entry_hash, %{db: db})
+            entry = Fabric.entry_by_hash(map.entry_hash)
             tx_bytes = binary_part(entry_bytes, map.index_start, map.index_size)
             TX.unpack(tx_bytes)
             |> Map.put(:result, map[:result])
+            |> Map.put(:metadata, %{entry_hash: map.entry_hash, entry_slot: entry.header_unpacked.slot})
         end
     end
 

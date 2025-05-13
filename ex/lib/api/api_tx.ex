@@ -9,7 +9,12 @@ defmodule API.TX do
         entry_hash = if byte_size(entry_hash) != 32, do: Base58.decode(entry_hash), else: entry_hash
         case Fabric.entry_by_hash(entry_hash) do
             nil -> nil
-            %{txs: txs} -> Enum.map(txs, & format_tx_for_client(TX.unpack(&1)))
+            %{hash: entry_hash, header_unpacked: %{slot: slot}, txs: txs} ->
+                Enum.map(txs, fn(tx_packed)->
+                    txu = TX.unpack(tx_packed)
+                    |> Map.put(:metadata, %{entry_hash: entry_hash, entry_slot: slot})
+                    format_tx_for_client(txu)
+                end)
         end
     end
 
@@ -25,7 +30,7 @@ defmodule API.TX do
         RocksDB.get_prefix("#{pk}:", %{db: db, cf: cf.tx_account_nonce})
         |> Enum.map(fn {nonce, txid}->
             API.TX.get(txid)
-            |> Map.put(:metadata, %{tx_event: :sent})
+            |> put_in([:metadata, :tx_event], :sent)
         end)
     end
 
@@ -36,7 +41,7 @@ defmodule API.TX do
         RocksDB.get_prefix("#{pk}:", %{db: db, cf: cf.tx_receiver_nonce})
         |> Enum.map(fn {nonce, txid}->
             API.TX.get(txid)
-            |> Map.put(:metadata, %{tx_event: :recv})
+            |> put_in([:metadata, :tx_event], :recv)
         end)
     end
 
@@ -84,5 +89,6 @@ defmodule API.TX do
             Map.put(a, :args, args)
         end)
         tx = put_in(tx, [:tx, :actions], actions)
+        tx = put_in(tx, [:metadata, :entry_hash], Base58.encode(tx.metadata.entry_hash))
     end
 end
