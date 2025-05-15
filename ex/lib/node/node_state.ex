@@ -130,9 +130,11 @@ defmodule NodeState do
     if !exists? do
       %{error: :ok, entry: entry} = Entry.unpack_and_validate(term.entry_packed)
       if Entry.height(entry) > Fabric.rooted_tip_height() do
-        #IO.inspect {:insert, Base58.encode(entry.hash)}
+        #IO.inspect {:insert, Base58.encode(entry.hash), :os.system_time(1000)}
         case Fabric.insert_entry(entry, seen_time) do
-          :ok -> FabricCoordinatorGen.precalc_sols(entry)
+          :ok ->
+            FabricCoordinatorGen.precalc_sols(entry)
+            send(FabricGen, :tick_oneshot)
           {:error, {:error, ~c"Resource busy: "}} -> :ok
             #IO.inspect {:insert_entry, :resource_busy, Base58.encode(entry.hash)}
         end
@@ -160,6 +162,10 @@ defmodule NodeState do
         res = Attestation.unpack_and_validate(attestation_packed)
         if res.error == :ok and Attestation.validate_vs_chain(res.attestation) do
           send(FabricCoordinatorGen, {:add_attestation, res.attestation})
+          #IO.inspect {:attest, res.attestation.entry_hash |> Base58.encode(), :os.system_time(1000)}
+        else
+          :ets.insert(AttestationCache, {{res.attestation.entry_hash, res.attestation.signer}, {res.attestation, :os.system_time(1000)}})
+          #IO.inspect {:late_attest, res.attestation.entry_hash |> Base58.encode(), :os.system_time(1000)}
         end
     end)
   end

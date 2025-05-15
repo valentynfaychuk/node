@@ -77,7 +77,30 @@ defmodule FabricCoordinatorGen do
 
   def handle_info({:add_attestation, attestation}, state) do
     calc_syncing()
+
     Fabric.aggregate_attestation(attestation)
+
+    #proc cached attestations
+    ts_m = :os.system_time(1000)
+    cached = :ets.select(AttestationCache, [{{{attestation.entry_hash, :_}, {:"$1", :_}}, [], [:"$1"]}])
+    Enum.each(cached, fn(attestation)->
+      Fabric.aggregate_attestation(attestation)
+    end)
+    if cached != [] do
+      deleted = :ets.select_delete(AttestationCache, [{{{attestation.entry_hash, :_}, :_}, [], [true]}])
+      #IO.inspect {:os.system_time(1000) - ts_m, length(cached), deleted, attestation.entry_hash |> Base58.encode()}
+    end
+
+    #clear stales
+    case :ets.first_lookup(AttestationCache) do
+      :'$end_of_table' -> nil
+      {key, [{_, {_, ts_m_old}}]} ->
+        delta = ts_m - ts_m_old
+        if delta >= 10_000 do
+          :ets.delete(AttestationCache, key)
+        end
+    end
+
     {:noreply, state}
   end
 end
