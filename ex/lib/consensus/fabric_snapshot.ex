@@ -47,6 +47,22 @@ defmodule FabricSnapshot do
         RocksDB.delete(entry.hash, %{db: opts.db, cf: opts.cf.muts_rev})
     end
 
+    def backstep(list) do
+        %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+        opts = %{db: db, cf: cf}
+        Enum.reverse(list)
+        |> Enum.each(fn(hash)->
+            entry = Fabric.entry_by_hash(hash)
+            in_chain = Consensus.is_in_chain(hash)
+            if in_chain do
+                true = Consensus.chain_rewind(hash)
+            end
+            if entry do
+                FabricSnapshot.delete_entry_and_metadata(entry, opts)
+            end
+        end)
+    end
+
     def download_latest() do
         height = Application.fetch_env!(:ama, :snapshot_height)
         height_padded = String.pad_leading("#{height}", 12, "0")

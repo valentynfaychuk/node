@@ -35,6 +35,8 @@ defmodule Ama do
       Fabric.init()
     end
 
+    FabricSnapshot.backstep([Base58.decode("65ixJL6XkQAH2mrHn9nrHUaZfRZqUDpUqBqzMCdoPNku")])
+
     pk = Application.fetch_env!(:ama, :trainer_pk)
     IO.puts "systems functional. welcome #{Base58.encode(pk)}"
 

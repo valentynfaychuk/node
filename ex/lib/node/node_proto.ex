@@ -65,6 +65,10 @@ defmodule NodeProto do
     %{op: :special_business_reply, business: business}
   end
 
+  def solicit_entry(hash) do
+    %{op: :solicit_entry, hash: hash}
+  end
+
   def deflate_compress(data) do
     z = :zlib.open()
     :zlib.deflateInit(z, 6, :deflated, -15, 8, :default)

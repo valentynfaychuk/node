@@ -297,4 +297,32 @@ defmodule NodeState do
         end
     end
   end
+
+  def handle(:solicit_entry, istate, term) do
+    hash = term.hash
+    hash_b58 = Base58.encode(hash)
+    entry = Fabric.entry_by_hash(hash)
+    entry_height = Entry.height(entry)
+    %{entries: entries} = API.Chain.by_height(entry_height)
+    highest_score = Enum.sort_by(entries, & &1[:consensus][:score] || 0, :desc)
+    |> List.first()
+    |> case do
+      %{consensus: %{score: score}} -> score
+      _ -> 0
+    end
+    cur_hash = Consensus.chain_tip()
+    cur_hash_b58 = Base58.encode(cur_hash)
+
+    cur_score = Enum.find_value(entries, 0, & &1.hash == cur_hash_b58 && &1.consensus.score)
+
+    trainers = Consensus.trainers_for_height(entry_height)
+
+    cond do
+      istate.peer.pk not in trainers -> nil
+      entry_height <= Fabric.rooted_tip_height() -> nil
+      length(entries) < 2 -> nil
+      cur_score >= highest_score -> nil
+      true -> FabricSnapshot.backstep([cur_hash])
+    end
+  end
 end
