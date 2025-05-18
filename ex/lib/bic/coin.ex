@@ -56,8 +56,8 @@ defmodule BIC.Coin do
         if !is_binary(symbol_original), do: throw(%{error: :invalid_symbol})
         symbol = Util.alphanumeric(symbol_original)
         if symbol != symbol_original, do: throw(%{error: :invalid_symbol})
-        if byte_size(symbol) >= 1, do: throw(%{error: :symbol_too_short})
-        if byte_size(symbol) <= 32, do: throw(%{error: :symbol_too_long})
+        if byte_size(symbol) < 1, do: throw(%{error: :symbol_too_short})
+        if byte_size(symbol) > 32, do: throw(%{error: :symbol_too_long})
 
         amount = if is_binary(amount) do :erlang.binary_to_integer(amount) else amount end
         if !is_integer(amount), do: throw(%{error: :invalid_amount})
