@@ -104,7 +104,7 @@ defmodule Util do
 
     def sext(path) do
         ext = Path.extname(path)
-        |> ascii()
+        |> alphanumeric()
         "." <> ext
     end
 
