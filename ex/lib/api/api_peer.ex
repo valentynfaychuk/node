@@ -5,11 +5,12 @@ defmodule API.Peer do
             p = NodePeers.by_pk(pk)
             inSlot = Consensus.trainer_for_slot(Consensus.chain_height()+1, Consensus.chain_height()+1) == pk
             if !!p and NodePeers.is_online(p) do
-                [Base58.encode(pk), p[:version], true, inSlot, p[:latency], get_in(p, [:temporal, :header_unpacked, :height]), get_in(p, [:rooted, :header_unpacked, :height])]
+                [Base58.encode(pk), p[:version], true, inSlot, p[:latency], Base58.encode(get_in(p, [:temporal, :hash])), get_in(p, [:temporal, :header_unpacked, :height]), get_in(p, [:rooted, :header_unpacked, :height])]
             else
                 [Base58.encode(pk), p[:version], false, inSlot]
             end
         end)
+        |> Enum.sort_by(& Enum.at(&1,1), :desc)
     end
 
     def version_ratio() do

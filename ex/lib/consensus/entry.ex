@@ -94,7 +94,7 @@ defmodule Entry do
         else
             if !BlsEx.verify?(signer, signature, hash, BLS12AggSig.dst_entry()), do: throw(%{error: :invalid_signature})
         end
-        %{error: :ok}
+        %{error: :ok, hash: hash}
         catch
             :throw,r -> r
             e,r -> IO.inspect {Entry, :validate_signature, e, r}; %{error: :unknown}

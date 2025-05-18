@@ -10,8 +10,8 @@ defmodule NodeState do
     temporal = Entry.unpack(term.temporal)
     rooted = Entry.unpack(term.rooted)
     try do
-      %{error: :ok} = Entry.validate_signature(temporal.header, temporal.signature, temporal.header_unpacked.signer, temporal[:mask])
-      %{error: :ok} = Entry.validate_signature(rooted.header, rooted.signature, rooted.header_unpacked.signer, rooted[:mask])
+      %{error: :ok, hash: hasht} = Entry.validate_signature(temporal.header, temporal.signature, temporal.header_unpacked.signer, temporal[:mask])
+      %{error: :ok, hash: hashr} = Entry.validate_signature(rooted.header, rooted.signature, rooted.header_unpacked.signer, rooted[:mask])
 
       :erlang.spawn(fn()->
         #txs_packed = TXPool.random()
@@ -21,7 +21,7 @@ defmodule NodeState do
         if rng_peers != [], do: send(NodeGen.get_socket_gen(), {:send_to_some, [istate.peer.ip], compress(NodeProto.peers(rng_peers))})
       end)
 
-      term = %{temporal: temporal, rooted: rooted, ts_m: term.ts_m}
+      term = %{temporal: Map.put(temporal, :hash, hasht), rooted: Map.put(rooted, :hash, hashr), ts_m: term.ts_m}
       send(NodeGen, {:handle_sync, :ping_ns, istate, term})
     catch
       e,r-> IO.inspect {:error_ping, e, r, term, istate.peer.ip}
