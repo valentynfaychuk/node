@@ -9,6 +9,10 @@ defmodule FabricGen do
     :persistent_term.put(:exit_after_my_slot, true)
   end
 
+  def snapshotBeforeMySlot() do
+    :persistent_term.put(:snapshot_before_my_slot, true)
+  end
+
   def start_link() do
     GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
   end
@@ -224,6 +228,13 @@ defmodule FabricGen do
 
       pk == slot_trainer ->
         :persistent_term.put(:last_made_entry_slot, next_slot)
+
+        if :persistent_term.get(:snapshot_before_my_slot, nil) do
+          :persistent_term.erase(:snapshot_before_my_slot)
+          IO.inspect "taking snapshot #{Fabric.rooted_tip_height()}"
+          FabricSnapshot.snapshot_tmp()
+        end
+
         IO.puts "🔧 im in slot #{next_slot}, working.. *Click Clak*"
         
         #%{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
