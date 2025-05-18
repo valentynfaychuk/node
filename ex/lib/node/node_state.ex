@@ -180,7 +180,7 @@ defmodule NodeState do
   def handle(:catchup_entry, istate, term) do
     true = length(term.heights) <= 100
     Enum.each(term.heights, fn(height)->
-        case Fabric.get_entries_by_height(height) do
+        case Fabric.entries_by_height(height) do
             [] -> nil
             map_entries ->
               Enum.each(map_entries, fn(map)->
