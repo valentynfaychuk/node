@@ -63,7 +63,7 @@ defmodule Util do
         end
     end
     def ascii?(string) do
-        string == alphanumeric(string)
+        string == ascii(string)
     end
 
     def alphanumeric(string) do
@@ -225,7 +225,7 @@ defmodule Util do
     def set_bit(bin, i) when is_bitstring(bin) and is_integer(i) do
         n = bit_size(bin)
 
-        if i < 0 or i > n do
+        if i < 0 or i >= n do
           raise ArgumentError, "Bit index out of range: #{i} (size is #{n})"
         end
 
@@ -237,7 +237,7 @@ defmodule Util do
     def get_bit(bin, i) when is_bitstring(bin) and is_integer(i) do
         n = bit_size(bin)
   
-        if i < 0 or i > n do
+        if i < 0 or i >= n do
           raise ArgumentError, "Bit index out of range: #{i} (size is #{n})"
         end
   
