@@ -57,7 +57,8 @@ defmodule Consensus do
             height in 3195570..3195575 ->
                 RocksDB.get("bic:epoch:trainers:height:000000319557", options)
             true ->
-                RocksDB.get_prev("bic:epoch:trainers:height:", String.pad_leading("#{height}", 12, "0"), options)
+                {_, value} = RocksDB.get_prev("bic:epoch:trainers:height:", String.pad_leading("#{height}", 12, "0"), options)
+                value
         end
     end
 

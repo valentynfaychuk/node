@@ -20,13 +20,39 @@ defmodule RocksDB do
         end
     end
 
+    def get_next(prefix, key, opts) do
+        {:ok, it} = iterator(opts)
+
+        seek_string = prefix <> key
+        seek_res = :rocksdb.iterator_move(it, {:seek, seek_string})
+        seek_res = case seek_res do
+            {:ok, ^seek_string, _value} -> :rocksdb.iterator_move(it, :next)
+            other -> other
+        end
+
+        offset = opts[:offset] || 0
+        seek_res = if offset <= 0 do seek_res else
+            Enum.reduce(1..offset, seek_res, fn(_, _)->
+                :rocksdb.iterator_move(it, :next)
+            end)
+        end
+
+        case seek_res do
+            {:ok, <<^prefix::binary, next_key::binary>>, value} ->
+                value = if opts[:term] do :erlang.binary_to_term(value, [:safe]) else value end
+                {next_key, value}
+            _ -> {nil, nil}
+        end
+    end
+
     def get_prev(prefix, key, opts) do
         {:ok, it} = iterator(opts)
         res = :rocksdb.iterator_move(it, {:seek_for_prev, "#{prefix}#{key}"})
         case res do
-            {:ok, <<^prefix::binary, _::binary>>, value} ->
-                if opts[:term] do :erlang.binary_to_term(value, [:safe]) else value end
-            _ -> nil
+            {:ok, <<^prefix::binary, prev_key::binary>>, value} ->
+                value = if opts[:term] do :erlang.binary_to_term(value, [:safe]) else value end
+                {prev_key, value}
+            _ -> {nil, nil}
         end
     end
 
