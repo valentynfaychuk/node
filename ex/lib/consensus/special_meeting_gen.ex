@@ -154,9 +154,10 @@ defmodule SpecialMeetingGen do
   def build_slash_tx(st) do
     my_pk = Application.fetch_env!(:ama, :trainer_pk)
     my_sk = Application.fetch_env!(:ama, :trainer_sk)
+    nonce = TXPool.lowest_nonce(my_pk) || Consensus.chain_nonce(my_pk)
     TX.build(my_sk, "Epoch", "slash_trainer", 
       ["#{st.epoch}", st.malicious_pk, st.aggsig, "#{bit_size(st.mask)}", Util.pad_bitstring_to_bytes(st.mask)],
-      Consensus.chain_nonce(my_pk)+1)
+      nonce+1)
   end
 
   def build_slash_entry(st) do
