@@ -18,30 +18,86 @@ defmodule API.TX do
         end
     end
 
-    def get_by_address(pk) do
-        txs = get_by_address_sent(pk) ++ get_by_address_recv(pk)
-        Enum.sort_by(txs, & &1.tx.nonce)
+    def get_by_address(pk, filters) do
+        {next_key_sent, txs_sent} = get_by_address_sent(pk, filters)
+        {next_key_recv, txs_recv} = get_by_address_recv(pk, filters)
+        txs = txs_sent ++ txs_recv
+        cursor = cond do
+            !next_key_sent -> next_key_recv
+            !next_key_recv -> next_key_sent
+            true -> min(:erlang.binary_to_integer(next_key_sent), :erlang.binary_to_integer(next_key_recv))
+        end
+        txs = Enum.sort_by(txs, & &1.tx.nonce, filters.sort)
+        txs = Enum.take(txs, filters.limit)
+        {cursor, txs}
     end
 
-    def get_by_address_sent(pk) do
+    def get_by_address_sent(pk, filters) do
         pk = if byte_size(pk) != 48, do: Base58.decode(pk), else: pk
 
+        {grep_func, start_key} = case filters.sort do
+            :desc -> {&RocksDB.get_prev/3, filters[:cursor] || :binary.copy("9", 20)}
+            _ -> {&RocksDB.get_next/3, ""}
+        end
+
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
-        RocksDB.get_prefix("#{pk}:", %{db: db, cf: cf.tx_account_nonce})
-        |> Enum.map(fn {nonce, txid}->
-            API.TX.get(txid)
-            |> put_in([:metadata, :tx_event], :sent)
+        Enum.reduce_while(0..9_999_999, {nil, []}, fn(idx, {next_key, acc}) ->
+            {next_key, value} = if idx == 0 do
+                grep_func.("#{pk}:", start_key, %{db: db, cf: cf.tx_account_nonce, offset: filters.offset})
+            else
+                grep_func.("#{pk}:", next_key, %{db: db, cf: cf.tx_account_nonce})
+            end
+
+            if !next_key do {:halt, {next_key, acc}} else
+                txu = API.TX.get(value)
+                |> put_in([:metadata, :tx_event], :sent)
+                action = hd(txu.tx.actions)
+                cond do
+                    !!filters[:contract] and filters.contract != action.contract -> {:cont, {next_key, acc}}
+                    !!filters[:function] and filters.function != action.function -> {:cont, {next_key, acc}}
+                    true ->
+                        acc = acc ++ [txu]
+                        if length(acc) >= filters.limit do
+                            {:halt, {next_key, acc}}
+                        else
+                            {:cont, {next_key, acc}}
+                        end
+                end
+            end
         end)
     end
 
-    def get_by_address_recv(pk) do
+    def get_by_address_recv(pk, filters) do
         pk = if byte_size(pk) != 48, do: Base58.decode(pk), else: pk
 
+        {grep_func, start_key} = case filters.sort do
+            :desc -> {&RocksDB.get_prev/3, filters[:cursor] || :binary.copy("9", 20)}
+            _ -> {&RocksDB.get_next/3, ""}
+        end
+
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
-        RocksDB.get_prefix("#{pk}:", %{db: db, cf: cf.tx_receiver_nonce})
-        |> Enum.map(fn {nonce, txid}->
-            API.TX.get(txid)
-            |> put_in([:metadata, :tx_event], :recv)
+        Enum.reduce_while(0..9_999_999, {nil, []}, fn(idx, {next_key, acc}) ->
+            {next_key, value} = if idx == 0 do
+                grep_func.("#{pk}:", start_key, %{db: db, cf: cf.tx_receiver_nonce, offset: filters.offset})
+            else
+                grep_func.("#{pk}:", next_key, %{db: db, cf: cf.tx_receiver_nonce})
+            end
+            if !next_key do {:halt, {next_key, acc}} else
+                txu = API.TX.get(value)
+                |> put_in([:metadata, :tx_event], :recv)
+                action = hd(txu.tx.actions)
+                cond do
+                    !!filters[:contract] and filters.contract != action.contract -> {:cont, {next_key, acc}}
+                    !!filters[:function] and filters.function != action.function -> {:cont, {next_key, acc}}
+                    true ->
+                        acc = acc ++ [txu]
+                        if length(acc) >= filters.limit do
+                            {:halt, {next_key, acc}}
+                        else
+                            {:cont, {next_key, acc}}
+                        end
+                end
+            end
         end)
     end
 

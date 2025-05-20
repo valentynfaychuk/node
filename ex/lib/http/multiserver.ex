@@ -119,8 +119,23 @@ defmodule Ama.MultiServer do
                 quick_reply(state, result)
 
             r.method == "GET" and String.starts_with?(r.path, "/api/chain/tx_events_by_account/") ->
+                query = r.query && Photon.HTTP.parse_query(r.query)
                 account = String.replace(r.path, "/api/chain/tx_events_by_account/", "")
-                result = API.TX.get_by_address(account)
+                filters = %{limit: query[:limit] || "100", offset: query[:offset] || "0", sort: query[:sort] || "asc"}
+                filters = %{
+                    limit: :erlang.binary_to_integer(filters.limit),
+                    offset: :erlang.binary_to_integer(filters.offset),
+                    sort: case filters.sort do "desc" -> :desc; _ -> :asc end,
+                    cursor: query[:cursor] && Base58.decode(query.cursor),
+                    contract: query[:contract] && Base58.decode(query.contract),
+                    function: query[:function],
+                }
+                {cursor, txs} = cond do
+                    query[:type] == "sent" -> API.TX.get_by_address_sent(account, filters)
+                    query[:type] == "recv" -> API.TX.get_by_address_recv(account, filters)
+                    true -> API.TX.get_by_address(account, filters)
+                end
+                result = %{cursor: cursor, txs: txs}
                 quick_reply(state, result)
 
             r.method == "GET" and String.starts_with?(r.path, "/api/chain/txs_in_entry/") ->
