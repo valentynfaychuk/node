@@ -68,11 +68,15 @@ defmodule FabricSnapshot do
         height_padded = String.pad_leading("#{height}", 12, "0")
         IO.puts "quick-syncing chain snapshot height #{height}.. this can take a while"
         url = "https://snapshots.amadeus.bot/#{height_padded}.zip"
-        {:ok, %{status_code: 200, body: body}} = :comsat_http.get(url, %{},
-            %{timeout: 60_000*60, ssl_options: [{:server_name_indication, 'snapshots.amadeus.bot'}, {:verify, :verify_none}]})
-        work_folder = Application.fetch_env!(:ama, :work_folder)
-        {:ok, _} = :zip.unzip(body, [:verbose, {:cwd, '#{work_folder}'}])
         
+        cwd_dir = Path.join(Application.fetch_env!(:ama, :work_folder), "updates_tmp/")
+        :ok = File.mkdir_p!(cwd_dir)
+        file = Path.join(cwd_dir, height_padded<>".zip")
+        {:ok, _} = :httpc.request(:get, {url |> to_charlist(), []}, [], [stream: file |> to_charlist()])
+        IO.puts "quick-sync download complete. Extracting.."
+
+        {:ok, _} = :zip.unzip(file |> to_charlist(), [{:cwd, Application.fetch_env!(:ama, :work_folder) |> to_charlist()}])
+        :ok = File.rm!(file)
         IO.puts "quick-sync done"
     end
 
