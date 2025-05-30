@@ -87,6 +87,7 @@ defmodule FabricSnapshot do
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
         :ok = File.mkdir_p!("/tmp/#{height_padded}/db/")
         :rocksdb.checkpoint(db, '/tmp/#{height_padded}/db/fabric/')
+        height
     end
 
     def upload_latest() do
