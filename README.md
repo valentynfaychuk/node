@@ -1,5 +1,8 @@
 # node
 
+### Tested Distro/Env
+Linux Kernel 6.8  
+Ubuntu 24.04  
 
 ### Building
 Using podman or docker
