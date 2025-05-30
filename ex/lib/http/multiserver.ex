@@ -157,7 +157,7 @@ defmodule Ama.MultiServer do
                 quick_reply(state, %{error: :ok, balances: balances})
 
             r.method == "POST" and String.starts_with?(r.path, "/api/tx/submit") ->
-                {r, tx_packed} = Photon.HTTP.read_body_all_json(state.socket, r)
+                {r, tx_packed} = Photon.HTTP.read_body_all(state.socket, r)
                 result = API.TX.submit(tx_packed)
                 quick_reply(state, result)
             r.method == "GET" and String.starts_with?(r.path, "/api/tx/submit/") ->
