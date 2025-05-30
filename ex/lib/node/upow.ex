@@ -13,6 +13,7 @@ defmodule UPOW do
 
     def branch_sol(epoch, trainer, pop, computor, segment_vr) do
         cond do
+            epoch >= 156 -> UPOW2.tensormath(epoch, Blake3.hash(segment_vr), trainer, pop, computor)
             epoch >= 1 -> UPOW1.tensormath(epoch, trainer, pop, computor, segment_vr)
             true -> UPOW0.tensormath(epoch, trainer, pop, computor)
         end
@@ -33,6 +34,22 @@ defmodule UPOW do
                 best
             end
         end)
+    end
+
+    def test_one(epoch \\ 156) do
+        pk = Application.fetch_env!(:ama, :trainer_pk)
+        pop = Application.fetch_env!(:ama, :trainer_pop)
+        :timer.tc(fn()->
+            branch_sol(epoch, pk, pop, pk, :crypto.strong_rand_bytes(96))
+        end)
+    end
+
+    def test_until_find() do
+        pk = Application.fetch_env!(:ama, :trainer_pk)
+        pop = Application.fetch_env!(:ama, :trainer_pop)
+        start = :os.system_time(1)
+        r = UPOW.compute_for(156, pk, pop, pk, :crypto.strong_rand_bytes(96), 10_000_000)
+        {r, :os.system_time(1) - start}
     end
 end
 
@@ -113,5 +130,72 @@ defmodule UPOW1 do
         end)
         tensor = Map.put(tensor, index, new_row)
         walk_mul(rest, tensor)
+    end
+end
+
+defmodule UPOW2 do
+    def tensormath(epoch, segment_vr_hash, trainer, pop, computor) do
+        nonce = :crypto.strong_rand_bytes(12)
+        sol_seed = <<epoch::32-little, segment_vr_hash::binary, trainer::binary, pop::binary, computor::binary, nonce::binary>>
+        tensor_c = calculate_matmul(sol_seed)
+        sol = sol_seed <> tensor_c
+        {Blake3.hash(sol), sol}
+    end
+
+    def calculate_matmul(sol_seed) when byte_size(sol_seed) == 240 do
+        b = Blake3.new()
+        Blake3.update(b, sol_seed)
+        <<
+            matrix_a::binary-size(16*50240),
+            matrix_b::binary-size(50240*16),
+            matrix_b2::binary-size(16*64)>> = Blake3.finalize_xof(b, 16*50240 + 50240*16 + 16*64)
+        MatrixMul.multiply(matrix_a, matrix_b) |> MatrixMul.map_to_binary()
+    end
+end
+
+defmodule MatrixMul do
+    @rows 16
+    @cols 16
+    @k_dim 50_240
+
+    @spec multiply(binary(), binary()) :: %{integer() => %{integer() => integer()}}
+    def multiply(a_bin, b_bin) when is_binary(a_bin) and is_binary(b_bin) do
+        0..(@rows - 1)
+        |> Enum.reduce(%{}, fn i, acc ->
+          row_map =
+            0..(@cols - 1)
+            |> Enum.reduce(%{}, fn j, row_acc ->
+              sum = dot_product(a_bin, b_bin, i, j)
+              Map.put(row_acc, j, sum)
+            end)
+
+          Map.put(acc, i, row_map)
+        end)
+    end
+
+    defp dot_product(a_bin, b_bin, i, j) do
+        0..(@k_dim - 1)
+        |> Enum.reduce(0, fn k, sum ->
+          a_val = get_signed_byte(a_bin, i * @k_dim + k)
+          b_val = get_signed_byte(b_bin, k * @cols + j)
+          sum + a_val * b_val
+        end)
+    end
+
+    def get_signed_byte(bin, idx) do
+        <<_::binary-size(idx), x::signed-integer-size(8), _::binary>> = bin
+        x
+    end
+
+    def map_to_binary(c_map) when is_map(c_map) do
+        iodata =
+          for i <- 0..(@rows - 1),
+              j <- 0..(@cols - 1) do
+            # fetch! will raise if out of bounds
+            row = Map.fetch!(c_map, i)
+            val = Map.fetch!(row, j)
+            <<val::signed-little-integer-size(32)>>
+          end
+        IO.iodata_to_binary(iodata)
     end
 end

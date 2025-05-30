@@ -57,14 +57,14 @@ defmodule ComputorGen do
     hasExecCoins = coins >= BIC.Coin.to_cents(100)
     cond do
         (state.type == :trainer and !hasExecCoins) or state.type == nil ->
-          sol = UPOW.compute_for(epoch, EntryGenesis.signer(), EntryGenesis.pop(), pk, :crypto.strong_rand_bytes(96), 3000)
+          sol = UPOW.compute_for(epoch, EntryGenesis.signer(), EntryGenesis.pop(), pk, :crypto.strong_rand_bytes(96), 10)
           if sol do
             IO.puts "🔢 tensor matmul complete! broadcasting sol.."
             NodeGen.broadcast(:sol, :trainers, [sol])
           end
 
         true ->
-          sol = UPOW.compute_for(epoch, pk, pop, pk, :crypto.strong_rand_bytes(96), 3000)
+          sol = UPOW.compute_for(epoch, pk, pop, pk, :crypto.strong_rand_bytes(96), 10)
           if sol do
             sk = Application.fetch_env!(:ama, :trainer_sk)
             packed_tx = TX.build(sk, "Epoch", "submit_sol", [sol])
