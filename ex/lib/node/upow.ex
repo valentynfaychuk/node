@@ -176,7 +176,7 @@ defmodule MatrixMul do
     defp dot_product(a_bin, b_bin, i, j) do
         0..(@k_dim - 1)
         |> Enum.reduce(0, fn k, sum ->
-          a_val = get_signed_byte(a_bin, i * @k_dim + k)
+          a_val = :binary.at(a_bin, i * @k_dim + k)
           b_val = get_signed_byte(b_bin, k * @cols + j)
           sum + a_val * b_val
         end)
