@@ -87,28 +87,12 @@ defmodule ConsensusKV do
         end
     end
 
-    def kv_get_prev(prefix, key, opts \\ %{}) do
-        db = Process.get({RocksDB, :ctx})
-        {:ok, it} = :rocksdb.transaction_iterator(db.rtx, db.cf.contractstate, [])
-        res = :rocksdb.iterator_move(it, {:seek_for_prev, prefix <> key})
-        case res do
-            {:ok, <<^prefix::binary, prev_key::binary>>, value} ->
-                value = cond do
-                    opts[:term] -> :erlang.binary_to_term(value, [:safe])
-                    opts[:to_integer] -> :erlang.binary_to_integer(value)
-                    true -> value
-                end
-                {prev_key, value}
-            _ -> {nil, nil}
-        end
-    end
-
     def kv_get_next(prefix, key, opts \\ %{}) do
         db = Process.get({RocksDB, :ctx})
         {:ok, it} = :rocksdb.transaction_iterator(db.rtx, db.cf.contractstate, [])
         seek_string = prefix <> key
         seek_res = :rocksdb.iterator_move(it, {:seek, seek_string})
-        seek_res = case seek_res do
+        case seek_res do
             {:ok, ^seek_string, _value} -> :rocksdb.iterator_move(it, :next)
             other -> other
         end
@@ -122,7 +106,28 @@ defmodule ConsensusKV do
                 {next_key, value}
             _ -> {nil, nil}
          end
-     end
+    end
+
+    def kv_get_prev(prefix, key, opts \\ %{}) do
+        db = Process.get({RocksDB, :ctx})
+        {:ok, it} = :rocksdb.transaction_iterator(db.rtx, db.cf.contractstate, [])
+        seek_string = prefix <> key
+        seek_res = :rocksdb.iterator_move(it, {:seek_for_prev, seek_string})
+        case seek_res do
+            {:ok, ^seek_string, _value} -> :rocksdb.iterator_move(it, :prev)
+            other -> other
+        end
+        |> case do
+            {:ok, <<^prefix::binary, prev_key::binary>>, value} ->
+                value = cond do
+                    opts[:term] -> :erlang.binary_to_term(value, [:safe])
+                    opts[:to_integer] -> :erlang.binary_to_integer(value)
+                    true -> value
+                end
+                {prev_key, value}
+            _ -> {nil, nil}
+        end
+    end
 
     def kv_exists(key) do
         db = Process.get({RocksDB, :ctx})

@@ -14,11 +14,15 @@ defmodule API.Peer do
     end
 
     def version_ratio() do
-        trainers()
+        trainers = trainers()
+        trainers
         |> Enum.reduce(%{}, fn([_pk, version | _], acc)->
             Map.put(acc, version, Map.get(acc, version, 0) + 1)
         end)
         |> Enum.sort_by(& elem(&1, 1), :desc)
+        |> Enum.map(fn({version, cnt})->
+            {version, cnt, Float.round(cnt/length(trainers), 3)}
+        end)
     end
 
     def all_for_web() do
