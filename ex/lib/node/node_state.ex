@@ -133,7 +133,7 @@ defmodule NodeState do
         #IO.inspect {:insert, Base58.encode(entry.hash), :os.system_time(1000)}
         case Fabric.insert_entry(entry, seen_time) do
           :ok ->
-            FabricCoordinatorGen.precalc_sols(entry)
+            #FabricCoordinatorGen.precalc_sols(entry)
             send(FabricGen, :tick_oneshot)
           {:error, {:error, ~c"Resource busy: "}} -> :ok
             #IO.inspect {:insert_entry, :resource_busy, Base58.encode(entry.hash)}

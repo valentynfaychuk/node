@@ -84,7 +84,8 @@ defmodule NodeGenReassemblyGen do
         end)
       end
     catch
-        e,r -> IO.inspect {:msg_decode_failed, e, r, __STACKTRACE__}
+        _,_ -> nil
+        #e,r -> IO.inspect {:msg_decode_failed, e, r, __STACKTRACE__}
     end
   end
 end

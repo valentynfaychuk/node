@@ -51,6 +51,7 @@ defmodule NodeGenSocketGen do
         #IO.puts IO.ANSI.red() <> inspect({:relay_from, ip, msg.op}) <> IO.ANSI.reset()
 
         :erlang.spawn(fn()->
+          try do
           case NodeProto.unpack_message_v2(data) do
             %{error: :old, msg: msg} ->
               peer_ip = Tuple.to_list(ip) |> Enum.join(".")
@@ -98,6 +99,9 @@ defmodule NodeGenSocketGen do
               send(gen, {:add_shard, {pk, ts_nano, shard_total}, {peer_ip, version, shared_secret, nil, shard_index, original_size}, payload})
 
             _ -> nil
+          end
+          catch
+            _,_ -> nil
           end
         end)
 
