@@ -39,11 +39,7 @@ defmodule BIC.Base do
         kv_increment("bic:coin:balance:#{env.entry_signer}:AMA", BIC.Coin.to_flat(1))
 
         if rem(env.entry_height, 1000) == 0 do
-            if env.entry_epoch >= 156 do
-                kv_put("bic:epoch:segment_vr_hash", Blake3.hash(env.entry_vr))
-            else
-                kv_put("bic:epoch:segment_vr", env.entry_vr)
-            end
+            kv_put("bic:epoch:segment_vr_hash", Blake3.hash(env.entry_vr))
         end
 
         cond do

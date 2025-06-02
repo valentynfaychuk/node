@@ -26,26 +26,6 @@ defmodule BIC.Epoch do
     def circulating(epoch) do circulating_without_burn(epoch) - BIC.Coin.burn_balance() end
 
     def call(:submit_sol, env, [sol]) do
-        if env.entry_epoch >= 156 do
-            call(:submit_sol2, env, [sol])
-        else
-            if kv_exists("bic:epoch:solutions:#{sol}"), do: throw(%{error: :sol_exists})
-
-            if !BIC.Sol.verify(sol), do: throw(%{error: :invalid_sol})
-
-            su = BIC.Sol.unpack(sol)
-            if su.epoch != env.entry_epoch, do: throw(%{error: :invalid_epoch})
-
-            if !kv_exists("bic:epoch:pop:#{su.pk}") do
-                if !BlsEx.verify?(su.pk, su.pop, su.pk, BLS12AggSig.dst_pop()), do: throw(%{error: :invalid_pop})
-                kv_put("bic:epoch:pop:#{su.pk}", su.pop)
-            end
-            kv_put("bic:epoch:solutions:#{sol}")
-            kv_increment("bic:epoch:solutions_count:#{su.pk}", 1)
-        end
-    end
-
-    def call(:submit_sol2, env, [sol]) do
         hash = Blake3.hash(sol)
         if kv_exists("bic:epoch:solutions:#{hash}"), do: throw(%{error: :sol_exists})
 
