@@ -63,7 +63,7 @@ defmodule Ama.MultiServer do
 
     def handle_http(state) do
         r = state.request
-        IO.inspect r.path
+        #IO.inspect r.path
 
         cond do
             r.method in ["OPTIONS", "HEAD"] ->
