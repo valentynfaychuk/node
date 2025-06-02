@@ -7,9 +7,17 @@ defmodule NodeGenSocketGen do
 
   def init([ip_tuple, port, name]) do
     lsocket = listen(port, [{:ifaddr, ip_tuple}])
-    recbuf_mb = (get_sys_recvbuf(lsocket)/1024)/1024
-    IO.puts "recbuf: #{recbuf_mb}MB"
-    if recbuf_mb < 64 do
+    {snd, rcv} = get_sys_bufs(lsocket)
+    snd_mb = (snd/1024)/1024
+    rcv_mb = (rcv/1024)/1024
+
+    IO.puts "sndbuf: #{snd_mb}MB | recbuf: #{rcv_mb}MB"
+    if snd_mb < 4 do
+      IO.puts "🔴WARNING: sndbuf way too low, please edit /etc/sysctl.conf"
+      IO.puts "🔴WARNING: set values to ATLEAST and reboot or `sysctl --system`"
+      IO.puts "net.core.wmem_max = 8388608"
+    end
+    if rcv_mb < 64 do
       IO.puts "🔴WARNING: recbuf way too low, please edit /etc/sysctl.conf"
       IO.puts "🔴WARNING: set values to ATLEAST and reboot or `sysctl --system`"
       IO.puts "net.core.rmem_max = 268435456"
@@ -33,16 +41,17 @@ defmodule NodeGenSocketGen do
       {:reuseport, true}, #working in OTP26.1+
       {:buffer, 65536}, #max-size read
       {:recbuf, 33554432}, #total accum
-      {:sndbuf, 1048576}, #total accum
+      {:sndbuf, 4194304}, #total accum
       :binary,
     ]
     {:ok, lsocket} = :gen_udp.open(port, basic_opts++opts)
     lsocket
   end
 
-  def get_sys_recvbuf(socket) do
-    {:ok, [{:raw, 1, 8, <<size::32-little>>}]} = :inet.getopts(socket, [{:raw, 1, 8, 4}])
-    size
+  def get_sys_bufs(socket) do
+    {:ok, [{:raw, 1, 7, <<size_snd::32-little>>}]} = :inet.getopts(socket, [{:raw, 1, 7, 4}])
+    {:ok, [{:raw, 1, 8, <<size_rcv::32-little>>}]} = :inet.getopts(socket, [{:raw, 1, 8, 4}])
+    {size_snd, size_rcv}
   end
 
   def handle_info(msg, state) do
