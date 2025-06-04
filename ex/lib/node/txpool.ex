@@ -103,9 +103,13 @@ defmodule TXPool do
 
     def lowest_nonce(pk) do
         :ets.tab2list(TXPool)
-        |> Enum.reduce(nil, fn({{nonce, hash}, txu}, lowest_nonce)->
-            if txu.tx.signer == pk and (!nonce or nonce < lowest_nonce) do
-                nonce
+        |> Enum.reduce(nil, fn({{nonce, _hash}, txu}, lowest_nonce) ->
+            if txu.tx.signer == pk do
+                cond do
+                    lowest_nonce == nil -> nonce
+                    nonce < lowest_nonce -> nonce
+                    true -> lowest_nonce
+                end
             else
                 lowest_nonce
             end
@@ -118,11 +122,11 @@ defmodule TXPool do
     end
     def highest_nonce(pk) do
         :ets.tab2list(TXPool)
-        |> Enum.reduce({nil, 0}, fn({nonce, txu}, {highest_nonce, cnt})->
+        |> Enum.reduce({nil, 0}, fn({{nonce, _hash}, txu}, {highest_nonce, cnt})->
             cond do
-               txu.tx.signer == pk and (!nonce or nonce > highest_nonce) ->  {nonce, cnt + 1}
-               txu.tx.signer == pk -> {highest_nonce, cnt + 1}
-               true -> {highest_nonce, cnt}
+                txu.tx.signer == pk and (highest_nonce == nil or nonce > highest_nonce) -> {nonce, cnt + 1}
+                txu.tx.signer == pk -> {highest_nonce, cnt + 1}
+                true -> {highest_nonce, cnt}
             end
         end)
     end
