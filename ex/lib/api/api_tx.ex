@@ -19,16 +19,21 @@ defmodule API.TX do
     end
 
     def get_by_address(pk, filters) do
-        {next_key_sent, txs_sent} = get_by_address_sent(pk, filters)
-        {next_key_recv, txs_recv} = get_by_address_recv(pk, filters)
+        {_, txs_sent} = get_by_address_sent(pk, filters)
+        {_, txs_recv} = get_by_address_recv(pk, filters)
         txs = txs_sent ++ txs_recv
-        cursor = cond do
-            !next_key_sent -> next_key_recv
-            !next_key_recv -> next_key_sent
-            true -> min(:erlang.binary_to_integer(next_key_sent), :erlang.binary_to_integer(next_key_recv))
-        end
+
         txs = Enum.sort_by(txs, & &1.tx.nonce, filters.sort)
         txs = Enum.take(txs, filters.limit)
+
+        cursor = case List.last(txs) do
+            nil -> nil
+            last_tx ->
+                last_tx.tx.nonce
+                |> Integer.to_string()
+                |> String.pad_leading(20, "0")
+        end
+
         {cursor, txs}
     end
 
@@ -36,7 +41,7 @@ defmodule API.TX do
         pk = if byte_size(pk) != 48, do: Base58.decode(pk), else: pk
 
         {grep_func, start_key} = case filters.sort do
-            :desc -> {&RocksDB.get_prev/3, filters[:cursor] || :binary.copy("9", 20)}
+            :desc -> {&RocksDB.get_prev/3, (filters[:cursor] || :binary.copy("9", 20)) |> String.pad_leading(20, "0")}
             _ -> {&RocksDB.get_next/3, ""}
         end
 
@@ -71,7 +76,7 @@ defmodule API.TX do
         pk = if byte_size(pk) != 48, do: Base58.decode(pk), else: pk
 
         {grep_func, start_key} = case filters.sort do
-            :desc -> {&RocksDB.get_prev/3, filters[:cursor] || :binary.copy("9", 20)}
+            :desc -> {&RocksDB.get_prev/3, (filters[:cursor] || :binary.copy("9", 20)) |> String.pad_leading(20, "0")}
             _ -> {&RocksDB.get_next/3, ""}
         end
 

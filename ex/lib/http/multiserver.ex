@@ -126,8 +126,8 @@ defmodule Ama.MultiServer do
                     limit: :erlang.binary_to_integer(filters.limit),
                     offset: :erlang.binary_to_integer(filters.offset),
                     sort: case filters.sort do "desc" -> :desc; _ -> :asc end,
-                    cursor: try do Base58.decode(query.cursor) catch _,_ -> query[:cursor] end,
-                    contract: try do Base58.decode(query.contract) catch _,_ -> query[:contract] end,
+                    cursor: if query[:cursor_b58] do Base58.decode(query.cursor_b58) else query[:cursor] end,
+                    contract: if query[:contract_b58] do Base58.decode(query.contract_b58) else query[:contract] end,
                     function: query[:function],
                 }
                 {cursor, txs} = cond do
