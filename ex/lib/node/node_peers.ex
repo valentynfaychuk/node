@@ -37,19 +37,28 @@ defmodule NodePeers do
     |> Enum.map(& elem(&1,1))
   end
 
+  def all_trainers(height \\ nil) do
+    height = if !height do Consensus.chain_height() else height end
+    pks = Consensus.trainers_for_height(height+1)
+
+    match_spec = Enum.map(pks, fn(pk)-> {{:"$1", %{pk: pk}}, [], [:"$1"]} end)
+    :ets.select(NODEPeers, match_spec)
+    |> Enum.map(&(:ets.lookup_element(NODEPeers, &1, 2, nil)))
+  end
+
   def summary() do
     :ets.tab2list(NODEPeers)
     |> Enum.map(fn {_, p}->
       [
-        p.ip, 
-        p[:latency], 
+        p.ip,
+        p[:latency],
         get_in(p, [:temporal, :header_unpacked, :height]),
         get_in(p, [:rooted, :header_unpacked, :height])
       ]
     end)
     |> Enum.sort_by(fn([ip|_])->
       {:ok, ip} = :inet.parse_address(~c'#{ip}')
-      ip 
+      ip
     end)
   end
 
@@ -58,7 +67,7 @@ defmodule NodePeers do
     |> Enum.map(fn(p)->
       [
         p.ip,
-        p[:latency], 
+        p[:latency],
         get_in(p, [:temporal, :header_unpacked, :height]),
         get_in(p, [:rooted, :header_unpacked, :height])
       ]
@@ -104,6 +113,12 @@ defmodule NodePeers do
     ip = :ets.select(NODEPeers, [{{:"$1", %{pk: pk}}, [], [:"$1"]}])
     |> List.first()
     :ets.lookup_element(NODEPeers, ip, 2, nil)
+  end
+
+  def by_pks(pks) do
+    match_spec = Enum.map(pks, fn(pk)-> {{:"$1", %{pk: pk}}, [], [:"$1"]} end)
+    :ets.select(NODEPeers, match_spec)
+    |> Enum.map(&(:ets.lookup_element(NODEPeers, &1, 2, nil)))
   end
 
   def for_height(height) do

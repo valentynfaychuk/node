@@ -88,12 +88,16 @@ defmodule FabricSyncGen do
     if temporal_height - rooted_height > 0 do
     #if highest_rooted_height-rooted_height == 0 and temporal_height - rooted_height > 0 do
       next_holes = Enum.to_list(rooted_height..temporal_height)
-      next_holes = Enum.take(next_holes, 29) |> Enum.shuffle()
+      next_holes = Enum.take(next_holes, 29)
       pk_height = Enum.reduce(next_holes, %{}, fn(height, acc)->
         entry = Fabric.entries_by_height(height) |> Enum.random()
         trainers = Consensus.trainers_for_height(height)
         consensuses = Fabric.consensuses_by_entryhash(entry.hash)
-        if !consensuses do acc else
+        if !consensuses do
+          Enum.reduce(trainers, acc, fn(pk, acc)->
+            Map.put(acc, pk, Map.get(acc, pk, []) ++ [height])
+          end)
+        else
           {_, _score, c} = Consensus.best_by_weight(trainers, consensuses)
           trainers_signed = BLS12AggSig.unmask_trainers(trainers, c.mask)
           delta = trainers -- trainers_signed
@@ -102,14 +106,35 @@ defmodule FabricSyncGen do
           end)
         end
       end)
-      Enum.each(pk_height, fn {pk, heights}->
+      Enum.group_by(pk_height, &elem(&1,1), &elem(&1,0))
+      |> Enum.each(fn {heights, pks}->
         :erlang.spawn(fn()->
-          msg = NodeProto.catchup_bi(heights)
-          peer = NodePeers.by_pk(pk)
-          if !!peer and peer[:ip] do
-            send(NodeGen.get_socket_gen(), {:send_to_some, [peer.ip], NodeProto.compress(msg)})
-          end
+          msg = NodeProto.catchup_bi(heights) |> NodeProto.compress()
+          peers = NodePeers.by_pks(pks) |> Enum.map(& &1.ip)
+          send(NodeGen.get_socket_gen(), {:send_to_some, peers, msg})
         end)
+      end)
+    end
+
+    #missing head entries
+    tip_hashs = NodePeers.all_trainers()
+    |> Enum.map(fn(p)->
+      hash = get_in(p, [:temporal, :hash])
+      height = get_in(p, [:temporal, :header_unpacked, :height])
+      {p.pk, hash, height}
+    end)
+    |> Enum.filter(& elem(&1,1))
+    |> Enum.reduce(%{}, fn({pk,hash,height},acc)-> Map.put(acc, {hash,height}, Map.get(acc,{hash,height},[]) ++ [pk]) end)
+
+    #Only do it if there is more than 1 tip so some malicious node made a double entry
+    if map_size(tip_hashs) > 1 do
+      Enum.each(tip_hashs, fn {{hash,height}, pks} ->
+        exists = Fabric.entry_by_hash(hash)
+        if !exists do
+          msg = NodeProto.catchup_tri([height]) |> NodeProto.compress()
+          ips = NodePeers.by_pks(pks) |> Enum.map(& &1.ip)
+          send(NodeGen.get_socket_gen(), {:send_to_some, ips, msg})
+        end
       end)
     end
 

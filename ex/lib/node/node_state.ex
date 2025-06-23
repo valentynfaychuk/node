@@ -259,7 +259,7 @@ defmodule NodeState do
         signature = SpecialMeetingAttestGen.maybe_attest("slash_trainer_tx", term.business.epoch, term.business.malicious_pk)
         if signature do
           pk = Application.fetch_env!(:ama, :trainer_pk)
-          business = %{op: "slash_trainer_tx_reply", epoch: term.business.epoch, malicious_pk: term.business.malicious_pk, 
+          business = %{op: "slash_trainer_tx_reply", epoch: term.business.epoch, malicious_pk: term.business.malicious_pk,
             pk: pk, signature: signature}
           msg = NodeProto.special_business_reply(business)
           :erlang.spawn(fn()-> send(NodeGen.get_socket_gen(), {:send_to_some, [istate.peer.ip], compress(msg)}) end)
@@ -321,7 +321,7 @@ defmodule NodeState do
       istate.peer.signer not in trainers -> nil
       entry_height <= Fabric.rooted_tip_height() -> nil
       length(entries) < 2 -> nil
-      cur_score >= highest_score -> nil
+      #cur_score >= highest_score -> nil
       true -> FabricSnapshot.backstep_temporal([cur_hash])
     end
   end
