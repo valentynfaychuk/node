@@ -132,6 +132,18 @@ defmodule FabricGen do
     |> Enum.sort_by(fn {entry, mut_hash, score} -> {-score, entry.header_unpacked.slot, !entry[:mask], entry.hash} end)
   end
 
+  def best_entry_for_height_no_score(height) do
+    next_entries = height
+    |> Fabric.entries_by_height()
+    |> Enum.map(fn(entry)->
+        trainers = Consensus.trainers_for_height(Entry.height(entry))
+        {mut_hash, score, _consensus} = Fabric.best_consensus_by_entryhash(trainers, entry.hash)
+        {entry, mut_hash, score}
+    end)
+    |> Enum.filter(fn {entry, mut_hash, score} -> mut_hash end)
+    |> Enum.sort_by(fn {entry, mut_hash, score} -> {entry.header_unpacked.slot, !entry[:mask], entry.hash} end)
+  end
+
   defp proc_consensus_1(next_height) do
     next_entries = best_entry_for_height(next_height)
     #IO.inspect {next_entries, next_height}

@@ -325,4 +325,15 @@ defmodule NodeState do
       true -> FabricSnapshot.backstep_temporal([cur_hash])
     end
   end
+
+  def handle(:solicit_entry2, istate, term) do
+    %{hash: cur_hash, header_unpacked: %{height: cur_height}} = Consensus.chain_tip_entry()
+    trainers = Consensus.trainers_for_height(cur_height+1)
+    if istate.peer.signer in trainers do
+      [{best_entry, _mut_hash, _score}|_] = FabricGen.best_entry_for_height_no_score(cur_height)
+      if cur_hash != best_entry.hash do
+        Consensus.chain_rewind(cur_hash)
+      end
+    end
+  end
 end
