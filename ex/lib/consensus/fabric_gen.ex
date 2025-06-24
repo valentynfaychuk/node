@@ -25,7 +25,7 @@ defmodule FabricGen do
 
   def handle_info(:tick, state) do
     state = if true do tick(state) else state end
-    :erlang.send_after(100, self(), :tick)
+    :erlang.send_after(150, self(), :tick)
     {:noreply, state}
   end
 
@@ -39,8 +39,17 @@ defmodule FabricGen do
   end
 
   def handle_info(:tick_oneshot, state) do
+    if !state[:timer_oneshot_ref] do
+      ref = Process.send_after(self(), :tick_oneshot_resolve, 50)
+      {:noreply, Map.put(state, :timer_oneshot_ref, ref)}
+    else
+      {:noreply, state}
+    end
+  end
+
+  def handle_info(:tick_oneshot_resolve, state) do
     tick(state)
-    {:noreply, state}
+    {:noreply, Map.delete(state, :timer_oneshot_ref)}
   end
 
   def tick(state) do
@@ -120,7 +129,7 @@ defmodule FabricGen do
         {entry, mut_hash, score}
     end)
     |> Enum.filter(fn {entry, mut_hash, score} -> mut_hash end)
-    |> Enum.sort_by(fn {entry, mut_hash, score} -> {-score, entry.header_unpacked.slot, entry.hash} end)
+    |> Enum.sort_by(fn {entry, mut_hash, score} -> {-score, entry.header_unpacked.slot, !entry[:mask], entry.hash} end)
   end
 
   defp proc_consensus_1(next_height) do
@@ -186,23 +195,23 @@ defmodule FabricGen do
         true -> true
       end
     end)
-    |> Enum.sort_by(& {&1.header_unpacked.slot, &1.hash})
+    |> Enum.sort_by(& {&1.header_unpacked.slot, !&1[:mask], &1.hash})
 
     case List.first(next_entries) do
       nil -> nil
       entry ->
         #ts_s = :os.system_time(1000)
-        %{error: :ok, attestation_packed: attestation_packed, 
+        %{error: :ok, attestation_packed: attestation_packed,
           mutations_hash: m_hash, logs: l, muts: m} = Consensus.apply_entry(entry)
         #IO.inspect {:took, entry.header_unpacked.height, :os.system_time(1000) - ts_s}
 
         send(FabricEventGen, {:entry, entry, m_hash, m, l})
-        
+
         if !!attestation_packed and FabricSyncAttestGen.isQuorumSyncedOffByX(6) do
           NodeGen.broadcast(:attestation_bulk, :trainers, [[attestation_packed]])
           NodeGen.broadcast(:attestation_bulk, {:not_trainers, 10}, [[attestation_packed]])
         end
-        
+
         TXPool.delete_packed(entry.txs)
 
         proc_entries()
@@ -236,7 +245,7 @@ defmodule FabricGen do
         end
 
         IO.puts "🔧 im in slot #{next_slot}, working.. *Click Clak*"
-        
+
         #%{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
         #:rocksdb.checkpoint(db, '/tmp/mig/db/fabric/')
 

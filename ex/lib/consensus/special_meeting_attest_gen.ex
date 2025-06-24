@@ -82,7 +82,7 @@ defmodule SpecialMeetingAttestGen do
       state = Enum.reduce(entries, {state, hd_seentime}, fn(entry, {state, last_seen})->
         seentime = Fabric.entry_seentime(entry.hash)
         delta = seentime - last_seen
-        
+
         timings = get_in(state, [:slow, :running, entry.header_unpacked.signer]) || []
         timings = Enum.take(timings ++ [delta], -10)
         state = put_in(state, [:slow, :running, entry.header_unpacked.signer], timings)
@@ -172,6 +172,13 @@ defmodule SpecialMeetingAttestGen do
     end
   end
 
+  def has_double_entry(malicious_pk) do
+    hasDouble = Fabric.entries_by_height(Consensus.chain_height())
+    |> Enum.frequencies_by(& &1.header_unpacked.signer)
+    |> Enum.filter(fn {signer, _count} -> signer == malicious_pk end)
+    |> Enum.any?(fn {_signer, count} -> count > 1 end)
+  end
+
   def maybe_attest("slash_trainer_tx", epoch, malicious_pk) do
     slotStallTrainer = isNextSlotStalled()
     cond do
@@ -180,6 +187,10 @@ defmodule SpecialMeetingAttestGen do
 
         #TODO: check for Slowloris
         #avg_seentimes_last_10_slots(malicious_pk) > 1second -> true
+        has_double_entry(malicious_pk) ->
+            msg = <<"slash_trainer", epoch::32-little, malicious_pk::binary>>
+            sk = Application.fetch_env!(:ama, :trainer_sk)
+            BlsEx.sign!(sk, msg, BLS12AggSig.dst_motion())
 
         !!calcSlow(malicious_pk) and calcSlow(malicious_pk) > 600 ->
             msg = <<"slash_trainer", epoch::32-little, malicious_pk::binary>>
@@ -215,6 +226,11 @@ defmodule SpecialMeetingAttestGen do
         Consensus.chain_epoch() != epoch -> nil
         Entry.validate_next(cur_entry, entry) != %{error: :ok} -> nil
         BIC.Epoch.slash_trainer_verify(epoch, malicious_pk, trainers, mask, signature) != nil -> nil
+
+        has_double_entry(malicious_pk) ->
+          h = :erlang.term_to_binary(entry.header_unpacked, [:deterministic])
+          sk = Application.fetch_env!(:ama, :trainer_sk)
+          BlsEx.sign!(sk, Blake3.hash(h), BLS12AggSig.dst_entry())
 
         #TODO: check for Slowloris
         #avg_seentimes_last_10_slots(malicious_pk) > 1second -> true
