@@ -155,6 +155,35 @@ defmodule NodePeers do
     |> Enum.map(& &1.ip)
   end
 
+  def highest_height_inchain(filter) do
+    sort = filter[:sort] || :temporal
+
+    filtered = online()
+    |> Enum.filter(fn(p) ->
+      temp = get_in(p, [:temporal, :header_unpacked, :height])
+      temp_prev = get_in(p, [:temporal, :header_unpacked, :prev_hash])
+      rooted = get_in(p, [:rooted, :header_unpacked, :height])
+      rooted_prev = get_in(p, [:rooted, :header_unpacked, :prev_hash])
+      min_temporal = filter[:min_temporal] || 0
+      min_rooted = filter[:min_rooted] || 0
+      cond do
+        temp < min_temporal -> false
+        rooted < min_rooted -> false
+        !Consensus.is_in_chain(temp_prev) -> false
+        !Consensus.is_in_chain(rooted_prev) -> false
+        true -> true
+      end
+    end)
+    |> Enum.sort_by(fn(p) ->
+      if sort == :temporal do
+        get_in(p, [:temporal, :header_unpacked, :height])
+      else
+        get_in(p, [:rooted, :header_unpacked, :height])
+      end
+    end, :desc)
+    |> Enum.map(& if sort == :temporal do get_in(&1, [:temporal, :header_unpacked, :height]) else get_in(&1, [:rooted, :header_unpacked, :height]) end)
+  end
+
   def highest_height(filter) do
     filtered = summary_online()
     |> Enum.filter(fn([_ip, lat, temp, rooted | _ ]) ->

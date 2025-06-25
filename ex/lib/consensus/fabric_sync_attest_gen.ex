@@ -96,10 +96,11 @@ defmodule FabricSyncAttestGen do
   def tick_synced() do
     temporal = Consensus.chain_tip_entry()
     temporal_height = temporal.header_unpacked.height
-    highest_peers = NodePeers.highest_height(%{sort: :temporal})
+    highest_peers = NodePeers.highest_height_inchain(
+      %{sort: :temporal, min_temporal: temporal_height-100, min_rooted: temporal_height-100})
     highest_height = case List.first(highest_peers) do
       nil -> temporal_height
-      [_, _, highest, _ | _ ] -> highest
+      highest -> highest
     end
 
     old_highest = :persistent_term.get({Net, :highestTemporalHeight}, nil)

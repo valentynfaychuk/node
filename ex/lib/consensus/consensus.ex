@@ -239,7 +239,7 @@ defmodule Consensus do
             %{hash: ^target_hash} -> true
             %{header_unpacked: %{prev_hash: prev_hash, height: height}} ->
                 cond do
-                  height < target_height -> false
+                  height <= target_height -> false
                   true -> is_in_chain_1(prev_hash, target_hash, target_height)
                 end
         end
