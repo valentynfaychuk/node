@@ -66,7 +66,7 @@ defmodule BIC.Base do
             if BlsEx.validate_public_key(action.contract) do
             else
                 seed_random(env.entry_vr, env.tx_hash, "0", "")
-                contract = if String.starts_with?(action.contract, "Elixir.BIC.") do action.contract else "Elixir.BIC.#{action.contract}" end
+                contract = "Elixir.BIC.#{action.contract}"
                 module = String.to_existing_atom(contract)
                 function = String.to_existing_atom(action.function)
 

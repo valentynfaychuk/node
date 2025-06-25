@@ -116,7 +116,7 @@ defmodule BIC.Epoch do
         msg = <<"slash_trainer", cur_epoch::32-little, malicious_pk::binary>>
         validSignature = BlsEx.verify?(apk, signature, msg, BLS12AggSig.dst_motion())
         cond do
-            consensus_pct < 0.75 -> :invalid_amount_of_signatures
+            consensus_pct < 0.67 -> :invalid_amount_of_signatures
             !validSignature -> :invalid_signature
             true -> nil
         end
@@ -137,7 +137,7 @@ defmodule BIC.Epoch do
         # 75% vote
         signers = BLS12AggSig.unmask_trainers(trainers, mask)
         consensus_pct = length(signers) / length(trainers)
-        if consensus_pct < 0.75, do: throw(%{error: :invalid_amount_of_signatures})
+        if consensus_pct < 0.67, do: throw(%{error: :invalid_amount_of_signatures})
 
         apk = BlsEx.aggregate_public_keys!(signers)
         msg = <<"slash_trainer", cur_epoch::32-little, malicious_pk::binary>>

@@ -177,6 +177,9 @@ defmodule FabricGen do
   end
 
   def proc_entries() do
+    softfork_hash = :persistent_term.get(SoftforkHash, [])
+    softfork_deny_hash = :persistent_term.get(SoftforkDenyHash, [])
+
     cur_entry = Consensus.chain_tip_entry()
     cur_slot = cur_entry.header_unpacked.slot
     height = cur_entry.header_unpacked.height
@@ -192,7 +195,7 @@ defmodule FabricGen do
         !!next_entry[:mask] ->
             trainers = Consensus.trainers_for_height(Entry.height(next_entry))
             score = BLS12AggSig.score(trainers, next_entry.mask)
-            score >= 0.75
+            score >= 0.67
 
         true -> false
       end
@@ -203,11 +206,12 @@ defmodule FabricGen do
       cond do
         !in_slot -> false
         slot_delta != 1 -> false
+        next_entry.hash in softfork_deny_hash -> false
         Entry.validate_next(cur_entry, next_entry) != %{error: :ok} -> false
         true -> true
       end
     end)
-    |> Enum.sort_by(& {&1.header_unpacked.slot, !&1[:mask], &1.hash})
+    |> Enum.sort_by(& {&1.hash not in softfork_hash, &1.header_unpacked.slot, !&1[:mask], &1.hash})
 
     case List.first(next_entries) do
       nil -> nil

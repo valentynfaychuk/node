@@ -336,4 +336,7 @@ defmodule NodeState do
       end
     end
   end
+
+  def handle(_, _, _) do
+  end
 end
