@@ -35,7 +35,7 @@ defmodule TXPool do
     def grab_next_valid(amt \\ 1) do
         try do
             chain_epoch = Consensus.chain_epoch()
-            :ets.foldl(fn({key, txu}, {acc, state_old})->
+            {acc, state} = :ets.foldl(fn({key, txu}, {acc, state_old})->
                 try do
                     state = state_old
 
@@ -68,7 +68,7 @@ defmodule TXPool do
                     :throw,_ -> {acc, state_old}
                 end
             end, {[], %{}}, TXPool)
-            []
+            acc
         catch
             :throw,{:choose, txs_packed} -> txs_packed
         end
