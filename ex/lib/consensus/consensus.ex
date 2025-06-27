@@ -280,8 +280,11 @@ defmodule Consensus do
             :account_origin => nil, #env.txu.tx.signer,
             :account_caller => nil, #env.txu.tx.signer,
             :account_current => nil, #action.contract,
+            :attached_symbol => "",
+            :attached_amount => "",
             :call_counter => 0,
             :call_exec_points => 10_000_000,
+            :call_exec_points_remaining => 10_000_000,
         }
     end
 
@@ -307,15 +310,15 @@ defmodule Consensus do
             #ts_m = :os.system_time(1000)
             mapenv = Map.merge(mapenv, %{tx_signer: txu.tx.signer, tx_nonce: txu.tx.nonce, tx_hash: txu.hash,
                 account_origin: txu.tx.signer, account_caller: txu.tx.signer})
-            {m3, m_rev3, result} = BIC.Base.call_tx_actions(mapenv, txu)
+            {m3, m_rev3, m3_gas, m3_gas_rev, result} = BIC.Base.call_tx_actions(mapenv, txu)
             #IO.inspect {:call_tx, :os.system_time(1000) - ts_m}
-            if result == %{error: :ok} do
-                m = m ++ m3
-                m_rev = m_rev ++ m_rev3
-                {m, m_rev, l ++ [%{error: :ok}]}
+            if result[:error] == :ok do
+                m = m ++ m3 ++ m3_gas
+                m_rev = m_rev ++ m_rev3 ++ m3_gas_rev
+                {m, m_rev, l ++ [result]}
             else
                 ConsensusKV.revert(m_rev3)
-                {m, m_rev, l ++ [result]}
+                {m ++ m3_gas, m_rev ++ m3_gas_rev, l ++ [result]}
             end
         end)
         {m_exit, m_exit_rev} = BIC.Base.call_exit(mapenv)
