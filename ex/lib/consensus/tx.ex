@@ -21,8 +21,12 @@ defmodule TX do
       if !txu["tx"] do t else
           tx = Map.fetch!(txu, "tx")
           actions = Map.fetch!(tx, "actions")
-          actions = Enum.map(actions, fn %{"op"=> o, "contract"=> c, "function"=> f, "args"=> a} ->
-            %{op: o, contract: c, function: f, args: a}
+          actions = Enum.map(actions, fn action = %{"op"=> o, "contract"=> c, "function"=> f, "args"=> a} ->
+            if !!action["attached_symbol"] and !!action["attached_amount"] do
+              %{op: o, contract: c, function: f, attached_symbol: action["attached_symbol"], attached_amount: action["attached_amount"], args: a}
+            else
+              %{op: o, contract: c, function: f, args: a}
+            end
           end)
           tx = %{signer: Map.fetch!(tx, "signer"), nonce: Map.fetch!(tx, "nonce"), actions: actions}
           Map.put(t, :tx, tx)
@@ -39,7 +43,7 @@ defmodule TX do
       tx_encoded = Map.fetch!(txu, "tx_encoded")
       tx = VanillaSer.decode!(tx_encoded)
       tx = Map.take(tx, ["signer", "nonce", "actions"])
-      actions = Enum.map(Map.fetch!(tx, "actions"), & Map.take(&1, ["op", "contract", "function", "args"]))
+      actions = Enum.map(Map.fetch!(tx, "actions"), & Map.take(&1, ["op", "contract", "function", "args", "attached_symbol", "attached_amount"]))
       tx = Map.put(tx, "actions", actions)
       txu = Map.put(txu, "tx", tx)
       hash = Map.fetch!(txu, "hash")
@@ -66,13 +70,23 @@ defmodule TX do
       Enum.each(action.args, fn(arg)->
             if !is_binary(arg), do: throw(%{error: :arg_must_be_binary})
       end)
-      if !:lists.member(action.contract, ["Epoch", "Coin", "Contract"]), do: throw %{error: :invalid_module}
+      if !:lists.member(action.contract, ["Epoch", "Coin", "Contract"]) or !BlsEx.validate_public_key(action.contract), do: throw %{error: :invalid_module}
       if !:lists.member(action.function, ["submit_sol", "transfer", "set_emission_address", "slash_trainer", "deploy"]), do: throw %{error: :invalid_function}
 
       if is_special_meeting_block do
          if !:lists.member(action.contract, ["Epoch"]), do: throw %{error: :invalid_module_for_special_meeting}
          if !:lists.member(action.function, ["slash_trainer"]), do: throw %{error: :invalid_function_for_special_meeting}
       end
+
+      #attachment
+      if !!action[:attached_symbol] and !is_binary(action.attached_symbol), do: throw %{error: :attached_symbol_must_be_binary}
+      if !!action[:attached_symbol] and byte_size(action.attached_symbol) < 1 or byte_size(action.attached_symbol) > 32,
+        do: throw %{error: :attached_symbol_wrong_size}
+
+      if !!action[:attached_amount] and !is_binary(action.attached_amount), do: throw %{error: :attached_amount_must_be_binary}
+
+      if !!action[:attached_symbol] and !action[:attached_amount], do: throw %{error: :attached_amount_must_be_included}
+      if !!action[:attached_amount] and !action[:attached_symbol], do: throw %{error: :attached_symbol_must_be_included}
 
       #if !!txp.tx[:delay] and !is_integer(txp.tx.delay), do: throw %{error: :delay_not_integer}
       #if !!txp.tx[:delay] and txp.tx.delay <= 0, do: throw %{error: :delay_too_low}
@@ -87,10 +101,13 @@ defmodule TX do
       end
    end
 
-   def build(sk, contract, function, args, nonce \\ nil) do
+   def build(sk, contract, function, args, nonce \\ nil, attached_symbol \\ nil, attached_amount \\ nil) do
       pk = BlsEx.get_public_key!(sk)
       nonce = if !nonce do :os.system_time(:nanosecond) else nonce end
       action = %{op: "call", contract: contract, function: function, args: args}
+      action = if is_binary(attached_symbol) and is_binary(attached_amount) do
+        Map.merge(action, %{attached_symbol: attached_symbol, attached_amount: attached_amount})
+      else action end
       tx_encoded = %{
          signer: pk,
          nonce: nonce,
