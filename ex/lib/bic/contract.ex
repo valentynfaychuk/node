@@ -15,6 +15,8 @@ defmodule BIC.Contract do
                 account_origin: :crypto.strong_rand_bytes(48),
                 account_caller: :crypto.strong_rand_bytes(48),
                 account_current: :crypto.strong_rand_bytes(48),
+                attached_symbol: "",
+                attached_amount: "",
             })
         end
         try do
@@ -27,10 +29,11 @@ defmodule BIC.Contract do
         end
     end
 
+    def bytecode(account) do
+        kv_get("bic:contract:account:#{account}:bytecode")
+    end
+
     def call(:deploy, env, [wasmbytes]) do
-        case validate(wasmbytes, env) do
-            %{error: :ok} -> kv_put("bic:contract:account:#{env.account_caller}:bytecode", wasmbytes)
-            error -> throw(error)
-        end
+        kv_put("bic:contract:account:#{env.account_caller}:bytecode", wasmbytes)
     end
 end
