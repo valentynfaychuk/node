@@ -17,6 +17,10 @@ defmodule API.Contract do
     end
 
     def validate_bytecode(bytecode) do
-        BIC.Contract.validate(bytecode)
+        task = Task.async(fn -> BIC.Contract.validate(bytecode) end)
+        case Task.await(task, 100) do
+          {:ok, result} -> result
+          {:exit, :timeout} -> %{error: :system, reason: :timeout}
+        end
     end
 end
