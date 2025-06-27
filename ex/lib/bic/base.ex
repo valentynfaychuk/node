@@ -9,7 +9,7 @@ defmodule BIC.Base do
         #BIC.Coin.to_tenthousandth( 18 + div(bytes, 256) * 3 )
     end
 
-    defp seed_random(vr, txhash, action_index, call_cnt) do
+    def seed_random(vr, txhash, action_index, call_cnt) do
         seed_bin = <<seed::256-little>> = Blake3.hash(
             <<vr::binary, txhash::binary, action_index::binary, call_cnt::binary>>)
         :rand.seed(:exsss, seed)
@@ -55,6 +55,8 @@ defmodule BIC.Base do
     end
 
     def call_tx_actions(env, txu) do
+        Process.delete(:mutations_gas)
+        Process.delete(:mutations_gas_reverse)
         Process.delete(:mutations)
         Process.delete(:mutations_reverse)
 
@@ -64,15 +66,54 @@ defmodule BIC.Base do
 
             env = Map.put(env, :account_current, action.contract)
             if BlsEx.validate_public_key(action.contract) do
+                bytecode = BIC.Contract.bytecode(action.contract)
+                if bytecode do
+                    seed = <<float64::64-float, _::binary>> = seed_random(env.entry_vr, env.tx_hash, "0", "#{env.call_counter}")
+                    env = Map.put(env, :seed, seed)
+                    env = Map.put(env, :seedf64, float64)
+
+                    env = if !action[:attached_symbol] and !action[:attached_amount] do env else
+                      env = Map.put(env, :attached_symbol, action.attached_symbol)
+                      env = Map.put(env, :attached_amount, action.attached_amount)
+                      amount = action.attached_amount
+                      amount = if is_binary(amount) do :erlang.binary_to_integer(amount) else amount end
+
+                      if amount <= 0, do: throw(%{error: :invalid_attached_amount})
+                      if amount > BIC.Coin.balance(env.tx_signer, action.attached_symbol), do: throw(%{error: :attached_amount_insufficient_funds})
+
+                      kv_increment("bic:coin:balance:#{action.contract}:#{action.attached_symbol}", amount)
+                      kv_increment("bic:coin:balance:#{env.tx_signer}:#{action.attached_symbol}", -amount)
+                      env
+                    end
+                    result = BIC.Base.WASM.call(env, bytecode, action.function, action.args)
+
+                    muts = Process.get(:mutations, []); Process.delete(:mutations)
+                    muts_rev = Process.get(:mutations_reverse, []); Process.delete(:mutations_reverse)
+                    exec_used = (result[:exec_used] || 0) * 100
+                    kv_increment("bic:coin:balance:#{env.entry_signer}:AMA", exec_used)
+                    kv_increment("bic:coin:balance:#{env.tx_signer}:AMA", -exec_used)
+                    Process.put(:mutations_gas, Process.get(:mutations, []))
+                    Process.put(:mutations_gas_reverse, Process.get(:mutations_reverse, []))
+                    Process.put(:mutations, muts)
+                    Process.put(:mutations_reverse, muts_rev)
+
+                    result
+                else
+                    %{error: :system, reason: :account_has_no_bytecode}
+                end
             else
                 seed_random(env.entry_vr, env.tx_hash, "0", "")
+
+                if action.contract not in ["Epoch", "Coin", "Contract"], do: throw(%{error: :invalid_bic})
+                if action.function not in ["submit_sol", "transfer", "set_emission_address", "slash_trainer", "deploy"], do: throw %{error: :invalid_function}
+
                 contract = "Elixir.BIC.#{action.contract}"
                 module = String.to_existing_atom(contract)
                 function = String.to_existing_atom(action.function)
 
                 :erlang.apply(module, :call, [function, env, action.args])
+                %{error: :ok}
             end
-            %{error: :ok}
         catch
             :throw,r -> r
             e,r ->
@@ -80,6 +121,10 @@ defmodule BIC.Base do
                 %{error: :unknown}
         end
 
-        {Process.get(:mutations, []), Process.get(:mutations_reverse, []), result}
+        {
+          Process.get(:mutations, []), Process.get(:mutations_reverse, []),
+          Process.get(:mutations_gas, []), Process.get(:mutations_gas_reverse, []),
+          result
+        }
     end
 end
