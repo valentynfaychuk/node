@@ -70,8 +70,13 @@ defmodule TX do
       Enum.each(action.args, fn(arg)->
             if !is_binary(arg), do: throw(%{error: :arg_must_be_binary})
       end)
-      if !:lists.member(action.contract, ["Epoch", "Coin", "Contract"]) or !BlsEx.validate_public_key(action.contract), do: throw %{error: :invalid_module}
-      if !:lists.member(action.function, ["submit_sol", "transfer", "set_emission_address", "slash_trainer", "deploy"]), do: throw %{error: :invalid_function}
+
+      cond do
+        :lists.member(action.contract, ["Epoch", "Coin", "Contract"])
+        and :lists.member(action.function, ["submit_sol", "transfer", "set_emission_address", "slash_trainer", "deploy"]) -> :ok
+        BlsEx.validate_public_key(action.contract) -> :ok
+        true -> throw %{error: :invalid_contract_or_function}
+      end
 
       if is_special_meeting_block do
          if !:lists.member(action.contract, ["Epoch"]), do: throw %{error: :invalid_module_for_special_meeting}
@@ -80,7 +85,7 @@ defmodule TX do
 
       #attachment
       if !!action[:attached_symbol] and !is_binary(action.attached_symbol), do: throw %{error: :attached_symbol_must_be_binary}
-      if !!action[:attached_symbol] and byte_size(action.attached_symbol) < 1 or byte_size(action.attached_symbol) > 32,
+      if !!action[:attached_symbol] and (byte_size(action.attached_symbol) < 1 or byte_size(action.attached_symbol) > 32),
         do: throw %{error: :attached_symbol_wrong_size}
 
       if !!action[:attached_amount] and !is_binary(action.attached_amount), do: throw %{error: :attached_amount_must_be_binary}

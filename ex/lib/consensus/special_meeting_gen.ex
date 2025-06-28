@@ -61,7 +61,7 @@ defmodule SpecialMeetingGen do
 
   def handle_info({:add_slash_trainer_tx_reply, pk, signature}, state = %{slash_trainer: _}) do
     st = state.slash_trainer
-    
+
     trainers = Consensus.trainers_for_height(st.height + 1)
     if pk in trainers do
       ma = BLS12AggSig.add(%{mask: st.mask, aggsig: st.aggsig}, trainers, pk, signature)
@@ -89,7 +89,7 @@ defmodule SpecialMeetingGen do
 
       score = BLS12AggSig.score(trainers, state.slash_trainer.entry.mask)
       state = put_in(state, [:slash_trainer, :score_entry], score)
-
+      IO.inspect {:entry, score}
       {:noreply, state}
     else
       {:noreply, state}
@@ -107,14 +107,14 @@ defmodule SpecialMeetingGen do
       my_pk not in trainers -> state
       !state[:slash_trainer] -> state
       state.slash_trainer.attempts > 6 -> Map.delete(state, :slash_trainer)
-      
-      state.slash_trainer.type == :tx and state.slash_trainer[:score_tx] >= 0.75 ->
+
+      state.slash_trainer.type == :tx and state.slash_trainer[:score_tx] >= 0.67 ->
         tx_packed = build_slash_tx(state.slash_trainer)
         IO.inspect tx_packed
         TXPool.insert(tx_packed)
         NodeGen.broadcast(:txpool, :trainers, [[tx_packed]])
         Map.delete(state, :slash_trainer)
-      state.slash_trainer.type == :entry and state.slash_trainer.state == :gather_tx_sigs and state.slash_trainer[:score_tx] >= 0.75 ->
+      state.slash_trainer.type == :entry and state.slash_trainer.state == :gather_tx_sigs and state.slash_trainer[:score_tx] >= 0.67 ->
         entry = build_slash_entry(state.slash_trainer)
         state = put_in(state, [:slash_trainer, :entry], entry)
         put_in(state, [:slash_trainer, :state], :gather_entry_sigs)
@@ -123,7 +123,7 @@ defmodule SpecialMeetingGen do
         NodeGen.broadcast(:special_business, :trainers, [business])
         put_in(state, [:slash_trainer, :attempts], state.slash_trainer.attempts + 1)
 
-      state.slash_trainer.type == :entry and state.slash_trainer[:score_entry] >= 0.75 ->
+      state.slash_trainer.type == :entry and state.slash_trainer[:score_entry] >= 0.67 ->
         IO.inspect {:entry_with_score, state.slash_trainer[:score_entry]}
         IO.inspect state.slash_trainer.entry, limit: 1111111111, printable_limit: 1111111111
         Fabric.insert_entry(state.slash_trainer.entry, :os.system_time(1000))
@@ -146,7 +146,7 @@ defmodule SpecialMeetingGen do
     my_pk = Application.fetch_env!(:ama, :trainer_pk)
 
     signature = SpecialMeetingAttestGen.maybe_attest("slash_trainer_tx", epoch, mpk)
-    
+
     ma = BLS12AggSig.new(trainers, my_pk, signature)
     %{height: height, malicious_pk: mpk, epoch: epoch, mask: ma.mask, aggsig: ma.aggsig}
   end
@@ -155,7 +155,7 @@ defmodule SpecialMeetingGen do
     my_pk = Application.fetch_env!(:ama, :trainer_pk)
     my_sk = Application.fetch_env!(:ama, :trainer_sk)
     nonce = TXPool.lowest_nonce(my_pk) || Consensus.chain_nonce(my_pk)
-    TX.build(my_sk, "Epoch", "slash_trainer", 
+    TX.build(my_sk, "Epoch", "slash_trainer",
       ["#{st.epoch}", st.malicious_pk, st.aggsig, "#{bit_size(st.mask)}", Util.pad_bitstring_to_bytes(st.mask)],
       nonce+1)
   end
@@ -173,7 +173,7 @@ defmodule SpecialMeetingGen do
     txs = [packed_tx]
     next_entry = Map.put(next_entry, :txs, txs)
     next_entry = Entry.sign(next_entry)
-    
+
     trainers = Consensus.trainers_for_height(next_entry.header_unpacked.height + 1)
     mask = <<0::size(length(trainers))>>
     mask = Util.set_bit(mask, Util.index_of(trainers, my_pk))
@@ -197,7 +197,7 @@ defmodule SpecialMeetingGen do
 
     seconds_in_minute = rem(ts_s, 60)
 
-    sync_round_offset == sync_round_index 
+    sync_round_offset == sync_round_index
     and seconds_in_minute >= 10
     and seconds_in_minute <= 50
   end
