@@ -7,7 +7,6 @@ config :ama, :version_3b, <<:erlang.binary_to_integer(v1),:erlang.binary_to_inte
 
 work_folder = (System.get_env("WORKFOLDER") || Path.expand("~/.cache/amadeusd/"))
 config :ama, :work_folder, work_folder
-IO.puts "config folder is #{work_folder}"
 
 :ok = File.mkdir_p!(work_folder)
 
