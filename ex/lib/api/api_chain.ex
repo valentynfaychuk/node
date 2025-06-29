@@ -63,6 +63,11 @@ defmodule API.Chain do
         entry = Map.drop(entry, [:header, :signature, :txs])
         {_, entry} = pop_in(entry, [:header_unpacked, :txs_hash])
         entry = put_in(entry, [:hash], Base58.encode(entry.hash))
+        entry = if !entry[:mask] do entry else
+          rem     = rem(bit_size(entry.mask), 8)
+          pad_bits = if rem == 0, do: 0, else: 8 - rem
+          put_in(entry, [:mask], Base58.encode(<<entry.mask::bitstring, 0::size(pad_bits)>>))
+        end
         entry = put_in(entry, [:header_unpacked, :dr], Base58.encode(entry.header_unpacked.dr))
         entry = put_in(entry, [:header_unpacked, :vr], Base58.encode(entry.header_unpacked.vr))
         entry = put_in(entry, [:header_unpacked, :prev_hash], Base58.encode(entry.header_unpacked.prev_hash))
