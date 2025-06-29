@@ -3,8 +3,7 @@ defmodule BIC.Contract do
 
     def validate(wasmbytes, env \\ nil) do
         env = if env do Map.put(env, :readonly, true) else
-            entry = Consensus.chain_tip_entry()
-            env = Consensus.make_mapenv(entry)
+            env = Consensus.make_mapenv(EntryGenesis.get())
 
             Map.merge(env, %{
                 readonly: true,
