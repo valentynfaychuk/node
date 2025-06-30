@@ -10,15 +10,15 @@ defmodule FabricEventGen do
     {:ok, state}
   end
 
+  def tick(state) do
+    #IO.inspect "tick"
+    state
+  end
+
   def handle_info(:tick, state) do
     state = if true do tick(state) else state end
     :erlang.send_after(100, self(), :tick)
     {:noreply, state}
-  end
-
-  def tick(state) do
-    #IO.inspect "tick"
-    state
   end
 
   def handle_info({:entry, entry, muts_hash, muts, logs}, state) do

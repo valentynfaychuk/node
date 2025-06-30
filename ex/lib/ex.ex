@@ -4,7 +4,7 @@ defmodule Ama do
   def start(_type, _args) do
     import Supervisor.Spec, warn: false
 
-    #IO.inspect Application.app_dir(:ama, "priv/index.html") 
+    #IO.inspect Application.app_dir(:ama, "priv/index.html")
     Process.sleep(300)
 
     IEx.configure(inspect: [width: 120])
@@ -13,6 +13,7 @@ defmodule Ama do
       {DynamicSupervisor, strategy: :one_for_one, name: Ama.Supervisor, max_seconds: 1, max_restarts: 999_999_999_999}
     ], strategy: :one_for_one)
 
+    IO.puts "config folder is #{Application.fetch_env!(:ama, :work_folder)}"
     IO.puts "version: #{Application.fetch_env!(:ama, :version)}"
 
     if Application.fetch_env!(:ama, :autoupdate) do
@@ -49,7 +50,7 @@ defmodule Ama do
 
     {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: PG, start: {:pg, :start_link, []}})
     {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: PGWSPanel, start: {:pg, :start_link, [PGWSPanel]}})
-    
+
     if !Application.fetch_env!(:ama, :offline) do
       {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: ComputorGen, start: {ComputorGen, :start_link, []}})
       {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: LoggerGen, start: {LoggerGen, :start_link, []}})
@@ -60,7 +61,7 @@ defmodule Ama do
       {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: FabricEventGen, start: {FabricEventGen, :start_link, []}})
       {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: SpecialMeetingAttestGen, start: {SpecialMeetingAttestGen, :start_link, []}})
       {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: SpecialMeetingGen, start: {SpecialMeetingGen, :start_link, []}})
-      
+
       ip4 = Application.fetch_env!(:ama, :udp_ipv4_tuple)
       port = Application.fetch_env!(:ama, :udp_port)
       {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: NodeGen, start: {NodeGen, :start_link, [ip4, port]}, restart: :permanent})
