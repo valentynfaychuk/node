@@ -29,11 +29,23 @@ defmodule Ama do
     IO.puts "Initing TXPool.."
     TXPool.init()
 
-    rooted_tip_height = Fabric.rooted_tip_height()
-    if rooted_tip_height == nil or rooted_tip_height < Application.fetch_env!(:ama, :snapshot_height) do
-      Fabric.close()
-      FabricSnapshot.download_latest()
-      Fabric.init()
+    if !Application.fetch_env!(:ama, :offline) do
+      rooted_tip_height = Fabric.rooted_tip_height()
+      if rooted_tip_height == nil or rooted_tip_height < Application.fetch_env!(:ama, :snapshot_height) do
+        Fabric.close()
+        FabricSnapshot.download_latest()
+        Fabric.init()
+      end
+    else
+      if !Consensus.chain_tip() do
+        %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+        RocksDB.put("bic:epoch:trainers:height:#{String.pad_leading("0", 12, "0")}",
+          :erlang.term_to_binary([EntryGenesis.signer()]), %{db: db, cf: cf.contractstate})
+
+        entry = EntryGenesis.get()
+        Fabric.insert_entry(entry, :os.system_time(1000))
+        Consensus.apply_entry(entry)
+      end
     end
 
     #FabricSnapshot.backstep_temporal([Base58.decode("65ixJL6XkQAH2mrHn9nrHUaZfRZqUDpUqBqzMCdoPNku")])
