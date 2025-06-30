@@ -15,7 +15,10 @@ defmodule API.Epoch do
     def get_emission_address(pk) do
         pk = if byte_size(pk) != 48, do: Base58.decode(pk), else: pk
         API.Contract.get("bic:epoch:emission_address:#{pk}")
-        |> Base58.encode()
+        |> case do
+          nil -> nil
+          addr -> Base58.encode(addr)
+        end
     end
 
     def score() do
@@ -29,6 +32,7 @@ defmodule API.Epoch do
         pk = if byte_size(pk) != 48, do: Base58.decode(pk), else: pk
 
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
-        RocksDB.get("bic:epoch:solutions_count:#{pk}", %{db: db, cf: cf.contractstate, to_integer: true}) || 0
+        score = RocksDB.get("bic:epoch:solutions_count:#{pk}", %{db: db, cf: cf.contractstate, to_integer: true}) || 0
+        %{error: :ok, score: score}
     end
 end

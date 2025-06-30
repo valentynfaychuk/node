@@ -113,6 +113,11 @@ defmodule Ama.MultiServer do
                 result = if r.path == "/api/epoch/score" do API.Epoch.score() else API.Epoch.score(pk) end
                 quick_reply(state, result)
 
+            r.method == "GET" and String.starts_with?(r.path, "/api/epoch/get_emission_address") ->
+                pk = String.replace(r.path, "/api/epoch/get_emission_address/", "")
+                result = API.Epoch.get_emission_address(pk)
+                quick_reply(state, %{error: :ok, emission_address: result})
+
             r.method == "POST" and String.starts_with?(r.path, "/api/contract/validate_bytecode") ->
                 {_, bytecode} = Photon.HTTP.read_body_all(state.socket, r)
                 result = API.Contract.validate_bytecode(bytecode)
