@@ -33,9 +33,9 @@ defmodule SpecialMeetingAttestGen do
 
   def init(state) do
     state = Map.put(state, :slow, %{epoch: Consensus.chain_epoch(), last_height: Consensus.chain_height(), running: %{}})
-    :erlang.send_after(6000, self(), :tick_slow)
-    :erlang.send_after(6000, self(), :tick_stalled)
-    :erlang.send_after(6000, self(), :tick_offline)
+    :erlang.send_after(3000, self(), :tick_slow)
+    :erlang.send_after(3000, self(), :tick_stalled)
+    :erlang.send_after(3000, self(), :tick_offline)
     {:ok, state}
   end
 
@@ -115,7 +115,7 @@ defmodule SpecialMeetingAttestGen do
     #TODO: make this tighter later
     #no entry in 30seconds
 
-    timeout = if rem(next_height, 100_000) == 99_999 do 120_000 else 30_000 end
+    timeout = if rem(next_height, 100_000) == 99_999 do 30_000 else 8_000 end
 
     cond do
         !isSynced -> nil
