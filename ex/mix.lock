@@ -9,7 +9,7 @@
   "jsx": {:hex, :jsx, "2.8.3", "a05252d381885240744d955fbe3cf810504eb2567164824e19303ea59eef62cf", [:mix, :rebar3], [], "hexpm", "fc3499fed7a726995aa659143a248534adc754ebd16ccd437cd93b649a95091f"},
   "mnesia_kv": {:git, "https://github.com/xenomorphtech/mnesia_kv.git", "890109669975807b72506adceea7f20682bc6a67", []},
   "parse_trans": {:git, "https://github.com/uwiger/parse_trans", "d99fb36755c813a5db23e6f93741aa58323ef911", []},
-  "photon": {:git, "https://github.com/vans163/photon.git", "ade980985b8a7b0f8076c9c40d37f1650b349f4f", []},
+  "photon": {:git, "https://github.com/vans163/photon.git", "4e39655e421bac2c94087527cad976f4b6a2d147", []},
   "reedsolomon_ex": {:git, "https://github.com/amadeus-robot/reedsolomon_ex", "e11ddb33a50a4a3ccb1419a438fcc00b3c7ba8d4", []},
   "rocksdb": {:git, "https://gitlab.com/vans/erlang-rocksdb.git", "18add8e992a374771e6f1e97b1f50db6bf31a16f", [branch: "fix-gcc13"]},
   "rustler": {:hex, :rustler, "0.36.1", "2d4b1ff57ea2789a44756a40dbb5fbb73c6ee0a13d031dcba96d0a5542598a6a", [:mix], [{:jason, "~> 1.0", [hex: :jason, repo: "hexpm", optional: false]}, {:toml, "~> 0.7", [hex: :toml, repo: "hexpm", optional: false]}], "hexpm", "f3fba4ad272970e0d1bc62972fc4a99809651e54a125c5242de9bad4574b2d02"},
