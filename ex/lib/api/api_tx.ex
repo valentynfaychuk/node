@@ -107,8 +107,8 @@ defmodule API.TX do
     end
 
     def submit(tx_packed) do
-        %{error: error} = TX.validate(tx_packed)
-        if error == :ok do
+        result = TX.validate(tx_packed)
+        if result[:error] == :ok do
             if tx_packed =~ "deploy" do
                 txu = TX.unpack(tx_packed)
                 action = hd(txu.tx.actions)
@@ -117,21 +117,21 @@ defmodule API.TX do
                         %{error: :ok} ->
                             TXPool.insert(tx_packed)
                             NodeGen.broadcast(:txpool, :trainers, [[tx_packed]])
-                            %{error: :ok}
+                            %{error: :ok, hash: Base58.encode(result.txu.hash)}
                         error -> error
                     end
                 else
                     TXPool.insert(tx_packed)
                     NodeGen.broadcast(:txpool, :trainers, [[tx_packed]])
-                    %{error: :ok}
+                    %{error: :ok, hash: Base58.encode(result.txu.hash)}
                 end
             else
                 TXPool.insert(tx_packed)
                 NodeGen.broadcast(:txpool, :trainers, [[tx_packed]])
-                %{error: :ok}
+                %{error: :ok, hash: Base58.encode(result.txu.hash)}
             end
         else
-            %{error: error}
+            %{error: result.error}
         end
     end
 

@@ -123,6 +123,12 @@ defmodule Ama.MultiServer do
                 result = API.Contract.validate_bytecode(bytecode)
                 quick_reply(state, result)
 
+            r.method == "GET" and String.starts_with?(r.path, "/api/contract/get") ->
+                key = String.replace(r.path, "/api/contract/get/", "")
+                key = Base58.decode(key)
+                result = API.Contract.get(key)
+                quick_reply(state, result)
+
             r.method == "GET" and String.starts_with?(r.path, "/api/chain/tx_events_by_account/") ->
                 query = r.query && Photon.HTTP.parse_query(r.query)
                 account = String.replace(r.path, "/api/chain/tx_events_by_account/", "")
@@ -163,6 +169,7 @@ defmodule Ama.MultiServer do
 
             r.method == "POST" and String.starts_with?(r.path, "/api/tx/submit") ->
                 {r, tx_packed} = Photon.HTTP.read_body_all(state.socket, r)
+                tx_packed = if Base58.likely(tx_packed) do Base58.decode(tx_packed |> String.trim()) else tx_packed end
                 result = API.TX.submit(tx_packed)
                 quick_reply(state, result)
             r.method == "GET" and String.starts_with?(r.path, "/api/tx/submit/") ->
