@@ -217,9 +217,16 @@ defmodule FabricGen do
       nil -> nil
       entry ->
         #ts_s = :os.system_time(1000)
-        %{error: :ok, attestation_packed: attestation_packed,
-          mutations_hash: m_hash, logs: l, muts: m} = Consensus.apply_entry(entry)
+        #%{error: :ok, attestation_packed: attestation_packed,
+        #  mutations_hash: m_hash, logs: l, muts: m} = Consensus.apply_entry(entry)
         #IO.inspect {:took, entry.header_unpacked.height, :os.system_time(1000) - ts_s}
+
+        task = Task.async(fn -> Consensus.apply_entry(entry) end)
+        %{error: :ok, attestation_packed: attestation_packed,
+          mutations_hash: m_hash, logs: l, muts: m
+        } = case Task.await(task, :infinity) do
+          result = %{error: :ok} -> result
+        end
 
         send(FabricEventGen, {:entry, entry, m_hash, m, l})
 
