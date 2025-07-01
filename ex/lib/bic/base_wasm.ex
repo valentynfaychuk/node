@@ -192,7 +192,7 @@ defmodule BIC.Base.WASM do
 
             msg ->
                 IO.inspect {:RPCUKN, self(), msg}
-                __MODULE__.wasm_loop()
+                __MODULE__.wasm_loop(env, callstack)
         after
             #TODO: fix this cleanly
             1_000 ->
