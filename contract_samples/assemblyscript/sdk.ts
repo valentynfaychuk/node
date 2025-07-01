@@ -17,6 +17,82 @@ export function toHexString(bytes: Uint8Array): string {
   return String.fromCharCodes(tempI32);
 }
 
+const MAP = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+export function b58<T>(term: T): string {
+  if (term instanceof Uint8Array) {
+    return to_b58_1(term);
+  } else {
+    return to_b58_1(String.UTF8.encode(term));
+  }
+}
+
+function to_b58_1(B: Uint8Array, A: string = MAP): string {
+  let d = new Array<i32>();
+  let s = "";
+
+  for (let i = 0; i < B.length; i++) {
+    let j = 0;
+    let c: i32 = B[i];
+
+    if (c == 0 && s.length == 0 && i != 0) s += "1";
+
+    while (j < d.length || c != 0) {
+      let n: i32 = j < d.length ? d[j] * 256 + c : c;
+      c = n / 58 as i32;
+      if (j < d.length) {
+        d[j] = n % 58;
+      } else {
+        d.push(n % 58);
+      }
+      j++;
+    }
+  }
+
+  for (let k = d.length - 1; k >= 0; k--) {
+    s += A.charAt(d[k]);
+  }
+
+  return s;
+}
+
+export function b58_dec(term: string): Uint8Array | null {
+  return from_b58_1(term);
+}
+function from_b58_1(S: string, A: string = MAP): Uint8Array | null {
+  let d = new Array<i32>();
+  let b = new Array<i32>();
+
+  for (let i = 0; i < S.length; i++) {
+    let j = 0;
+    let c = A.indexOf(S.charAt(i));
+    if (c < 0) return null;
+
+    if (c == 0 && b.length == 0 && i != 0) b.push(0);
+
+    while (j < d.length || c != 0) {
+      let n = j < d.length ? d[j] * 58 + c : c;
+      c = n >> 8;
+      if (j < d.length) {
+        d[j] = n & 0xff;
+      } else {
+        d.push(n & 0xff);
+      }
+      j++;
+    }
+  }
+
+  for (let j = d.length - 1; j >= 0; j--) {
+    b.push(d[j]);
+  }
+
+  let result = new Uint8Array(b.length);
+  for (let i = 0; i < b.length; i++) {
+    result[i] = b[i] as u8;
+  }
+
+  return result;
+}
+
 function memory_read_bytes(ptr: i32): Uint8Array {
   let length = load<i32>(ptr);
   let result = new Uint8Array(length);
@@ -49,8 +125,8 @@ export function base58_decode(input: string): Uint8Array {
   return out;
 }
 
-export function utf8(str: string): Uint8Array {
-  return Uint8Array.wrap(String.UTF8.encode(str, false))
+export function b(str: string): Uint8Array {
+  return Uint8Array.wrap(String.UTF8.encode(str, false));
 }
 
 export function concat(...chunks: Uint8Array[]): Uint8Array {
@@ -69,10 +145,6 @@ export function concat(...chunks: Uint8Array[]): Uint8Array {
 
 export function memory_read_string(ptr: i32): string {
   return String.UTF8.decodeUnsafe(ptr+4, load<i32>(ptr), false)
-}
-
-export function bin(str: string): ArrayBuffer {
-  return String.UTF8.encode(str, false);
 }
 
 @external("env", "entry_signer_ptr")
@@ -223,32 +295,32 @@ declare function import_call_3(module_ptr: i32, module_len: i32, function_ptr: i
 declare function import_call_4(module_ptr: i32, module_len: i32, function_ptr: i32, function_len: i32,
   args_1_ptr: i32, args_1_len: i32, args_2_ptr: i32, args_2_len: i32, args_3_ptr: i32, args_3_len: i32, args_4_ptr: i32, args_4_len: i32): i32;
 
-export function call(contract: ArrayBuffer, func: string, args: ArrayBuffer[]): string {
+export function call(contract: Uint8Array, func: string, args: Uint8Array[]): string {
   let funcBytes = String.UTF8.encode(func, false);
   let funcPtr   = changetype<i32>(funcBytes);
 
   let errorPtr = 30_000
   switch (args.length) {
     case 0:
-      errorPtr = import_call_0(changetype<i32>(contract), contract.byteLength, funcPtr, funcBytes.byteLength);
+      errorPtr = import_call_0(changetype<i32>(contract.dataStart), contract.byteLength, funcPtr, funcBytes.byteLength);
       break;
     case 1:
-      errorPtr = import_call_1(changetype<i32>(contract), contract.byteLength, funcPtr, funcBytes.byteLength,
-        changetype<i32>(args[0]), args[0].byteLength);
+      errorPtr = import_call_1(changetype<i32>(contract.dataStart), contract.byteLength, funcPtr, funcBytes.byteLength,
+        changetype<i32>(args[0].dataStart), args[0].byteLength);
       break;
     case 2:
-      errorPtr = import_call_2(changetype<i32>(contract), contract.byteLength, funcPtr, funcBytes.byteLength,
-        changetype<i32>(args[0]), args[0].byteLength, changetype<i32>(args[1]), args[1].byteLength);
+      errorPtr = import_call_2(changetype<i32>(contract.dataStart), contract.byteLength, funcPtr, funcBytes.byteLength,
+        changetype<i32>(args[0].dataStart), args[0].byteLength, changetype<i32>(args[1].dataStart), args[1].byteLength);
       break;
     case 3:
-      errorPtr = import_call_3(changetype<i32>(contract), contract.byteLength, funcPtr, funcBytes.byteLength,
-        changetype<i32>(args[0]), args[0].byteLength, changetype<i32>(args[1]), args[1].byteLength,
-        changetype<i32>(args[2]), args[2].byteLength);
+      errorPtr = import_call_3(changetype<i32>(contract.dataStart), contract.byteLength, funcPtr, funcBytes.byteLength,
+        changetype<i32>(args[0].dataStart), args[0].byteLength, changetype<i32>(args[1].dataStart), args[1].byteLength,
+        changetype<i32>(args[2].dataStart), args[2].byteLength);
       break;
     case 4:
-      errorPtr = import_call_4(changetype<i32>(contract), contract.byteLength, funcPtr, funcBytes.byteLength,
-        changetype<i32>(args[0]), args[0].byteLength, changetype<i32>(args[1]), args[1].byteLength,
-        changetype<i32>(args[2]), args[2].byteLength, changetype<i32>(args[3]), args[3].byteLength);
+      errorPtr = import_call_4(changetype<i32>(contract.dataStart), contract.byteLength, funcPtr, funcBytes.byteLength,
+        changetype<i32>(args[0].dataStart), args[0].byteLength, changetype<i32>(args[1].dataStart), args[1].byteLength,
+        changetype<i32>(args[2].dataStart), args[2].byteLength, changetype<i32>(args[3].dataStart), args[3].byteLength);
       break;
     default:
       abort("call_invalid_no_of_args");
@@ -256,3 +328,101 @@ export function call(contract: ArrayBuffer, func: string, args: ArrayBuffer[]): 
 
   return memory_read_string(errorPtr);
 }
+
+/*
+export function kv_get<T,Y>(key: Y): T {
+  let termPtr: i32;
+  if (isString(key)) {
+    let inner = String.UTF8.encode(key.toString(), false);
+    termPtr = import_kv_get(changetype<i32>(inner), inner.byteLength);
+  } else if (key instanceof Uint8Array) {
+    termPtr = import_kv_get(changetype<i32>(key), key.byteLength);
+  } else {
+    abort("kv_get_invalid_type")
+  }
+
+  if (isInteger<Y>()) {
+    let arr = memory_read_bytes(termPtr);
+    return parseInt<Y>(String.UTF8.decodeUnsafe(termPtr+4, load<i32>(termPtr), false)) as Y
+  } else if (idof<T>() == idof<i64>()) {
+    return parseI64(String.UTF8.decodeUnsafe(termPtr+4, load<i32>(termPtr), false))
+  } else if (idof<T>() == idof<string>()) {
+    return String.UTF8.decodeUnsafe(termPtr+4, load<i32>(termPtr), false) as T
+  } else if (idof<T>() == idof<Uint8Array>()) {
+    return memory_read_bytes(termPtr);
+  } else {
+    abort("kv_get_invalid_return_type")
+  }
+  return null as T;
+}
+ */
+/*
+@external("env", "import_call")
+declare function import_call(module_ptr: i32, module_len: i32,
+  function_ptr: i32, function_len: i32, args_ptr: i32, args_len: i32): i32;
+function call(line: string): i32 {
+  let keyBytes = String.UTF8.encode(line);
+  let keyPtr   = changetype<i32>(keyBytes);
+  return import_call(keyPtr, keyBytes.byteLength, keyPtr, keyBytes.byteLength, keyPtr, keyBytes.byteLength)
+}
+*/
+/*@external("env", "import_kv_get")
+declare function import_kv_get(ptr: i32, len: i32): i32;
+function kv_get<T,Y>(key: Y): T {
+  let termPtr: i32;
+  if (isString(key)) {
+    let inner = String.UTF8.encode(key.toString(), false);
+    termPtr = import_kv_get(changetype<i32>(inner), inner.byteLength);
+  } else if (key instanceof Uint8Array) {
+    termPtr = import_kv_get(changetype<i32>(key), key.byteLength);
+  } else {
+    abort("kv_get_invalid_type")
+  }
+
+  if (isInteger<Y>()) {
+    let arr = memory_read_bytes(termPtr);
+    return parseInt<Y>(String.UTF8.decodeUnsafe(termPtr+4, load<i32>(termPtr), false)) as Y
+  }/* else if (idof<T>() == idof<i64>()) {
+    return parseI64(String.UTF8.decodeUnsafe(termPtr+4, load<i32>(termPtr), false))
+  } else if (idof<T>() == idof<string>()) {
+    return String.UTF8.decodeUnsafe(termPtr+4, load<i32>(termPtr), false) as T
+  } else if (idof<T>() == idof<Uint8Array>()) {
+    return memory_read_bytes(termPtr);
+  } else {
+    abort("kv_get_invalid_return_type")
+  }*/
+//return null as T;
+//}
+
+
+/*
+@external("env", "import_kv_increment")
+declare function import_kv_increment(keyPtr: i32, keyLen: i32, amount: i64): i64;
+function kv_increment(key: string, amount: i64): i64 {
+  let keyBytes = String.UTF8.encode(key);
+  let keyPtr   = changetype<i32>(keyBytes);
+  let keyLen   = keyBytes.byteLength;
+
+  return import_kv_increment(keyPtr, keyLen, amount);
+}
+
+@external("env", "import_kv_get")
+declare function import_kv_get(keyPtr: i32, keyLen: i32): i32;
+function kv_get(key: string): string {
+  let keyBytes = String.UTF8.encode(key);
+  let keyPtr   = changetype<i32>(keyBytes);
+  let keyLen   = keyBytes.byteLength;
+
+  const valPtr = import_kv_get(keyPtr, keyLen);
+  if (!valPtr) {
+    return "";
+  }
+
+  const valLen = load<u32>(valPtr);
+  const valBytesPtr = valPtr + 4;
+  //const valBytes = new Uint8Array(import_memory.buffer, valBytesPtr, valLen);
+  //return String.UTF8.decode(valBytes.buffer);
+  return "";
+}
+
+*/

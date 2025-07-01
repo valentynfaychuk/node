@@ -1,7 +1,9 @@
 import * as sdk from "./sdk";
+import { b, b58 } from "./sdk";
 
 function vaultKey(symbol: string): Uint8Array {
-  return sdk.concat(sdk.utf8("vault:"), sdk.account_caller(), sdk.utf8(`:${symbol}`))
+  //return sdk.concat(b("vault:"), b58(sdk.account_caller()), b(`:${symbol}`))
+  return b(`vault:${b58(sdk.account_caller())}:${symbol}`)
 }
 
 export function balance(symbol_ptr: i32): void {
@@ -32,7 +34,7 @@ export function withdraw(symbol_ptr: i32, amount_ptr: i32): void {
   assert(balance >= amount_int, "insufficent funds")
 
   sdk.kv_increment(vaultKey(symbol), `-${amount_int}`);
-  let result = sdk.call(sdk.bin("Coin"), "transfer", [sdk.account_caller().buffer, sdk.bin(amount), sdk.bin(symbol)])
+  let result = sdk.call(b("Coin"), "transfer", [sdk.account_caller(), b(amount), b(symbol)])
 
   sdk.return_value(`${balance - amount_int}`);
 }
@@ -43,6 +45,6 @@ export function burn(symbol_ptr: i32, amount_ptr: i32): void {
   sdk.log(`burn ${symbol} ${amount}`)
 
   let burn_address = new Uint8Array(48) //zeros
-  let result = sdk.call(sdk.bin("Coin"), "transfer", [burn_address.buffer, sdk.bin(amount), sdk.bin(symbol)])
+  let result = sdk.call(b("Coin"), "transfer", [burn_address, b(amount), b(symbol)])
   sdk.return_value(result);
 }

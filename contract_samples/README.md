@@ -1,6 +1,6 @@
 ### Local contract testing
 
-Run the node OFFLINE=true ./amadeusd
+Run the node `OFFLINE=true ./amadeusd`
 
 ```elixir
 pk = Application.fetch_env!(:ama, :trainer_pk)
