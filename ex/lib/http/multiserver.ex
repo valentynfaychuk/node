@@ -125,9 +125,10 @@ defmodule Ama.MultiServer do
 
             r.method == "GET" and String.starts_with?(r.path, "/api/contract/get") ->
                 key = String.replace(r.path, "/api/contract/get/", "")
-                key = Base58.decode(key)
-                result = API.Contract.get(key)
-                quick_reply(state, result)
+                [contract, key] = :binary.split(key, "/")
+                contract = Base58.decode(contract)
+                result = API.Contract.get("c:"<>contract<>":"<>key)
+                quick_reply(state, JSX.encode!(result))
 
             r.method == "GET" and String.starts_with?(r.path, "/api/chain/tx_events_by_account/") ->
                 query = r.query && Photon.HTTP.parse_query(r.query)

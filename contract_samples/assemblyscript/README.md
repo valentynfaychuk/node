@@ -26,20 +26,19 @@ because the default is `~/.cache/amadeusd`
 ```
 OR  
 ```bash
-touch /home/user/ama-keyring/1/sk
-export WORKFOLDER=/home/user/ama-keyring/1
-export WORKFOLDER=/home/user/ama-keyring/2
-./amadeusd deploytx "~/deposit.wasm" | sed '1,4d' | curl -X POST -H "Content-Type: application/octet-stream" --data-binary @- https://nodes.amadeus.bot/api/tx/submit
+touch /home/user/key1/sk
+WORKFOLDER=/home/user/key1/ ./amadeusd deploytx "/home/user/project/node/contract_samples/assemblyscript/deposit.wasm" | sed '1,4d' | curl -X POST -H "Content-Type: application/octet-stream" --data-binary @- https://nodes.amadeus.bot/api/tx/submit
 ```
   
 Call it
 ```bash
-export PK=7c9aEuAddQbATcqCruDGffLbwNjEcA1YbECwKLqyqfK7W7NLsLBCxqc4ecWTPQGQR8
-./amadeusd buildtx ${PK} deposit [] AMA 1000 | sed '1,4d' | curl -X POST -H "Content-Type: application/octet-stream" --data-binary @- https://nodes.amadeus.bot/api/tx/submit
-./amadeusd buildtx ${PK} withdraw ["AMA","100"] | sed '1,4d' | curl -X POST -H "Content-Type: application/octet-stream" --data-binary @- https://nodes.amadeus.bot/api/tx/submit
+export PK=777d6Z9WMM5WvKRaEuJH5abEBSMuuoQzotND82j5QpmxWBNfyusgQu46ZyHy9kgYT8
+WORKFOLDER=/home/user/key1/ ./amadeusd buildtx ${PK} deposit [] AMA 1000 | sed '1,4d' | curl -X POST -H "Content-Type: application/octet-stream" --data-binary @- https://nodes.amadeus.bot/api/tx/submit
+WORKFOLDER=/home/user/key1/ ./amadeusd buildtx ${PK} withdraw ["AMA","100"] | sed '1,4d' | curl -X POST -H "Content-Type: application/octet-stream" --data-binary @- https://nodes.amadeus.bot/api/tx/submit
 ```
 
 View it
 ```bash
-curl -X GET -H "Content-Type: application/octet-stream" https://nodes.amadeus.bot/api/contract/get/vault:${PK}:AMA
+export PK=777d6Z9WMM5WvKRaEuJH5abEBSMuuoQzotND82j5QpmxWBNfyusgQu46ZyHy9kgYT8
+curl -X GET -H "Content-Type: application/octet-stream" https://nodes.amadeus.bot/api/contract/get/${PK}/vault:${PK}:AMA
 ```
