@@ -98,9 +98,14 @@ defmodule NodeState do
       !BlsEx.verify?(sol.pk, sol.pop, sol.pk, BLS12AggSig.dst_pop()) ->
         IO.inspect {:peer_sent_invalid_sol_pop, :TODO_block_malicious_peer}
         nil
-      trainer_pk == sol.pk ->
+      trainer_pk == sol.pk and Consensus.chain_balance(trainer_pk) >= BIC.Coin.to_flat(1) ->
         sk = Application.fetch_env!(:ama, :trainer_sk)
-        if Consensus.chain_balance(trainer_pk) >= BIC.Coin.to_flat(1) do
+        #self compute
+        if trainer_pk == sol.computor do
+          tx_packed1 = TX.build(sk, "Epoch", "submit_sol", [term.sol])
+          TXPool.insert([tx_packed1])
+          NodeGen.broadcast(:txpool, :trainers, [[tx_packed1]])
+        else
           #IO.inspect {:peer_sent_sol, Base58.encode(istate.peer.signer)}
           tx_packed1 = TX.build(sk, "Epoch", "submit_sol", [term.sol])
           tx_packed2 = TX.build(sk, "Coin", "transfer", [sol.computor, :erlang.integer_to_binary(BIC.Coin.to_cents(100)), "AMA"])
