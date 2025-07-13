@@ -283,7 +283,7 @@ defmodule NodeState do
   end
 
   def handle(:special_business_reply, istate, term) do
-    IO.inspect {:special_business_reply, term.business}
+    #IO.inspect {:special_business_reply, term.business}
     op = term.business.op
     cond do
       #istate.peer.pk != <<>> -> nil

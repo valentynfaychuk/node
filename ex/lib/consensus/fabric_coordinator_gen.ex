@@ -10,6 +10,7 @@ defmodule FabricCoordinatorGen do
   end
 
   def init(state) do
+    :erlang.send_after(1000, self(), :tick)
     {:ok, state}
   end
 
@@ -42,12 +43,17 @@ defmodule FabricCoordinatorGen do
   def calc_syncing() do
     isSyncn = isSyncing()
     {_, num} = Process.info(self(), :message_queue_len)
-    #IO.inspect num
     cond do
       num >= 10 and !isSyncn -> :persistent_term.put(FabricCoordinatorSyncing, true)
       num < 10 and isSyncn -> :persistent_term.put(FabricCoordinatorSyncing, false)
       true -> nil
     end
+  end
+
+  def handle_info(:tick, state) do
+    calc_syncing()
+    :erlang.send_after(1000, self(), :tick)
+    {:noreply, state}
   end
 
   def handle_info({:insert_entry, entry, seen_time}, state) do
