@@ -99,6 +99,8 @@ defmodule Ama do
       end
     end
 
+    :persistent_term.put(NodeInited, true)
+
     supervisor
   end
 end
