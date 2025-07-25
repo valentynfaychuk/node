@@ -24,9 +24,10 @@ defmodule TXPool do
     end
 
     def purge_stale() do
+        cur_epoch = Consensus.chain_epoch()
         :ets.tab2list(TXPool)
         |> Enum.each(fn {key, txu} ->
-            if is_stale(txu) do
+            if is_stale(txu, cur_epoch) do
                 :ets.delete(TXPool, key)
             end
         end)
@@ -74,14 +75,14 @@ defmodule TXPool do
         end
     end
 
-    def is_stale(txu) do
+    def is_stale(txu, cur_epoch) do
         chainNonce = Consensus.chain_nonce(txu.tx.signer)
         nonceValid = !chainNonce or txu.tx.nonce > chainNonce
 
         hasSol = Enum.find_value(txu.tx.actions, fn(a)-> a.function == "submit_sol" and hd(a.args) end)
         epochSolValid = if !hasSol do true else
             <<sol_epoch::32-little, _::binary>> = hasSol
-            Consensus.chain_epoch() == sol_epoch
+            cur_epoch == sol_epoch
         end
 
         cond do
