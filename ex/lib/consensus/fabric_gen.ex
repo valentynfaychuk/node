@@ -30,10 +30,15 @@ defmodule FabricGen do
   end
 
   def handle_info(:tick_purge_txpool, state) do
-    #TODO: check if reorg needed
     :erlang.spawn(fn()->
-      TXPool.purge_stale()
+      task = Task.async(fn -> TXPool.purge_stale() end)
+      try do
+        Task.await(task, 600)
+      catch
+        :exit, {:timeout, _} -> Task.shutdown(task, :brutal_kill)
+      end
     end)
+
     :erlang.send_after(6000, self(), :tick_purge_txpool)
     {:noreply, state}
   end
