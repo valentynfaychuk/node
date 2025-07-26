@@ -42,13 +42,13 @@ defmodule TXPool do
 
                     chainNonce = Map.get(state, {:chain_nonce, txu.tx.signer}, Consensus.chain_nonce(txu.tx.signer))
                     nonceValid = !chainNonce or txu.tx.nonce > chainNonce
-                    if !nonceValid, do: throw(%{error: :invalid_tx_nonce})
+                    if !nonceValid, do: throw(%{error: :invalid_tx_nonce, key: {txu.tx.nonce, txu.hash}})
                     state = Map.put(state, {:chain_nonce, txu.tx.signer}, txu.tx.nonce)
 
                     balance = Map.get(state, {:balance, txu.tx.signer}, Consensus.chain_balance(txu.tx.signer))
                     balance = balance - BIC.Base.exec_cost(txu)
                     balance = balance - BIC.Coin.to_cents(1)
-                    if balance < 0, do: throw(%{error: :not_enough_tx_exec_balance})
+                    if balance < 0, do: throw(%{error: :not_enough_tx_exec_balance, key: {txu.tx.nonce, txu.hash}})
                     state = Map.put(state, {:balance, txu.tx.signer}, balance)
 
                     hasSol = Enum.find_value(txu.tx.actions, fn(a)-> a.function == "submit_sol" and hd(a.args) end)
@@ -56,7 +56,7 @@ defmodule TXPool do
                         <<sol_epoch::32-little, _::binary>> = hasSol
                         chain_epoch == sol_epoch
                     end
-                    if !epochSolValid, do: throw(%{error: :invalid_tx_sol_epoch})
+                    if !epochSolValid, do: throw(%{error: :invalid_tx_sol_epoch, key: {txu.tx.nonce, txu.hash}})
 
                     acc = acc ++ [TX.pack(txu)]
                     if length(acc) == amt do
@@ -66,6 +66,9 @@ defmodule TXPool do
                     {acc, state}
                 catch
                     :throw,{:choose, txs_packed} -> throw {:choose, txs_packed}
+                    :throw,%{error: error, key: key} when error in [:invalid_tx_nonce, :invalid_tx_sol_epoch] ->
+                      :ets.delete(TXPool, key)
+                      {acc, state_old}
                     :throw,_ -> {acc, state_old}
                 end
             end, {[], %{}}, TXPool)
