@@ -324,6 +324,8 @@ defmodule Consensus do
         end)
         {m_exit, m_exit_rev} = BIC.Base.call_exit(mapenv)
 
+        Process.delete(SolVerifiedCache)
+
         m = m ++ m_exit
         m_rev = m_rev ++ m_exit_rev
 

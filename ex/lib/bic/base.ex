@@ -27,6 +27,23 @@ defmodule BIC.Base do
             kv_increment("bic:coin:balance:#{env.entry_signer}:AMA", exec_cost)
         end)
 
+        #parallel verify sols
+        steam = Task.async_stream(txus, fn txu ->
+            sol = Enum.find_value(txu.tx.actions, fn(a)-> a.function == "submit_sol" and length(a.args) != [] and hd(a.args) end)
+            if sol do
+              hash = Blake3.hash(sol)
+              valid = BIC.Sol.verify(sol, hash)
+              %{hash: hash, valid: valid}
+            end
+        end)
+
+        sol_verified_cache = for {error, spec} <- steam,
+          error == :ok and spec != nil,
+          into: %{},
+          do: {spec.hash, spec.valid}
+
+        Process.put(SolVerifiedCache, sol_verified_cache)
+
         {Process.get(:mutations, []), Process.get(:mutations_reverse, [])}
     end
 

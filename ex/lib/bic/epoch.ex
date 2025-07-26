@@ -36,7 +36,8 @@ defmodule BIC.Epoch do
         su = BIC.Sol.unpack(sol)
         if su.epoch != env.entry_epoch, do: throw(%{error: :invalid_epoch})
 
-        if !BIC.Sol.verify(sol, hash), do: throw(%{error: :invalid_sol})
+        #if !BIC.Sol.verify(sol, hash), do: throw(%{error: :invalid_sol})
+        if !Process.get(SolVerifiedCache)[hash], do: throw(%{error: :invalid_sol})
 
         if !kv_exists("bic:epoch:pop:#{su.pk}") do
             if !BlsEx.verify?(su.pk, su.pop, su.pk, BLS12AggSig.dst_pop()), do: throw(%{error: :invalid_pop})
