@@ -103,4 +103,16 @@ defmodule Ama do
 
     supervisor
   end
+
+  def wait_node_inited(timeout_deadline \\ nil) do
+    timeout_deadline = if timeout_deadline == nil do :os.system_time(1000) + 10*60_000 else timeout_deadline end
+    ts = :os.system_time(1000)
+    cond do
+      :persistent_term.get(NodeInited, false) == true -> true
+      ts > timeout_deadline -> true
+      true ->
+        Process.sleep(333)
+        wait_node_inited(timeout_deadline)
+    end
+  end
 end
