@@ -2,7 +2,10 @@ defmodule FabricGen do
   use GenServer
 
   def isSyncing() do
-    :persistent_term.get(FabricSyncing, false)
+    case :persistent_term.get(FabricSyncing, nil) do
+      nil -> false
+      atomic -> :atomics.get(atomic, 1) == 1
+    end
   end
 
   def exitAfterMySlot() do
@@ -18,15 +21,11 @@ defmodule FabricGen do
   end
 
   def init(state) do
+    :persistent_term.put(FabricSyncing, :atomics.new(1, []))
+
     :erlang.send_after(2500, self(), :tick)
     :erlang.send_after(2500, self(), :tick_purge_txpool)
     {:ok, state}
-  end
-
-  def handle_info(:tick, state) do
-    state = if true do tick(state) else state end
-    :erlang.send_after(150, self(), :tick)
-    {:noreply, state}
   end
 
   def handle_info(:tick_purge_txpool, state) do
@@ -40,6 +39,12 @@ defmodule FabricGen do
     end)
 
     :erlang.send_after(6000, self(), :tick_purge_txpool)
+    {:noreply, state}
+  end
+
+  def handle_info(:tick, state) do
+    state = if true do tick(state) else state end
+    :erlang.send_after(100, self(), :tick)
     {:noreply, state}
   end
 
@@ -58,22 +63,13 @@ defmodule FabricGen do
   end
 
   def tick(state) do
-    #IO.inspect {"tick", :os.system_time(1000)}
-    :persistent_term.put(FabricSyncing, true)
-    #tick_consensus_entries()
+    :persistent_term.get(FabricSyncing) |> :atomics.put(1, 1)
 
     proc_consensus()
     proc_entries()
     tick_slot(state)
 
-    #cond do
-    #  Consensus.chain_height() < (103_00000-1) -> tick_slot(state)
-    #  true ->
-    #    IO.puts "upgrade to v0.8.1 now - wait for release"
-    #    :erlang.halt()
-    #end
-    :persistent_term.put(FabricSyncing, false)
-
+    :persistent_term.get(FabricSyncing) |> :atomics.put(1, 0)
     state
   end
 
@@ -88,19 +84,6 @@ defmodule FabricGen do
     end
 
     state
-  end
-
-  def tick_consensus_entries() do
-    entry_root = Fabric.rooted_tip_height()
-    entry_temp = Consensus.chain_height()
-    proc_consensus()
-    proc_entries()
-    delta = Fabric.rooted_tip_height() - entry_root
-    delta2 = Consensus.chain_height() - entry_temp
-    if delta != 0 or delta2 != 0 do
-      IO.inspect {:delta_moved_oneshot, delta, delta2}
-      :erlang.send_after(200, FabricSyncGen, :tick_oneshot)
-    end
   end
 
   def proc_compact() do

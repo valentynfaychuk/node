@@ -6,19 +6,36 @@ defmodule FabricSyncAttestGen do
   end
 
   def hasQuorum() do
-    :persistent_term.get({Net, :hasQuorum}, false)
+    case :persistent_term.get({Net, :hasQuorum}, nil) do
+      nil -> false
+      atomic -> :atomics.get(atomic, 1) == 1
+    end
   end
 
   def isSynced() do
-    :persistent_term.get({Net, :isSynced}, nil)
+    case :persistent_term.get({Net, :isSynced}, nil) do
+      nil -> false
+      atomic ->
+        case :atomics.get(atomic, 1) do
+          0 -> nil
+          1 -> :off_by_1
+          2 -> :full
+        end
+    end
   end
 
   def isInEpoch() do
-    :persistent_term.get({Net, :isInEpoch}, false)
+    case :persistent_term.get({Net, :isInEpoch}, nil) do
+      nil -> false
+      atomic -> :atomics.get(atomic, 1) == 1
+    end
   end
 
   def highestTemporalHeight() do
-    :persistent_term.get({Net, :highestTemporalHeight}, nil)
+    case :persistent_term.get({Net, :highestTemporalHeight}, nil) do
+      nil -> nil
+      atomic -> :atomics.get(atomic, 1)
+    end
   end
 
   def highestRootedHeight() do
@@ -59,9 +76,11 @@ defmodule FabricSyncAttestGen do
   end
 
   def init(state) do
-    :persistent_term.put({Net, :hasQuorum}, false)
-    :persistent_term.put({Net, :isSynced}, nil)
-    :persistent_term.put({Net, :isInEpoch}, false)
+    :persistent_term.put({Net, :hasQuorum}, :atomics.new(1, []))
+    :persistent_term.put({Net, :isSynced}, :atomics.new(1, []))
+    :persistent_term.put({Net, :isInEpoch}, :atomics.new(1, []))
+    :persistent_term.put({Net, :highestTemporalHeight}, :atomics.new(1, []))
+
 
     :erlang.send_after(1000, self(), :tick_quorum)
     :erlang.send_after(1000, self(), :tick_synced)
@@ -74,8 +93,8 @@ defmodule FabricSyncAttestGen do
 
     hasQ = hasQuorum()
     cond do
-      online_cnt < quorum_cnt and hasQ -> :persistent_term.put({Net, :hasQuorum}, false)
-      online_cnt >= quorum_cnt and !hasQ -> :persistent_term.put({Net, :hasQuorum}, true)
+      online_cnt < quorum_cnt and hasQ -> :persistent_term.get({Net, :hasQuorum}) |> :atomics.put(1, 0)
+      online_cnt >= quorum_cnt and !hasQ -> :persistent_term.get({Net, :hasQuorum}) |> :atomics.put(1, 1)
       true -> nil
     end
 
@@ -110,17 +129,17 @@ defmodule FabricSyncAttestGen do
     #  highest -> highest
     #end
 
-    old_highest = :persistent_term.get({Net, :highestTemporalHeight}, nil)
+    old_highest = highestTemporalHeight()
     highest_height = max(temporal_height, highest_height)
     if highest_height != old_highest do
-      :persistent_term.put({Net, :highestTemporalHeight}, highest_height)
+      :persistent_term.get({Net, :highestTemporalHeight}) |> :atomics.put(1, highest_height)
     end
 
     isS = isSynced()
     cond do
-      highest_height - temporal_height == 0 and isS != :full -> :persistent_term.put({Net, :isSynced}, :full)
-      highest_height - temporal_height == 1 and isS != :off_by_1 -> :persistent_term.put({Net, :isSynced}, :off_by_1)
-      highest_height - temporal_height > 1 and isS -> :persistent_term.put({Net, :isSynced}, nil)
+      highest_height - temporal_height == 0 and isS != :full -> :persistent_term.get({Net, :isSynced}) |> :atomics.put(1, 2)
+      highest_height - temporal_height == 1 and isS != :off_by_1 -> :persistent_term.get({Net, :isSynced}) |> :atomics.put(1, 1)
+      highest_height - temporal_height > 1 and isS -> :persistent_term.get({Net, :isSynced}) |> :atomics.put(1, 0)
       true -> nil
     end
 
@@ -128,8 +147,8 @@ defmodule FabricSyncAttestGen do
     epoch_highest = div(highest_height, 100_000)
     epoch_mine = div(temporal_height, 100_000)
     cond do
-      epoch_highest == epoch_mine and !isInEpoch -> :persistent_term.put({Net, :isInEpoch}, true)
-      epoch_highest != epoch_mine and isInEpoch -> :persistent_term.put({Net, :isInEpoch}, false)
+      epoch_highest == epoch_mine and !isInEpoch -> :persistent_term.get({Net, :isInEpoch}) |> :atomics.put(1, 1)
+      epoch_highest != epoch_mine and isInEpoch -> :persistent_term.get({Net, :isInEpoch}) |> :atomics.put(1, 0)
       true -> nil
     end
   end

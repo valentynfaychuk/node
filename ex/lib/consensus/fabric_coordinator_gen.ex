@@ -2,7 +2,10 @@ defmodule FabricCoordinatorGen do
   use GenServer
 
   def isSyncing() do
-    :persistent_term.get(FabricCoordinatorSyncing, false)
+    case :persistent_term.get(FabricCoordinatorSyncing, nil) do
+      nil -> false
+      atomic -> :atomics.get(atomic, 1) == 1
+    end
   end
 
   def start_link() do
@@ -10,42 +13,18 @@ defmodule FabricCoordinatorGen do
   end
 
   def init(state) do
+    :persistent_term.put(FabricCoordinatorSyncing, :atomics.new(1, []))
+
     :erlang.send_after(1000, self(), :tick)
     {:ok, state}
-  end
-
-  def precalc_sols(entry) do
-    :erlang.spawn(fn()->
-      Enum.each(entry.txs, fn(tx_packed)->
-        isSol = String.contains?(tx_packed, "submit_sol")
-        if isSol do
-          txu = TX.unpack(tx_packed)
-          [%{args: [sol]}] = txu.tx.actions
-
-          :erlang.spawn(fn()->
-            isVerified = :ets.lookup_element(SOLVerifyCache, sol, 2, nil)
-            if !isVerified do
-              :ets.insert(SOLVerifyCache, {sol, :inprogress})
-              valid = BIC.Sol.verify(sol)
-              if valid do
-                :ets.insert(SOLVerifyCache, {sol, :valid})
-              else
-                :ets.insert(SOLVerifyCache, {sol, :invalid})
-              end
-            end
-          end)
-
-        end
-      end)
-    end)
   end
 
   def calc_syncing() do
     isSyncn = isSyncing()
     {_, num} = Process.info(self(), :message_queue_len)
     cond do
-      num >= 10 and !isSyncn -> :persistent_term.put(FabricCoordinatorSyncing, true)
-      num < 10 and isSyncn -> :persistent_term.put(FabricCoordinatorSyncing, false)
+      num >= 10 and !isSyncn -> :persistent_term.get(FabricCoordinatorSyncing) |> :atomics.put(1, 1)
+      num < 10 and isSyncn -> :persistent_term.get(FabricCoordinatorSyncing) |> :atomics.put(1, 0)
       true -> nil
     end
   end
@@ -53,13 +32,6 @@ defmodule FabricCoordinatorGen do
   def handle_info(:tick, state) do
     calc_syncing()
     :erlang.send_after(1000, self(), :tick)
-    {:noreply, state}
-  end
-
-  def handle_info({:insert_entry, entry, seen_time}, state) do
-    calc_syncing()
-    Fabric.insert_entry(entry, seen_time)
-    precalc_sols(entry)
     {:noreply, state}
   end
 
