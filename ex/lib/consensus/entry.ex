@@ -124,7 +124,11 @@ defmodule Entry do
         if !!e[:mask] and !is_bitstring(e.mask), do: throw(%{error: :mask_not_bitstring})
 
         if !is_list(e.txs), do: throw(%{error: :txs_not_list})
-        if length(e.txs) > 30, do: throw(%{error: :TEMPORARY_txs_only_30_per_entry})
+        if epoch(e) >= 230 do
+          if length(e.txs) > 100, do: throw(%{error: :TEMPORARY_txs_only_100_per_entry})
+        else
+          if length(e.txs) > 30, do: throw(%{error: :TEMPORARY_txs_only_30_per_entry})
+        end
         if eh.txs_hash != Blake3.hash(Enum.join(e.txs)), do: throw(%{error: :txs_hash_invalid})
 
         is_special_meeting_block = !!e[:mask]
