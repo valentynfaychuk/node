@@ -128,10 +128,12 @@ defmodule Entry do
         if eh.txs_hash != Blake3.hash(Enum.join(e.txs)), do: throw(%{error: :txs_hash_invalid})
 
         is_special_meeting_block = !!e[:mask]
-        Enum.each(e.txs, fn(tx_packed)->
-            %{error: err, txu: txu} = TX.validate(tx_packed, is_special_meeting_block)
-            if err != :ok, do: throw(err)
+        steam = Task.async_stream(e.txs, fn tx_packed ->
+            %{error: err} = TX.validate(tx_packed, is_special_meeting_block)
+            err
         end)
+        err = Enum.find_value(steam, fn {:ok, result} -> result != :ok && result end)
+        if err, do: throw(err)
 
         throw(%{error: :ok})
         catch
