@@ -135,11 +135,13 @@ defmodule NodeState do
 
     if !exists? do
       %{error: :ok, entry: entry} = Entry.unpack_and_validate(term.entry_packed)
-      if Entry.height(entry) > Fabric.rooted_tip_height() do
+      if Entry.height(entry) >= Fabric.rooted_tip_height() do
         #IO.inspect {:insert, Base58.encode(entry.hash), :os.system_time(1000)}
         case Fabric.insert_entry(entry, seen_time) do
           :ok ->
-            #FabricCoordinatorGen.precalc_sols(entry)
+            #trainer_for_slot = Consensus.trainer_for_slot(Entry.height(entry), entry.header_unpacked.slot+1)
+            #if trainer_for_slot == Application.fetch_env!(:ama, :trainer_pk) do
+            #end
             send(FabricGen, :tick_oneshot)
           {:error, {:error, ~c"Resource busy: "}} -> :ok
             #IO.inspect {:insert_entry, :resource_busy, Base58.encode(entry.hash)}
