@@ -3,8 +3,8 @@
 FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND noninteractive
 
-ENV SSL_VERSION=3.5.0
-ENV OTP_VERSION=OTP-27.3.4.1
+ENV SSL_VERSION=3.5.1
+ENV OTP_VERSION=OTP-27.3.4.2
 ENV ELIXIR_VERSION=v1.18.4
 
 RUN apt-get update && apt-get install -y vim git curl locate wget apt-transport-https apt-utils locales
@@ -18,6 +18,7 @@ WORKDIR "/root"
 RUN apt-get update && apt-get install -y build-essential autoconf libncurses-dev m4 xsltproc libxml2-utils unixodbc-dev
 #RUN apt-get update && apt-get install -y --no-install-recommends libwxgtk3.0-gtk3-dev
 RUN apt-get install -y libzstd1 zstd
+RUN apt-get install -y clang-19
 
 #for rocksdb_erlang
 RUN apt-get install -y cmake
@@ -47,4 +48,3 @@ RUN curl https://sh.rustup.rs -sSf | sh -s -- -y
 ENV PATH="/root/.cargo/bin:${PATH}"
 
 CMD ["/bin/bash"]
-
