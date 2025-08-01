@@ -11,6 +11,7 @@ defmodule BIC.Epoch do
 
     def epoch_emission(epoch) when epoch > 499 do
       floor(0.5 * @a / :math.pow(epoch - @start_epoch + @c, 1.5))
+        |> BIC.Coin.to_flat()
     end
 
     def epoch_emission(epoch) do
