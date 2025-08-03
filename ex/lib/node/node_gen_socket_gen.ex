@@ -12,10 +12,10 @@ defmodule NodeGenSocketGen do
     rcv_mb = (rcv/1024)/1024
 
     IO.puts "sndbuf: #{snd_mb}MB | recbuf: #{rcv_mb}MB"
-    if snd_mb < 4 do
+    if snd_mb < 64 do
       IO.puts "🔴WARNING: sndbuf way too low, please edit /etc/sysctl.conf"
       IO.puts "🔴WARNING: set values to ATLEAST and reboot or `sysctl --system`"
-      IO.puts "net.core.wmem_max = 8388608"
+      IO.puts "net.core.wmem_max = 268435456"
     end
     if rcv_mb < 64 do
       IO.puts "🔴WARNING: recbuf way too low, please edit /etc/sysctl.conf"
@@ -41,7 +41,7 @@ defmodule NodeGenSocketGen do
       {:reuseport, true}, #working in OTP26.1+
       {:buffer, 65536}, #max-size read
       {:recbuf, 33554432}, #total accum
-      {:sndbuf, 4194304}, #total accum
+      {:sndbuf, 33554432}, #total accum
       :binary,
     ]
     {:ok, lsocket} = :gen_udp.open(port, basic_opts++opts)
