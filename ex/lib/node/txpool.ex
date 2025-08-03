@@ -40,12 +40,12 @@ defmodule TXPool do
                 try do
                     state = state_old
 
-                    chainNonce = Map.get(state, {:chain_nonce, txu.tx.signer}, Consensus.chain_nonce(txu.tx.signer))
+                    chainNonce = Map.get_lazy(state, {:chain_nonce, txu.tx.signer}, fn()-> Consensus.chain_nonce(txu.tx.signer) end)
                     nonceValid = !chainNonce or txu.tx.nonce > chainNonce
                     if !nonceValid, do: throw(%{error: :invalid_tx_nonce, key: {txu.tx.nonce, txu.hash}})
                     state = Map.put(state, {:chain_nonce, txu.tx.signer}, txu.tx.nonce)
 
-                    balance = Map.get(state, {:balance, txu.tx.signer}, Consensus.chain_balance(txu.tx.signer))
+                    balance = Map.get_lazy(state, {:balance, txu.tx.signer}, fn()-> Consensus.chain_balance(txu.tx.signer) end)
                     balance = balance - BIC.Base.exec_cost(txu)
                     balance = balance - BIC.Coin.to_cents(1)
                     if balance < 0, do: throw(%{error: :not_enough_tx_exec_balance, key: {txu.tx.nonce, txu.hash}})
@@ -66,7 +66,7 @@ defmodule TXPool do
                     {acc, state}
                 catch
                     :throw,{:choose, txs_packed} -> throw {:choose, txs_packed}
-                    :throw,%{error: error, key: key} when error in [:invalid_tx_nonce, :invalid_tx_sol_epoch] ->
+                    :throw,%{error: error, key: key} when error in [:invalid_tx_nonce, :not_enough_tx_exec_balance, :invalid_tx_sol_epoch] ->
                       :ets.delete(TXPool, key)
                       {acc, state_old}
                     :throw,_ -> {acc, state_old}
