@@ -57,11 +57,12 @@ defmodule LoggerGen do
 
     isSynced = FabricSyncAttestGen.isQuorumSyncedOffBy1()
     highest_height = max(FabricSyncAttestGen.highestTemporalHeight() || height, height)
+    score = API.Epoch.score(pk)[:score] || 0
 
     if !isSynced do
-      IO.puts "⛓️  #{height} / #{highest_height} R: #{height-rooted_height} S: #{slot} | T: #{txpool_size} P: #{peer_cnt} 🔴 NOT-SYNCED #{Base58.encode(pk)}"
+      IO.puts "⛓️  #{height} / #{highest_height} R: #{height-rooted_height} | T: #{txpool_size} P: #{peer_cnt} 🔴 NOT-SYNCED #{Base58.encode(pk)}"
     else
-      IO.puts "⛓️  #{height} / #{highest_height} R: #{height-rooted_height} S: #{slot} | T: #{txpool_size} P: #{peer_cnt} | #{Base58.encode(pk)} #{isTrainer} #{coins}"
+      IO.puts "⛓️  #{height} / #{highest_height} R: #{height-rooted_height} | T: #{txpool_size} P: #{peer_cnt} S: #{score} | #{Base58.encode(pk)} #{isTrainer} #{coins}"
     end
 
     state
