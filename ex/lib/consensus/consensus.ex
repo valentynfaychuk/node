@@ -391,7 +391,7 @@ defmodule Consensus do
         #TODO: todo add >1 tx
         #ts_m = :os.system_time(1000)
         #txs = TXPool.grab_next_valids(next_entry)
-        txs = TXPool.grab_next_valid(10)
+        txs = TXPool.grab_next_valid(100)
         #IO.inspect {:tx, :os.system_time(1000) - ts_m}
 
         next_entry = Map.put(next_entry, :txs, txs)
