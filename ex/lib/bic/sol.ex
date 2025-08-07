@@ -22,6 +22,15 @@ defmodule BIC.Sol do
         <<a, b, _::30-binary>> = hash
         a == 0 and b == 0
     end
+    def verify_hash(epoch, hash) when epoch >= 1 do
+        <<a, b, _::30-binary>> = hash
+        a == 0 and b == 0
+    end
+    def verify_hash(_epoch, hash) do
+        <<a, _::31-binary>> = hash
+        a == 0
+    end
+
     def verify(sol = <<epoch::32-little, _::binary>>, hash) when epoch >= 156 do
         if byte_size(sol) != 1024+240, do: throw(%{error: :invalid_sol_seed_size})
         verify_hash(epoch, hash) and Blake3.freivalds(sol)
@@ -31,20 +40,10 @@ defmodule BIC.Sol do
         #if kv_get("bic:epoch:segment_vr_hash") != segment_vr_hash, do: throw %{error: :segment_vr_hash}
         verify_hash(epoch, Blake3.hash(sol)) and Blake3.freivalds(sol)
     end
-
-    def verify_hash(epoch, hash) when epoch >= 1 do
-        <<a, b, _::30-binary>> = hash
-        a == 0 and b == 0
-    end
     def verify(sol = <<epoch::32-little, _::192-binary, _segment_vr::96-binary, _::binary>>) when epoch >= 1 do
         if byte_size(sol) != 320, do: throw(%{error: :invalid_sol_seed_size})
         #if kv_get("bic:epoch:segment_vr") != segment_vr, do: throw %{error: :segment_vr}
         verify_cache(UPOW1, sol)
-    end
-
-    def verify_hash(_epoch, hash) do
-        <<a, _::31-binary>> = hash
-        a == 0
     end
     def verify(sol = <<epoch::32-little, _::binary>>) do
         if byte_size(sol) != 256, do: throw(%{error: :invalid_sol_seed_size})
