@@ -77,4 +77,8 @@ defmodule API.Peer do
         ])
         |> Enum.sort(:desc)
     end
+
+    def version_ratio_score_by_target(target_ver) do
+      version_ratio() |> Enum.filter(& elem(&1,0) >= target_ver) |> Enum.sum_by(& elem(&1,1))
+    end
 end

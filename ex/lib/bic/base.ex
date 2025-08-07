@@ -32,16 +32,7 @@ defmodule BIC.Base do
             sol = Enum.find_value(txu.tx.actions, fn(a)-> a.function == "submit_sol" and length(a.args) != [] and hd(a.args) end)
             if sol do
               hash = Blake3.hash(sol)
-              score = API.Peer.version_ratio() |> Enum.filter(& elem(&1,0) >= "1.1.1") |> Enum.sum_by(& elem(&1,1))
-              valid = if score < 0.8 do
-                BIC.Sol.verify(sol, hash)
-              else
-                valid = try do
-                  BIC.Sol.verify(sol, hash)
-                catch
-                  _,_ -> false
-                end
-              end
+              valid = try do BIC.Sol.verify(sol, hash) catch _,_ -> false end
               %{hash: hash, valid: valid}
             end
         end)
