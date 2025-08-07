@@ -1,6 +1,13 @@
 defmodule BIC.Sol do
     import ConsensusKV
 
+    @preamble_size 240
+    @matrix_size 1024
+    @sol_size @preamble_size + @matrix_size
+    def size() do
+      @sol_size
+    end
+
     def unpack(sol = <<epoch::32-little, _::binary>>) when epoch >= 156 do
         <<epoch::32-little, segment_vr_hash::32-binary, sol_pk::48-binary, pop::96-binary, computor_pk::48-binary, nonce::12-binary, tensor_c::1024-binary>> = sol
         %{epoch: epoch, pk: sol_pk, pop: pop, computor: computor_pk, segment_vr_hash: segment_vr_hash, tensor_c: tensor_c}
@@ -32,11 +39,11 @@ defmodule BIC.Sol do
     end
 
     def verify(sol = <<epoch::32-little, _::binary>>, hash) when epoch >= 156 do
-        if byte_size(sol) != 1024+240, do: throw(%{error: :invalid_sol_seed_size})
+        if byte_size(sol) != @sol_size, do: throw(%{error: :invalid_sol_seed_size})
         verify_hash(epoch, hash) and Blake3.freivalds(sol)
     end
     def verify(sol = <<epoch::32-little, _::binary>>) when epoch >= 156 do
-        if byte_size(sol) != 1024+240, do: throw(%{error: :invalid_sol_seed_size})
+        if byte_size(sol) != @sol_size, do: throw(%{error: :invalid_sol_seed_size})
         #if kv_get("bic:epoch:segment_vr_hash") != segment_vr_hash, do: throw %{error: :segment_vr_hash}
         verify_hash(epoch, Blake3.hash(sol)) and Blake3.freivalds(sol)
     end

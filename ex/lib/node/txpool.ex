@@ -54,7 +54,7 @@ defmodule TXPool do
                     hasSol = Enum.find_value(txu.tx.actions, fn(a)-> a.function == "submit_sol" and hd(a.args) end)
                     epochSolValid = if !hasSol do true else
                         <<sol_epoch::32-little, _::binary>> = hasSol
-                        chain_epoch == sol_epoch
+                        chain_epoch == sol_epoch and byte_size(hasSol) == BIC.Sol.size()
                     end
                     if !epochSolValid, do: throw(%{error: :invalid_tx_sol_epoch, key: {txu.tx.nonce, txu.hash}})
 
