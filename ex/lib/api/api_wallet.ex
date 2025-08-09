@@ -42,4 +42,10 @@ defmodule API.Wallet do
         pk = BlsEx.get_public_key!(sk)
         {Base58.encode(pk), Base58.encode(sk)}
     end
+
+    def generate_keypair() do
+      sk = :crypto.strong_rand_bytes(64)
+      pk = BlsEx.get_public_key!(sk)
+      {Base58.encode(pk), Base58.encode(sk)}
+    end
 end
