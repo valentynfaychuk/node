@@ -2,6 +2,8 @@ defmodule TXPool do
     def init() do
         :ets.new(TXPool, [:ordered_set, :named_table, :public,
             {:write_concurrency, true}, {:read_concurrency, true}, {:decentralized_counters, false}])
+        :ets.new(GiftedSolCache, [:ordered_set, :named_table, :public,
+            {:write_concurrency, true}, {:read_concurrency, true}, {:decentralized_counters, false}])
     end
 
     def insert(tx_packed) when is_binary(tx_packed) do insert([tx_packed]) end
@@ -133,5 +135,13 @@ defmodule TXPool do
                 true -> {highest_nonce, cnt}
             end
         end)
+    end
+
+    def add_gifted_sol(sol) do
+      hash = Blake3.hash(sol)
+      case :ets.lookup(GiftedSolCache, hash) do
+        [] -> :ets.insert(GiftedSolCache, {hash, Consensus.chain_epoch()})
+        _ -> false
+      end
     end
 end

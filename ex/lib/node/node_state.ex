@@ -99,6 +99,9 @@ defmodule NodeState do
       !BlsEx.verify?(sol.pk, sol.pop, sol.pk, BLS12AggSig.dst_pop()) ->
         IO.inspect {:peer_sent_invalid_sol_pop, :TODO_block_malicious_peer}
         nil
+      !TXPool.add_gifted_sol(term.sol) ->
+        IO.inspect {:peer_sent_duplicate_sol, :TODO_block_malicious_peer}
+        nil
       trainer_pk == sol.pk and Consensus.chain_balance(trainer_pk) >= BIC.Coin.to_flat(1) ->
         sk = Application.fetch_env!(:ama, :trainer_sk)
         #self compute
