@@ -138,6 +138,11 @@ defmodule Consensus do
         RocksDB.get(hash, %{db: db, cf: cf.muts_rev ,term: true})
     end
 
+    def chain_muts(hash) do
+        %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+        RocksDB.get(hash, %{db: db, cf: cf.muts ,term: true})
+    end
+
     def chain_rewind(target_hash) do
         in_chain = Consensus.is_in_chain(target_hash)
         cond do
@@ -273,6 +278,7 @@ defmodule Consensus do
             :entry_height => next_entry.header_unpacked.height,
             :entry_epoch => div(next_entry.header_unpacked.height, 100_000),
             :entry_vr => next_entry.header_unpacked.vr,
+            :entry_vr_b3 => Blake3.hash(next_entry.header_unpacked.vr),
             :entry_dr => next_entry.header_unpacked.dr,
             :tx_index => 0,
             :tx_signer => nil, #env.txu.tx.signer,
