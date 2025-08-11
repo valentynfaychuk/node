@@ -38,23 +38,25 @@ defmodule BIC.Sol do
         a == 0
     end
 
-    def verify(sol = <<epoch::32-little, _::binary>>, hash) when epoch >= 156 do
-        if byte_size(sol) != @sol_size, do: throw(%{error: :invalid_sol_seed_size})
-        verify_hash(epoch, hash) and Blake3.freivalds(sol)
-    end
-    def verify(sol = <<epoch::32-little, _::binary>>) when epoch >= 156 do
-        if byte_size(sol) != @sol_size, do: throw(%{error: :invalid_sol_seed_size})
-        #if kv_get("bic:epoch:segment_vr_hash") != segment_vr_hash, do: throw %{error: :segment_vr_hash}
-        verify_hash(epoch, Blake3.hash(sol)) and Blake3.freivalds(sol)
-    end
-    def verify(sol = <<epoch::32-little, _::192-binary, _segment_vr::96-binary, _::binary>>) when epoch >= 1 do
-        if byte_size(sol) != 320, do: throw(%{error: :invalid_sol_seed_size})
-        #if kv_get("bic:epoch:segment_vr") != segment_vr, do: throw %{error: :segment_vr}
-        verify_cache(UPOW1, sol)
-    end
-    def verify(sol = <<epoch::32-little, _::binary>>) do
-        if byte_size(sol) != 256, do: throw(%{error: :invalid_sol_seed_size})
-        verify_cache(UPOW0, sol)
+    def verify(sol = <<epoch::32-little, _::binary>>, opts \\ %{}) do
+      cond do
+        epoch >= 260 ->
+          if byte_size(sol) != @sol_size, do: throw(%{error: :invalid_sol_seed_size})
+          hash = Map.get_lazy(opts, :hash, fn()-> Blake3.hash(sol) end)
+          vr_b3 = Map.get_lazy(opts, :vr_v3, fn()-> :crypto.strong_rand_bytes(32) end)
+          verify_hash(epoch, hash) and Blake3.freivalds_e260(sol, vr_b3)
+        epoch >= 156 ->
+          #if kv_get("bic:epoch:segment_vr_hash") != segment_vr_hash, do: throw %{error: :segment_vr_hash}
+          if byte_size(sol) != @sol_size, do: throw(%{error: :invalid_sol_seed_size})
+          hash = Map.get_lazy(opts, :hash, fn()-> Blake3.hash(sol) end)
+          verify_hash(epoch, hash) and Blake3.freivalds(sol)
+        epoch >= 1 ->
+          if byte_size(sol) != 320, do: throw(%{error: :invalid_sol_seed_size})
+          verify_cache(UPOW1, sol)
+        true ->
+          if byte_size(sol) != 256, do: throw(%{error: :invalid_sol_seed_size})
+          verify_cache(UPOW0, sol)
+      end
     end
 
     def verify_cache(module, sol = <<epoch::32-little, _::binary>>) do

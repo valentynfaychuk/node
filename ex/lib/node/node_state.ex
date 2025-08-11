@@ -93,7 +93,10 @@ defmodule NodeState do
       sol.epoch != Consensus.chain_epoch() ->
         #IO.inspect {:broadcasted_sol_invalid_epoch, sol.epoch, Consensus.chain_epoch()}
         nil
-      !BIC.Sol.verify(term.sol) ->
+      sol.epoch < 260 and !BIC.Sol.verify(term.sol) ->
+        IO.inspect {:peer_sent_invalid_sol, :TODO_block_malicious_peer}
+        nil
+      sol.epoch >= 260 and !BIC.Sol.verify(term.sol, %{vr_b3: :crypto.strong_rand_bytes(32)}) ->
         IO.inspect {:peer_sent_invalid_sol, :TODO_block_malicious_peer}
         nil
       !BlsEx.verify?(sol.pk, sol.pop, sol.pk, BLS12AggSig.dst_pop()) ->
