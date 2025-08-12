@@ -43,7 +43,7 @@ defmodule BIC.Sol do
         epoch >= 260 ->
           if byte_size(sol) != @sol_size, do: throw(%{error: :invalid_sol_seed_size})
           hash = Map.get_lazy(opts, :hash, fn()-> Blake3.hash(sol) end)
-          vr_b3 = Map.get_lazy(opts, :vr_v3, fn()-> :crypto.strong_rand_bytes(32) end)
+          vr_b3 = Map.get_lazy(opts, :vr_b3, fn()-> :crypto.strong_rand_bytes(32) end)
           verify_hash(epoch, hash) and Blake3.freivalds_e260(sol, vr_b3)
         epoch >= 156 ->
           #if kv_get("bic:epoch:segment_vr_hash") != segment_vr_hash, do: throw %{error: :segment_vr_hash}
