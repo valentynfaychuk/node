@@ -62,11 +62,6 @@ defmodule NodeGenSocketGen do
         :erlang.spawn(fn()->
           try do
           case NodeProto.unpack_message_v2(data) do
-            %{error: :old, msg: msg} ->
-              peer_ip = Tuple.to_list(ip) |> Enum.join(".")
-              peer = %{ip: peer_ip, signer: msg.signer, version: msg.version}
-              NodeState.handle(msg.op, %{peer: peer}, msg)
-
             %{error: :signature, shard_total: 1, pk: pk, version: version, signature: signature, payload: payload} ->
               if !BlsEx.verify?(pk, signature, Blake3.hash(pk<>payload), BLS12AggSig.dst_node()), do: throw(%{error: :invalid_signature})
               msg = payload

@@ -173,6 +173,5 @@ defmodule NodeProto do
   end
 
   def unpack_message_v2(data) do
-    unpack_message(data)
   end
 end
