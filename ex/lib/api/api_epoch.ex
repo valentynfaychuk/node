@@ -21,6 +21,10 @@ defmodule API.Epoch do
         end
     end
 
+    def get_vr_segment_hash() do
+        API.Contract.get("bic:epoch:segment_vr_hash")
+    end
+
     def get_pop(pk) do
       pk = if byte_size(pk) != 48, do: Base58.decode(pk), else: pk
       API.Contract.get("bic:epoch:pop:#{pk}")

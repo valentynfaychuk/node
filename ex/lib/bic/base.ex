@@ -32,11 +32,7 @@ defmodule BIC.Base do
             sol = Enum.find_value(txu.tx.actions, fn(a)-> a.function == "submit_sol" and length(a.args) != [] and hd(a.args) end)
             if sol do
               hash = Blake3.hash(sol)
-              valid = if env.entry_epoch >= 260 do
-                valid = try do BIC.Sol.verify(sol, %{hash: hash, vr_b3: env.entry_vr_b3}) catch _,_ -> false end
-              else
-                valid = try do BIC.Sol.verify(sol, %{hash: hash}) catch _,_ -> false end
-              end
+              valid = try do BIC.Sol.verify(sol, %{hash: hash, vr_b3: env.entry_vr_b3}) catch _,_ -> false end
               %{hash: hash, valid: valid}
             end
         end)
