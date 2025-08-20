@@ -40,6 +40,8 @@ defmodule Ama.MixProject do
       {:wasmer_ex, git: "https://github.com/amadeus-robot/wasmer_ex"},
 
       {:comsat, git: "https://github.com/vans163/ComSat.git"},
+      {:ex_stun, git: "https://github.com/elixir-webrtc/ex_stun.git"},
+
     ]
   end
 

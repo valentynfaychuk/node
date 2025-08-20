@@ -52,6 +52,15 @@ config :ama, :autoupdate, System.get_env("AUTOUPDATE") in ["true", "y", "yes"]
 config :ama, :computor_type, (case System.get_env("COMPUTOR") do nil -> nil; "trainer" -> :trainer; _ -> :default end)
 config :ama, :snapshot_height, (System.get_env("SNAPSHOT_HEIGHT") || "24875547") |> :erlang.binary_to_integer()
 
+pub_ipv4 = case System.get_env("PUBLIC_UDP_IPV4") do
+  nil -> STUN.get_my_public_ipv4()
+  ipv4 ->
+    :unicode.characters_to_list(ipv4)
+    |> :inet.parse_ipv4_address()
+    |> (case do {:ok, addr}-> addr end)
+end
+config :ama, :public_udp_ipv4, pub_ipv4
+
 Path.join(work_folder, "ex/")
 |> Path.join("**/*.ex")
 |> Path.wildcard()
