@@ -20,7 +20,8 @@ config :ama, :offline, (!!System.get_env("OFFLINE") || nil)
 config :ama, :http_ipv4, ((System.get_env("HTTP_IPV4") || "0.0.0.0") |> :unicode.characters_to_list() |> :inet.parse_ipv4_address() |> (case do {:ok, addr}-> addr end))
 config :ama, :http_port, (System.get_env("HTTP_PORT") || "80") |> :erlang.binary_to_integer()
 
-config :ama, :udp_ipv4_tuple, ((System.get_env("UDP_IPV4") || "0.0.0.0") |> :unicode.characters_to_list() |> :inet.parse_ipv4_address() |> (case do {:ok, addr}-> addr end))
+udp_ipv4_iface =  ((System.get_env("UDP_IPV4") || "0.0.0.0") |> :unicode.characters_to_list() |> :inet.parse_ipv4_address() |> (case do {:ok, addr}-> addr end))
+config :ama, :udp_ipv4_tuple, udp_ipv4_iface
 config :ama, :udp_port, 36969
 
 #Nodes
@@ -53,7 +54,7 @@ config :ama, :autoupdate, System.get_env("AUTOUPDATE") in ["true", "y", "yes"]
 config :ama, :computor_type, (case System.get_env("COMPUTOR") do nil -> nil; "trainer" -> :trainer; _ -> :default end)
 config :ama, :snapshot_height, (System.get_env("SNAPSHOT_HEIGHT") || "24875547") |> :erlang.binary_to_integer()
 
-pub_ipv4 = STUN.get_current_ip4()
+pub_ipv4 = STUN.get_current_ip4(udp_ipv4_iface)
 config :ama, :public_udp_ipv4, pub_ipv4
 config :ama, :anr, NodeANR.build(sk, pk, pub_ipv4, version)
 config :ama, :max_peers, (System.get_env("MAX_PEERS") || "300") |> :erlang.binary_to_integer()

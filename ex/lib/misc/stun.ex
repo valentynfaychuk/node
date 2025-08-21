@@ -3,8 +3,9 @@ defmodule STUN do
   alias ExSTUN.Message.Type
   alias ExSTUN.Message.Attribute.XORMappedAddress
 
-  def get_my_public_ipv4() do
-    {:ok, socket} = :gen_udp.open(0, [{:active, false}, :binary])
+  def get_my_public_ipv4(iface \\ nil) do
+    iface = if !iface do Application.fetch_env!(:ama, :udp_ipv4_tuple) else iface end
+    {:ok, socket} = :gen_udp.open(0, [{:ifaddr, iface}, {:active, false}, :binary])
 
     req =
       %Type{class: :request, method: :binding}
@@ -19,24 +20,26 @@ defmodule STUN do
     "#{ip1}.#{ip2}.#{ip3}.#{ip4}"
   end
 
-  def get_my_public_ipv4_http() do
+  def get_my_public_ipv4_http(iface \\ nil) do
     url = "http://api.myip.la/en?json"
-    {:ok, %{status_code: 200, body: body}} = :comsat_http.get(url, %{}, %{timeout: 6000})
+
+    iface = if !iface do Application.fetch_env!(:ama, :udp_ipv4_tuple) else iface end
+    {:ok, %{status_code: 200, body: body}} = :comsat_http.get(url, %{}, %{timeout: 6000, inet_options: [{:ifaddr, iface}]})
     JSX.decode!(body, labels: :atom).ip
   end
 
-  def get_current_ip4() do
+  def get_current_ip4(iface \\ nil) do
     pub_ipv4 = case System.get_env("PUBLIC_UDP_IPV4") do
-      nil -> get_current_ip4_2()
+      nil -> get_current_ip4_2(iface)
       ipv4 -> ipv4
     end
   end
-  defp get_current_ip4_2() do
+  defp get_current_ip4_2(iface) do
     IO.puts "trying to get ip4 via STUN.."
-    ip4 = try do get_my_public_ipv4() catch _,_ -> nil end
+    ip4 = try do get_my_public_ipv4(iface) catch _,_ -> nil end
     if ip4 do ip4 else
       IO.puts "trying to get ip4 via HTTP.."
-      ip4 = try do get_my_public_ipv4_http() catch _,_ -> nil end
+      ip4 = try do get_my_public_ipv4_http(iface) catch _,_ -> nil end
       if ip4 do ip4 else
         IO.put "failed to find your nodes public ip. Hardcode it via PUBLIC_UDP_IPV4="
       end
