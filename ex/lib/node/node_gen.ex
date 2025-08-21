@@ -7,7 +7,8 @@ defmodule NodeGen do
 
   def init([ip_tuple, _port]) do
     ip = Tuple.to_list(ip_tuple) |> Enum.join(".")
-    NodePeers.seed(ip)
+    NodeANR.seed()
+    #NodePeers.seed(ip)
 
     state = %{
       ns: NodeState.init()
@@ -15,6 +16,7 @@ defmodule NodeGen do
 
     :erlang.send_after(1000, self(), :tick)
     :erlang.send_after(1000, self(), :tick_ping)
+    :erlang.send_after(1000, self(), :tick_anr)
     {:ok, state}
   end
 
@@ -33,6 +35,21 @@ defmodule NodeGen do
       msg = NodeProto.ping()
       ips = NodePeers.all() |> Enum.map(& &1.ip)
       send(get_socket_gen(), {:send_to_some, ips, NodeProto.compress(msg)})
+    end)
+  end
+
+  def broadcast_check_anr(state) do
+    my_pk = Application.fetch_env!(:ama, :trainer_pk)
+    NodeANR.get_random_unverified(3)
+    |> Enum.filter(& elem(&1,0) != my_pk)
+    |> Enum.reduce(state, fn({pk, ip}, state)->
+      IO.inspect {:anr_check, ip}
+      challenge = :os.system_time(1)
+      :erlang.spawn(fn()->
+        msg = NodeProto.new_phone_who_dis(challenge)
+        send(get_socket_gen(), {:send_to_some, [ip], NodeProto.compress(msg)})
+      end)
+      put_in(state, [:ns, :challenges, pk], challenge)
     end)
   end
 
@@ -81,20 +98,28 @@ defmodule NodeGen do
   end
 
   def handle_info(msg, state) do
-    case msg do
+    state = case msg do
 
       :tick ->
         :erlang.send_after(1000, self(), :tick)
         tick()
+        state
 
       :tick_ping ->
         :erlang.send_after(500, self(), :tick_ping)
         broadcast_ping()
+        state
+
+      :tick_anr ->
+        :erlang.send_after(1000, self(), :tick_anr)
+        state = broadcast_check_anr(state)
+        state
 
       {:handle_sync, op, innerstate, args} ->
         #TODO: ns dropped
         innerstate = Map.put(innerstate, :ns, state.ns)
-        NodeState.handle(op, innerstate, args)
+        innerstate = NodeState.handle(op, innerstate, args)
+        Map.put(state, :ns, innerstate)
 
     end
     {:noreply, state}

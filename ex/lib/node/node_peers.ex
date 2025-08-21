@@ -1,10 +1,52 @@
 defmodule NodePeers do
+  def clear_stale() do
+    ts_m = :os.system_time(1000)
+
+    validators = Consensus.trainers_for_height(Consensus.chain_height()+1)
+    validator_anr_ips = NodeANR.by_pks_ip(validators)
+    validators_map = validators |> Enum.into(%{}, & {&1,true})
+
+    handshaked_ips = NodeANR.handshaked_pk_ip4() |> Enum.map(& elem(&1,1))
+
+    {cur_ips, cur_val_ips} = :ets.foldl(fn({key, v}, {acc, acc_vals})->
+      lp = v[:last_msg]
+      cond do
+        !lp -> :ets.insert(NODEPeers, {key, Map.put(v, :last_msg, ts_m)})
+        ts_m > lp + (1_000*60) -> :ets.delete(NODEPeers, key)
+        true -> nil
+      end
+      if validators_map[v[:pk]] do
+        {acc, acc_vals ++ [key]}
+      else
+        {acc ++ [key], acc_vals}
+      end
+    end, {[], []}, NODEPeers)
+
+    missing_vals = validator_anr_ips -- cur_val_ips
+    missing_ips = handshaked_ips -- cur_ips
+
+    max_peers = Application.fetch_env!(:ama, :max_peers)
+    add_size = max_peers - :ets.info(NODEPeers, :size) - length(cur_val_ips) - length(missing_vals)
+
+    missing_ips = Enum.take(Enum.shuffle(missing_ips), add_size)
+
+    Enum.each(missing_vals ++ missing_ips, fn(ip)->
+      :ets.insert(NODEPeers, {ip, %{ip: ip}})
+    end)
+  end
+
   def seed(my_ip) do
     seeds = Application.fetch_env!(:ama, :seednodes)
     nodes = Application.fetch_env!(:ama, :othernodes)
     filtered = Enum.uniq(seeds ++ nodes) -- [my_ip]
     Enum.each(filtered, fn(ip)->
       :ets.insert(NODEPeers, {ip, %{ip: ip, static: true}})
+    end)
+
+    validators = Consensus.trainers_for_height(Consensus.chain_height()+1)
+    validators = NodeANR.by_pks_ip(validators)
+    Enum.each(validators, fn(ip)->
+      :ets.insert(NODEPeers, {ip, %{ip: ip}})
     end)
   end
 
@@ -16,20 +58,6 @@ defmodule NodePeers do
         Enum.shuffle(peers)
         |> Enum.take(no)
     end
-  end
-
-  def clear_stale() do
-    ts_m = :os.system_time(1000)
-    :ets.foldl(fn({key, v}, acc)->
-      lp = v[:last_msg]
-      #60 minutes
-      if !v[:static] and !!lp and ts_m > lp+(1_000*60*60) do
-        acc ++ [key]
-      else
-        acc
-      end
-    end, [], NODEPeers)
-    |> Enum.each(& :ets.delete(NODEPeers, &1))
   end
 
   def all() do
@@ -91,7 +119,7 @@ defmodule NodePeers do
     cond do
       !peer[:pk] -> false
       Application.fetch_env!(:ama, :trainer_pk) == peer.pk -> true
-      !!lp and ts_m - lp <= 3_000 -> true
+      !!lp and ts_m - lp <= 6_000 -> true
       true -> false
     end
   end
@@ -107,6 +135,10 @@ defmodule NodePeers do
   def by_ip(ip) do
     :ets.select(NODEPeers, [{{ip, :"$1"}, [], [:"$1"]}])
     |> List.first()
+  end
+
+  def ips_by_pk(pk) do
+    :ets.select(NODEPeers, [{{:"$1", %{pk: pk}}, [], [:"$1"]}])
   end
 
   def by_pk(pk) do

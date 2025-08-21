@@ -58,26 +58,36 @@ defmodule NodeGenSocketGen do
     case msg do
       {:udp, _socket, ip, _inportno, data} ->
         #IO.puts IO.ANSI.red() <> inspect({:relay_from, ip, msg.op}) <> IO.ANSI.reset()
-
         :erlang.spawn(fn()->
           try do
           case NodeProto.unpack_message_v2(data) do
             %{error: :signature, shard_total: 1, pk: pk, version: version, signature: signature, payload: payload} ->
               if !BlsEx.verify?(pk, signature, Blake3.hash(pk<>payload), BLS12AggSig.dst_node()), do: throw(%{error: :invalid_signature})
+
               msg = payload
               |> NodeProto.deflate_decompress()
               |> :erlang.binary_to_term([:safe])
+
               peer_ip = Tuple.to_list(ip) |> Enum.join(".")
               peer = %{ip: peer_ip, signer: pk, version: version}
-              NodeState.handle(msg.op, %{peer: peer}, msg)
+
+              hasPermissionSlip = NodeANR.handshaked_and_valid_ip4(pk, peer_ip)
+              cond do
+                hasPermissionSlip -> NodeState.handle(msg.op, %{peer: peer}, msg)
+                msg.op in [:ping, :new_phone_who_dis, :what?] -> NodeState.handle(msg.op, %{peer: peer}, msg)
+                true -> nil
+              end
 
             %{error: :signature, pk: pk, signature: signature, ts_nano: ts_nano, shard_index: shard_index, shard_total: shard_total,
               version: version, original_size: original_size, payload: payload}
             ->
               peer_ip = Tuple.to_list(ip) |> Enum.join(".")
 
-              gen = NodeGen.get_reassembly_gen(pk, ts_nano)
-              send(gen, {:add_shard, {pk, ts_nano, shard_total}, {peer_ip, version, nil, signature, shard_index, original_size}, payload})
+              hasPermissionSlip = NodeANR.handshaked_and_valid_ip4(pk, peer_ip)
+              if hasPermissionSlip do
+                gen = NodeGen.get_reassembly_gen(pk, ts_nano)
+                send(gen, {:add_shard, {pk, ts_nano, shard_total}, {peer_ip, version, nil, signature, shard_index, original_size}, payload})
+              end
 
             %{error: :encrypted, shard_total: 1, pk: pk, version: version, ts_nano: ts_nano, payload: payload} ->
               shared_secret = NodePeers.get_shared_secret(pk)
@@ -92,20 +102,32 @@ defmodule NodeGenSocketGen do
 
               peer_ip = Tuple.to_list(ip) |> Enum.join(".")
               peer = %{ip: peer_ip, signer: pk, version: version}
-              NodeState.handle(msg.op, %{peer: peer}, msg)
+
+              hasPermissionSlip = NodeANR.handshaked_and_valid_ip4(pk, peer_ip)
+              cond do
+                hasPermissionSlip -> NodeState.handle(msg.op, %{peer: peer}, msg)
+                msg.op in [:ping, :new_phone_who_dis, :what?] -> NodeState.handle(msg.op, %{peer: peer}, msg)
+                true -> nil
+              end
+
 
             %{error: :encrypted, pk: pk, ts_nano: ts_nano, shard_index: shard_index, shard_total: shard_total,
               version: version, original_size: original_size, payload: payload} ->
-              shared_secret = NodePeers.get_shared_secret(pk)
-
               peer_ip = Tuple.to_list(ip) |> Enum.join(".")
-              gen = NodeGen.get_reassembly_gen(pk, ts_nano)
-              send(gen, {:add_shard, {pk, ts_nano, shard_total}, {peer_ip, version, shared_secret, nil, shard_index, original_size}, payload})
 
-            _ -> nil
+              hasPermissionSlip = NodeANR.handshaked_and_valid_ip4(pk, peer_ip)
+              if hasPermissionSlip do
+                shared_secret = NodePeers.get_shared_secret(pk)
+
+                gen = NodeGen.get_reassembly_gen(pk, ts_nano)
+                send(gen, {:add_shard, {pk, ts_nano, shard_total}, {peer_ip, version, shared_secret, nil, shard_index, original_size}, payload})
+              end
+
+            _data ->
+              nil
           end
           catch
-            _,_ -> nil
+            _e, _r -> nil
           end
         end)
 

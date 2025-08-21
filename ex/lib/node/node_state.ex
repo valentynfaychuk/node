@@ -3,7 +3,44 @@ defmodule NodeState do
 
   def init() do
     %{
+      challenges: %{},
     }
+  end
+
+  #TODO: anti local compute dos here
+  def handle(:new_phone_who_dis, istate, term) do
+    anr = NodeANR.verify_and_unpack(term.anr)
+    if !!anr and is_integer(term.challenge) and istate.peer.ip == anr.ip4 do
+      sk = Application.fetch_env!(:ama, :trainer_sk)
+      pk = Application.fetch_env!(:ama, :trainer_pk)
+      sig = BlsEx.sign!(sk, <<pk::binary, :erlang.integer_to_binary(term.challenge)::binary>>, BLS12AggSig.dst_anr_challenge())
+      send(NodeGen.get_socket_gen(), {:send_to_some, [istate.peer.ip], compress(NodeProto.what?(term.challenge, sig))})
+      send(NodeGen, {:handle_sync, :new_phone_who_dis_ns, istate, %{anr: anr}})
+    end
+  end
+  def handle(:new_phone_who_dis_ns, istate, term) do
+    NodeANR.insert(term.anr)
+    istate.ns
+  end
+
+  def handle(:what?, istate, term) do
+    anr = NodeANR.verify_and_unpack(term.anr)
+
+    #signed within 6 seconds
+    ts = :os.system_time(1)
+    delta = abs(ts - term.challenge)
+
+    if !!anr and istate.peer.ip == anr.ip4 and delta <= 6 do
+      challenge_bin = :erlang.integer_to_binary(term.challenge)
+      if BlsEx.verify?(anr.pk, term.signature, <<anr.pk::binary, challenge_bin::binary>>, BLS12AggSig.dst_anr_challenge()) do
+        send(NodeGen, {:handle_sync, :'what?_ns', istate, %{pk: anr.pk, anr: anr}})
+      end
+    end
+  end
+  def handle(:'what?_ns', istate, term) do
+    NodeANR.insert(term.anr)
+    NodeANR.set_handshaked(term.anr.pk)
+    istate.ns
   end
 
   def handle(:ping, istate, term) do
@@ -13,15 +50,15 @@ defmodule NodeState do
       %{error: :ok, hash: hasht} = Entry.validate_signature(temporal.header, temporal.signature, temporal.header_unpacked.signer, temporal[:mask])
       %{error: :ok, hash: hashr} = Entry.validate_signature(rooted.header, rooted.signature, rooted.header_unpacked.signer, rooted[:mask])
 
+      hasPermissionSlip = NodeANR.handshaked_and_valid_ip4(istate.peer.signer, istate.peer.ip)
       :erlang.spawn(fn()->
-        #txs_packed = TXPool.random()
-        #txs_packed && send(NodeGen.get_socket_gen(), {:send_to_some, [istate.peer.ip], compress(NodeProto.txpool(txs_packed))})
-
-        rng_peers = NodePeers.random(6) |> Enum.map(& &1.ip)
-        if rng_peers != [], do: send(NodeGen.get_socket_gen(), {:send_to_some, [istate.peer.ip], compress(NodeProto.peers(rng_peers))})
+        if hasPermissionSlip do
+          anrs = NodeANR.get_random_verified(3)
+          if anrs != [], do: send(NodeGen.get_socket_gen(), {:send_to_some, [istate.peer.ip], compress(NodeProto.peers_v2(anrs))})
+        end
       end)
 
-      term = %{temporal: Map.put(temporal, :hash, hasht), rooted: Map.put(rooted, :hash, hashr), ts_m: term.ts_m}
+      term = %{temporal: Map.put(temporal, :hash, hasht), rooted: Map.put(rooted, :hash, hashr), ts_m: term.ts_m, hasPermissionSlip: hasPermissionSlip}
       send(NodeGen, {:handle_sync, :ping_ns, istate, term})
     catch
       e,{:badmatch, %{error: :wrong_epoch}} -> nil
@@ -30,23 +67,26 @@ defmodule NodeState do
   end
   def handle(:ping_ns, istate, term) do
     peer_ip = istate.peer.ip
-    peer = :ets.lookup_element(NODEPeers, peer_ip, 2, %{})
-    peer = Map.merge(peer, %{
-        ip: peer_ip,
-        pk: istate.peer.signer, version: istate.peer.version,
-        last_ping: :os.system_time(1000),
-        last_msg: :os.system_time(1000),
-        temporal: term.temporal, rooted: term.rooted,
-    })
 
-    peer = if !!peer[:shared_secret] do peer else
-      shared_key = BlsEx.get_shared_secret!(istate.peer.signer, Application.fetch_env!(:ama, :trainer_sk))
-      Map.put(peer, :shared_secret, shared_key)
+    if term.hasPermissionSlip or (istate.peer.signer in Consensus.trainers_for_height(Consensus.chain_height())) do
+      peer = :ets.lookup_element(NODEPeers, peer_ip, 2, %{})
+      peer = Map.merge(peer, %{
+          ip: peer_ip,
+          pk: istate.peer.signer, version: istate.peer.version,
+          last_ping: :os.system_time(1000),
+          last_msg: :os.system_time(1000),
+          temporal: term.temporal, rooted: term.rooted,
+      })
+
+      peer = if !!peer[:shared_secret] do peer else
+        shared_key = BlsEx.get_shared_secret!(istate.peer.signer, Application.fetch_env!(:ama, :trainer_sk))
+        Map.put(peer, :shared_secret, shared_key)
+      end
+
+      :ets.insert(NODEPeers, {peer_ip, peer})
+
+      :erlang.spawn(fn()-> send(NodeGen.get_socket_gen(), {:send_to_some, [peer_ip], compress(NodeProto.pong(term.ts_m))}) end)
     end
-
-    :ets.insert(NODEPeers, {peer_ip, peer})
-
-    :erlang.spawn(fn()-> send(NodeGen.get_socket_gen(), {:send_to_some, [peer_ip], compress(NodeProto.pong(term.ts_m))}) end)
 
     istate.ns
   end
@@ -73,14 +113,15 @@ defmodule NodeState do
     TXPool.insert(good)
   end
 
-  def handle(:peers, istate, term) do
-    send(NodeGen, {:handle_sync, :peers_ns, istate, term})
+  def handle(:peers_v2, istate, term) do
+    anrs = Enum.map(term.anrs, & NodeANR.verify_and_unpack(&1))
+    |> Enum.filter(& &1)
+    term = %{anrs: anrs}
+    send(NodeGen, {:handle_sync, :peers_v2_ns, istate, term})
   end
-  def handle(:peers_ns, istate, term) do
-    Enum.each(term.ips, fn(peer_ip)->
-      peer = :ets.lookup_element(NODEPeers, peer_ip, 2, %{})
-      peer = Map.merge(peer, %{ip: peer_ip})
-      :ets.insert(NODEPeers, {peer_ip, peer})
+  def handle(:peers_v2_ns, istate, term) do
+    Enum.each(term.anrs, fn(anr)->
+      NodeANR.insert(anr)
     end)
     istate.ns
   end
@@ -93,10 +134,7 @@ defmodule NodeState do
       sol.epoch != Consensus.chain_epoch() ->
         #IO.inspect {:broadcasted_sol_invalid_epoch, sol.epoch, Consensus.chain_epoch()}
         nil
-      sol.epoch < 260 and !BIC.Sol.verify(term.sol) ->
-        IO.inspect {:peer_sent_invalid_sol, :TODO_block_malicious_peer}
-        nil
-      sol.epoch >= 260 and !BIC.Sol.verify(term.sol, %{vr_b3: :crypto.strong_rand_bytes(32)}) ->
+      !BIC.Sol.verify(term.sol, %{vr_b3: :crypto.strong_rand_bytes(32)}) ->
         IO.inspect {:peer_sent_invalid_sol, :TODO_block_malicious_peer}
         nil
       !BlsEx.verify?(sol.pk, sol.pop, sol.pk, BLS12AggSig.dst_pop()) ->
