@@ -7,6 +7,8 @@ defmodule BLS12AggSig do
     @dst_tx "AMADEUS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_TX_"
     @dst_motion "AMADEUS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_MOTION_"
     @dst_node "AMADEUS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_NODE_"
+    @dst_anr "AMADEUS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_ANR_"
+    @dst_anr_challenge "AMADEUS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_ANRCHALLENGE_"
 
     def dst(), do: @dst
     def dst_pop(), do: @dst_pop
@@ -16,6 +18,8 @@ defmodule BLS12AggSig do
     def dst_tx(), do: @dst_tx
     def dst_motion(), do: @dst_motion
     def dst_node(), do: @dst_node
+    def dst_anr(), do: @dst_anr
+    def dst_anr_challenge(), do: @dst_anr_challenge
 
     def new(trainers, pk, signature) do
         index_of_trainer = Util.index_of(trainers, pk)

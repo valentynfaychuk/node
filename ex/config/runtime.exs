@@ -1,6 +1,7 @@
 import Config
 
-[v1,v2,v3] = Application.fetch_env!(:ama, :version)
+version = Application.fetch_env!(:ama, :version)
+[v1,v2,v3] = version
 |> String.trim("v")
 |> String.split(".")
 config :ama, :version_3b, <<:erlang.binary_to_integer(v1),:erlang.binary_to_integer(v2),:erlang.binary_to_integer(v3)>>
@@ -52,14 +53,10 @@ config :ama, :autoupdate, System.get_env("AUTOUPDATE") in ["true", "y", "yes"]
 config :ama, :computor_type, (case System.get_env("COMPUTOR") do nil -> nil; "trainer" -> :trainer; _ -> :default end)
 config :ama, :snapshot_height, (System.get_env("SNAPSHOT_HEIGHT") || "24875547") |> :erlang.binary_to_integer()
 
-pub_ipv4 = case System.get_env("PUBLIC_UDP_IPV4") do
-  nil -> STUN.get_my_public_ipv4()
-  ipv4 ->
-    :unicode.characters_to_list(ipv4)
-    |> :inet.parse_ipv4_address()
-    |> (case do {:ok, addr}-> addr end)
-end
+pub_ipv4 = STUN.get_current_ip4()
 config :ama, :public_udp_ipv4, pub_ipv4
+config :ama, :anr, NodeANR.build(sk, pk, pub_ipv4, version)
+config :ama, :max_peers, (System.get_env("MAX_PEERS") || "300") |> :erlang.binary_to_integer()
 
 Path.join(work_folder, "ex/")
 |> Path.join("**/*.ex")

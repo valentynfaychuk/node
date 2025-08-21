@@ -29,6 +29,13 @@ defmodule Ama do
     IO.puts "Initing TXPool.."
     TXPool.init()
 
+    MnesiaKV.load(
+      %{
+        NODEANR => %{index: [:handshaked, :ip4]},
+      },
+      %{path: Path.join([Application.fetch_env!(:ama, :work_folder), "local_kv/"])}
+    )
+
     if !Application.fetch_env!(:ama, :offline) do
       rooted_tip_height = Fabric.rooted_tip_height()
       if rooted_tip_height == nil or rooted_tip_height < Application.fetch_env!(:ama, :snapshot_height) do
