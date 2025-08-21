@@ -14,6 +14,22 @@ podman build --tag erlang_builder -f build.Dockerfile
 ### AutoUpdates + Running as a systemd service
 
 ```
+cat <<EOT > /etc/sysctl.conf
+#buff up the UDP stack for 1gbps
+net.core.wmem_max = 268435456
+net.core.rmem_default = 212992
+net.core.rmem_max = 268435456
+net.core.netdev_max_backlog = 300000
+net.core.optmem_max = 16777216
+net.ipv4.udp_mem = 3060432 4080578 6120864
+
+# for normal networks: block spoofed UDP packets
+net.ipv4.conf.all.rp_filter=1
+net.ipv4.conf.default.rp_filter=1
+EOT
+```
+
+```
 cat <<EOT > /etc/systemd/system.conf
 [Manager]
 DefaultTasksMax=infinity
