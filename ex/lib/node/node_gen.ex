@@ -49,7 +49,6 @@ defmodule NodeGen do
         msg = NodeProto.new_phone_who_dis(challenge)
         send(get_socket_gen(), {:send_to_some, [ip], NodeProto.compress(msg)})
       end)
-      put_in(state, [:ns, :challenges, pk], challenge)
     end)
   end
 
