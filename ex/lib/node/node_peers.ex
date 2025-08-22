@@ -9,10 +9,8 @@ defmodule NodePeers do
     handshaked_ips = NodeANR.handshaked_pk_ip4() |> Enum.map(& elem(&1,1))
 
     {cur_ips, cur_val_ips} = :ets.foldl(fn({key, v}, {acc, acc_vals})->
-      lp = v[:last_msg]
       cond do
-        !lp -> :ets.insert(NODEPeers, {key, Map.put(v, :last_msg, ts_m)})
-        ts_m > lp + (1_000*60) -> :ets.delete(NODEPeers, key)
+        ts_m > (v.last_msg + (1_000*60)) -> :ets.delete(NODEPeers, key)
         true -> nil
       end
       if validators_map[v[:pk]] do
@@ -26,28 +24,31 @@ defmodule NodePeers do
     missing_ips = handshaked_ips -- cur_ips
 
     max_peers = Application.fetch_env!(:ama, :max_peers)
-    add_size = max_peers - :ets.info(NODEPeers, :size) - length(cur_val_ips) - length(missing_vals)
+    add_size = max_peers - size() - length(cur_val_ips) - length(missing_vals)
 
     missing_ips = Enum.take(Enum.shuffle(missing_ips), add_size)
 
     Enum.each(missing_vals ++ missing_ips, fn(ip)->
-      :ets.insert(NODEPeers, {ip, %{ip: ip}})
+      insert_new_peer(%{ip: ip})
     end)
   end
 
-  def seed(my_ip) do
-    seeds = Application.fetch_env!(:ama, :seednodes)
-    nodes = Application.fetch_env!(:ama, :othernodes)
-    filtered = Enum.uniq(seeds ++ nodes) -- [my_ip]
-    Enum.each(filtered, fn(ip)->
-      :ets.insert(NODEPeers, {ip, %{ip: ip, static: true}})
-    end)
+  def insert_new_peer(peer) do
+    true = !!peer.ip
+    peer = if !peer[:last_msg] do Map.put(peer, :last_msg, :os.system_time(1000)) else peer end
+    :ets.insert_new(NODEPeers, {peer.ip, peer})
+  end
 
+  def seed(my_ip) do
     validators = Consensus.trainers_for_height(Consensus.chain_height()+1)
-    validators = NodeANR.by_pks_ip(validators)
+    validators = NodeANR.by_pks_ip(validators) -- [my_ip]
     Enum.each(validators, fn(ip)->
-      :ets.insert(NODEPeers, {ip, %{ip: ip}})
+      insert_new_peer(%{ip: ip})
     end)
+  end
+
+  def size() do
+    :ets.info(NODEPeers, :size)
   end
 
   def random(no) do
@@ -69,9 +70,8 @@ defmodule NodePeers do
     height = if !height do Consensus.chain_height() else height end
     pks = Consensus.trainers_for_height(height+1)
 
-    match_spec = Enum.map(pks, fn(pk)-> {{:"$1", %{pk: pk}}, [], [:"$1"]} end)
+    match_spec = Enum.map(pks, fn(pk)-> {{:_, %{pk: pk}}, [], [{:element, 2, :"$_"}]} end)
     :ets.select(NODEPeers, match_spec)
-    |> Enum.map(&(:ets.lookup_element(NODEPeers, &1, 2, nil)))
   end
 
   def summary() do
@@ -118,8 +118,9 @@ defmodule NodePeers do
     lp = peer[:last_ping]
     cond do
       !peer[:pk] -> false
+      !lp -> false
       Application.fetch_env!(:ama, :trainer_pk) == peer.pk -> true
-      !!lp and ts_m - lp <= 6_000 -> true
+      (ts_m - lp) <= 6_000 -> true
       true -> false
     end
   end
@@ -142,15 +143,13 @@ defmodule NodePeers do
   end
 
   def by_pk(pk) do
-    ip = :ets.select(NODEPeers, [{{:"$1", %{pk: pk}}, [], [:"$1"]}])
+    ip = :ets.select(NODEPeers, [{{:_, %{pk: pk}}, [], [{:element, 2, :"$_"}]}])
     |> List.first()
-    :ets.lookup_element(NODEPeers, ip, 2, nil)
   end
 
   def by_pks(pks) do
-    match_spec = Enum.map(pks, fn(pk)-> {{:"$1", %{pk: pk}}, [], [:"$1"]} end)
+    match_spec = Enum.map(pks, fn(pk)-> {{:_, %{pk: pk}}, [], [{:element, 2, :"$_"}]} end)
     :ets.select(NODEPeers, match_spec)
-    |> Enum.map(&(:ets.lookup_element(NODEPeers, &1, 2, nil)))
   end
 
   def for_height(height) do
