@@ -43,11 +43,12 @@ if !File.exists?(path) do
 end
 sk = File.read!(path) |> String.trim() |> Base58.decode()
 pk = BlsEx.get_public_key!(sk)
+pop = BlsEx.sign!(sk, pk, BLS12AggSig.dst_pop())
 
 config :ama, :trainer_pk_b58, pk |> Base58.encode()
 config :ama, :trainer_pk, pk
 config :ama, :trainer_sk, sk
-config :ama, :trainer_pop, BlsEx.sign!(sk, pk, BLS12AggSig.dst_pop())
+config :ama, :trainer_pop, pop
 
 config :ama, :archival_node, System.get_env("ARCHIVALNODE") in ["true", "y", "yes"]
 config :ama, :autoupdate, System.get_env("AUTOUPDATE") in ["true", "y", "yes"]
@@ -56,7 +57,7 @@ config :ama, :snapshot_height, (System.get_env("SNAPSHOT_HEIGHT") || "24875547")
 
 pub_ipv4 = (System.get_env("PUBLIC_UDP_IPV4") || STUN.get_current_ip4(udp_ipv4_iface))
 config :ama, :public_udp_ipv4, pub_ipv4
-config :ama, :anr, NodeANR.build(sk, pk, pub_ipv4, version)
+config :ama, :anr, NodeANR.build(sk, pk, pop, pub_ipv4, version)
 config :ama, :max_peers, (System.get_env("MAX_PEERS") || "300") |> :erlang.binary_to_integer()
 
 Path.join(work_folder, "ex/")

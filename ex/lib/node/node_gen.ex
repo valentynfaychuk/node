@@ -8,7 +8,7 @@ defmodule NodeGen do
   def init([ip_tuple, _port]) do
     ip = Tuple.to_list(ip_tuple) |> Enum.join(".")
     NodeANR.seed()
-    #NodePeers.seed(ip)
+    NodePeers.seed(ip)
 
     state = %{
       ns: NodeState.init()
@@ -38,12 +38,12 @@ defmodule NodeGen do
     end)
   end
 
-  def broadcast_check_anr(state) do
+  def broadcast_check_anr() do
     my_pk = Application.fetch_env!(:ama, :trainer_pk)
     NodeANR.get_random_unverified(3)
     |> Enum.filter(& elem(&1,0) != my_pk)
-    |> Enum.reduce(state, fn({pk, ip}, state)->
-      IO.inspect {:anr_check, ip}
+    |> Enum.each(fn({pk, ip})->
+      IO.inspect {:anr_request_to, ip}
       challenge = :os.system_time(1)
       :erlang.spawn(fn()->
         msg = NodeProto.new_phone_who_dis(challenge)
@@ -111,7 +111,7 @@ defmodule NodeGen do
 
       :tick_anr ->
         :erlang.send_after(1000, self(), :tick_anr)
-        state = broadcast_check_anr(state)
+        broadcast_check_anr()
         state
 
       {:handle_sync, op, innerstate, args} ->

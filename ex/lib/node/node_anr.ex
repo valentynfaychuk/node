@@ -3,8 +3,10 @@ defmodule NodeANR do
   AMA Node Record
   """
 
-  @keys [:ip4, :pk, :port, :signature, :ts, :version]
-  @keys_for_signature [:ip4, :pk, :port, :ts, :version]
+  @keys [:ip4, :pk, :pop, :port, :signature, :ts, :version]
+  @keys_for_signature @keys -- [:signature]
+
+  def keys(), do: @keys
 
   def seed() do
     Application.fetch_env!(:ama, :seedanrs)
@@ -18,15 +20,17 @@ defmodule NodeANR do
   def build() do
     sk = Application.fetch_env!(:ama, :trainer_sk)
     pk = Application.fetch_env!(:ama, :trainer_pk)
+    pop = Application.fetch_env!(:ama, :trainer_pop)
     ver = Application.fetch_env!(:ama, :version)
-    build(sk, pk, STUN.get_current_ip4(), ver)
+    build(sk, pk, pop, STUN.get_current_ip4(), ver)
   end
 
   #TODO: Later change this to erlang term
-  def build(sk, pk, ip4, ver) do
+  def build(sk, pk, pop, ip4, ver) do
     anr = %{
       ip4: ip4,
       pk: pk,
+      pop: pop,
       port: 36969,
       ts: :os.system_time(1),
       version: ver
@@ -50,6 +54,7 @@ defmodule NodeANR do
     signed = Map.take(anr, @keys_for_signature)
     |> :erlang.term_to_binary([:deterministic])
     BlsEx.verify?(anr.pk, anr.signature, signed, BLS12AggSig.dst_anr())
+    and BlsEx.verify?(anr.pk, anr.pop, anr.pk, BLS12AggSig.dst_pop())
   end
 
   def verify_and_unpack(anr) do
@@ -72,7 +77,7 @@ defmodule NodeANR do
   end
 
   def insert(anr) do
-    anr = Map.put(anr, :pop, API.Epoch.get_pop(anr.pk))
+    anr = Map.put(anr, :hasChainPop, !!Consensus.chain_pop(anr.pk))
     old_anr = MnesiaKV.get(NODEANR, anr.pk)
     if !old_anr do
       anr = Map.put(anr, :handshaked, false)
@@ -134,8 +139,18 @@ defmodule NodeANR do
     end
   end
 
+  def by_pk(pk) do
+    MnesiaKV.get(NODEANR, pk)
+  end
+
   def all() do
     MnesiaKV.get(NODEANR)
+  end
+
+  def all_validators() do
+    validators = Consensus.trainers_for_height(Consensus.chain_height()+1)
+    match_spec = Enum.map(validators, fn(pk)-> {{pk, :_}, [], [{:element, 2, :"$_"}]} end)
+    :ets.select(NODEANR, match_spec)
   end
 
   def get_random_verified(cnt \\ 3) do
