@@ -81,4 +81,37 @@ defmodule API.Peer do
     def version_ratio_score_by_target(target_ver) do
       version_ratio() |> Enum.filter(& elem(&1,0) >= target_ver) |> Enum.sum_by(& elem(&1,1))
     end
+
+    def anr_all_validators() do
+      NodeANR.all_validators()
+      |> anr_for_web()
+    end
+
+    #TODO: paginate?
+    def anr_all() do
+      Enum.shuffle(NodeANR.all())
+      |> Enum.take(100)
+      |> anr_for_web()
+    end
+
+    def anr_by_pk(pk) do
+      pk = if byte_size(pk) != 48, do: Base58.decode(pk), else: pk
+      NodeANR.by_pk(pk)
+      |> anr_for_web()
+    end
+
+    def anr_for_web(anrs) when is_list(anrs) do Enum.map(anrs, & anr_for_web(&1)) end
+    def anr_for_web(anr) do
+      %{
+        pk: Base58.encode(anr.pk),
+        pop: Base58.encode(anr.pop),
+        signature: Base58.encode(anr.signature),
+        ip4: anr.ip4,
+        port: anr.port,
+        handshaked: anr.handshaked,
+        isChainPop: !!anr[:isChainPop],
+        version: anr.version,
+        ts: anr.ts,
+      }
+    end
 end

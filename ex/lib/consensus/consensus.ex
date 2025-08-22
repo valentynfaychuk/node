@@ -112,6 +112,11 @@ defmodule Consensus do
         div(chain_height(), 100_000)
     end
 
+    def chain_pop(pk) do
+      %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+      RocksDB.get("bic:epoch:pop:#{pk}", %{db: db, cf: cf.contractstate})
+    end
+
     def chain_nonce(pk) do
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
         RocksDB.get("bic:base:nonce:#{pk}", %{db: db, cf: cf.contractstate, to_integer: true})

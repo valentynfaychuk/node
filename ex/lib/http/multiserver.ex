@@ -75,34 +75,42 @@ defmodule Ama.MultiServer do
             r.method == "GET" and r.path == "/favicon.ico" ->
                 quick_reply(state, "")
 
+            r.method == "GET" and String.starts_with?(r.path, "/api/peer/anr/") ->
+                pk = String.replace(r.path, "/api/peer/anr/", "")
+                anr = API.Peer.anr_by_pk(pk)
+                quick_reply(state, %{error: :ok, anr: anr})
+            r.method == "GET" and String.starts_with?(r.path, "/api/peer/anr_validators") ->
+                anrs = API.Peer.anr_all_validators()
+                quick_reply(state, %{error: :ok, anrs: anrs})
+            r.method == "GET" and String.starts_with?(r.path, "/api/peer/anr") ->
+                anrs = API.Peer.anr_all()
+                quick_reply(state, %{error: :ok, anrs: anrs})
             r.method == "GET" and String.starts_with?(r.path, "/api/peer/nodes") ->
                 nodes = API.Peer.all_for_web()
                 quick_reply(state, %{error: :ok, nodes: nodes})
-
             r.method == "GET" and String.starts_with?(r.path, "/api/peer/trainers") ->
                 trainers = API.Peer.all_trainers()
                 quick_reply(state, %{error: :ok, trainers: trainers})
-
             r.method == "GET" and String.starts_with?(r.path, "/api/peer/removed_trainers") ->
                 removed_trainers = API.Peer.removed_trainers()
                 quick_reply(state, %{error: :ok, removed_trainers: removed_trainers})
 
+            r.method == "GET" and String.starts_with?(r.path, "/api/chain/stats") ->
+                stats = API.Chain.stats()
+                quick_reply(state, %{error: :ok, stats: stats})
             r.method == "GET" and String.starts_with?(r.path, "/api/chain/tip") ->
                 result = API.Chain.entry_tip()
                 quick_reply(state, result)
-
             r.method == "GET" and String.starts_with?(r.path, "/api/chain/height/") ->
                 height = String.replace(r.path, "/api/chain/height/", "")
                 |> :erlang.binary_to_integer()
                 result = API.Chain.by_height(height)
                 quick_reply(state, result)
-
             r.method == "GET" and String.starts_with?(r.path, "/api/chain/height_with_txs/") ->
                 height = String.replace(r.path, "/api/chain/height_with_txs/", "")
                 |> :erlang.binary_to_integer()
                 result = API.Chain.by_height_with_txs(height)
                 quick_reply(state, result)
-
             r.method == "GET" and String.starts_with?(r.path, "/api/chain/tx/") ->
                 txid = String.replace(r.path, "/api/chain/tx/", "")
                 result = API.TX.get(txid)

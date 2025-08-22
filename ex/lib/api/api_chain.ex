@@ -57,6 +57,17 @@ defmodule API.Chain do
         end)
     end
 
+    def stats() do
+      %{
+        height: Consensus.chain_height(),
+        tip_hash: Consensus.chain_tip() |> Base58.encode(),
+        tip: format_entry_for_client(Consensus.chain_tip_entry()),
+        tx_pool_size: NodePeers.size(),
+        cur_validator: Consensus.trainer_for_slot_current() |> Base58.encode(),
+        next_validator: Consensus.trainer_for_slot_next() |> Base58.encode()
+      }
+    end
+
     def format_entry_for_client(entry) do
         hash = entry.hash
         entry = Map.put(entry, :tx_count, length(entry.txs))

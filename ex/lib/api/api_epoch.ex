@@ -27,7 +27,7 @@ defmodule API.Epoch do
 
     def get_pop(pk) do
       pk = if byte_size(pk) != 48, do: Base58.decode(pk), else: pk
-      API.Contract.get("bic:epoch:pop:#{pk}")
+      Consensus.chain_pop(pk)
       |> case do
         nil -> nil
         addr -> Base58.encode(addr)
