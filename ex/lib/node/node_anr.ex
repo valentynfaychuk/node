@@ -68,7 +68,7 @@ defmodule NodeANR do
       # Not too big
       bin = :erlang.term_to_binary(anr, [:deterministic])
       anr = Map.take(anr, @keys)
-      if byte_size(bin) <= 280 and goodDelta and verify_signature(anr) do
+      if byte_size(bin) <= 390 and goodDelta and verify_signature(anr) do
         anr
       end
     catch
