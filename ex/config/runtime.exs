@@ -57,8 +57,15 @@ config :ama, :snapshot_height, (System.get_env("SNAPSHOT_HEIGHT") || "24875547")
 
 pub_ipv4 = (System.get_env("PUBLIC_UDP_IPV4") || STUN.get_current_ip4(udp_ipv4_iface))
 config :ama, :public_udp_ipv4, pub_ipv4
-config :ama, :anr, NodeANR.build(sk, pk, pop, pub_ipv4, version)
 config :ama, :max_peers, (System.get_env("MAX_PEERS") || "300") |> :erlang.binary_to_integer()
+
+anr_name = System.get_env("ANR_NAME")
+anr_desc = System.get_env("ANR_DESC")
+
+config :ama, :anr, NodeANR.build(sk, pk, pop, pub_ipv4, version, anr_name, anr_desc)
+config :ama, :anr_name, anr_name
+config :ama, :anr_desc, anr_desc
+
 
 Path.join(work_folder, "ex/")
 |> Path.join("**/*.ex")

@@ -1,6 +1,7 @@
 defmodule API.Peer do
-    def trainers() do
-        Consensus.trainers_for_height(Consensus.chain_height()+1)
+    def trainers(height \\ nil) do
+        height = height || Consensus.chain_height()+1
+        Consensus.trainers_for_height(height)
         |> Enum.map(fn(pk)->
             p = NodePeers.by_pk(pk)
             inSlot = Consensus.trainer_for_slot(Consensus.chain_height()+1, Consensus.chain_height()+1) == pk

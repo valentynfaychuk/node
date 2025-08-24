@@ -94,6 +94,15 @@ defmodule Consensus do
         end
     end
 
+    def missing_signatures_for_consensus() do
+      %{hash: hash, header_unpacked: %{height: height}} = Consensus.chain_tip_entry()
+      trainers = Consensus.trainers_for_height(height)
+      consensuses = Fabric.consensuses_by_entryhash(hash)
+      {_, _score, c} = Consensus.best_by_weight(trainers, consensuses)
+      trainers_signed = BLS12AggSig.unmask_trainers(trainers, c.mask)
+      trainers -- trainers_signed
+    end
+
     #def next_trainer_slot_in_x_slots(pk, epoch, slot, acc \\ 0) do
     #    trainer = Consensus.trainer_for_slot(epoch, slot + acc)
     #    cond do

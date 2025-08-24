@@ -3,7 +3,8 @@ defmodule NodeANR do
   AMA Node Record
   """
 
-  @keys [:ip4, :pk, :pop, :port, :signature, :ts, :version]
+  @max_anr_size 390
+  @keys [:ip4, :pk, :pop, :port, :signature, :ts, :version, :anr_name, :anr_desc]
   @keys_for_signature @keys -- [:signature]
 
   def keys(), do: @keys
@@ -22,11 +23,13 @@ defmodule NodeANR do
     pk = Application.fetch_env!(:ama, :trainer_pk)
     pop = Application.fetch_env!(:ama, :trainer_pop)
     ver = Application.fetch_env!(:ama, :version)
-    build(sk, pk, pop, STUN.get_current_ip4(), ver)
+    anr_name = Application.fetch_env!(:ama, :anr_name)
+    anr_desc = Application.fetch_env!(:ama, :anr_desc)
+    build(sk, pk, pop, STUN.get_current_ip4(), ver, anr_name, anr_desc)
   end
 
   #TODO: Later change this to erlang term
-  def build(sk, pk, pop, ip4, ver) do
+  def build(sk, pk, pop, ip4, ver, anr_name \\ nil, anr_desc \\ nil) do
     anr = %{
       ip4: ip4,
       pk: pk,
@@ -35,6 +38,8 @@ defmodule NodeANR do
       ts: :os.system_time(1),
       version: ver
     }
+    anr = if !anr_name do anr else Map.put(anr, :anr_name, anr_name) end
+    anr = if !anr_desc do anr else Map.put(anr, :anr_desc, anr_desc) end
     anr_to_sign = anr |> :erlang.term_to_binary([:deterministic])
     sig = BlsEx.sign!(sk, anr_to_sign, BLS12AggSig.dst_anr())
     anr = Map.put(anr, :signature, sig)
@@ -68,7 +73,7 @@ defmodule NodeANR do
       # Not too big
       bin = :erlang.term_to_binary(anr, [:deterministic])
       anr = Map.take(anr, @keys)
-      if byte_size(bin) <= 390 and goodDelta and verify_signature(anr) do
+      if byte_size(bin) <= @max_anr_size and goodDelta and verify_signature(anr) do
         anr
       end
     catch
