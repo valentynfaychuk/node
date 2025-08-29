@@ -109,8 +109,10 @@ defmodule FabricGen do
   end
 
   def best_entry_for_height(height) do
+    rooted_tip = Fabric.rooted_tip()
     next_entries = height
     |> Fabric.entries_by_height()
+    |> Enum.filter(& &1.header_unpacked.prev_hash == rooted_tip)
     |> Enum.map(fn(entry)->
         trainers = Consensus.trainers_for_height(Entry.height(entry))
         {mut_hash, score, _consensus} = Fabric.best_consensus_by_entryhash(trainers, entry.hash)
@@ -121,8 +123,10 @@ defmodule FabricGen do
   end
 
   def best_entry_for_height_no_score(height) do
+    rooted_tip = Fabric.rooted_tip()
     next_entries = height
     |> Fabric.entries_by_height()
+    |> Enum.filter(& &1.header_unpacked.prev_hash == rooted_tip)
     |> Enum.map(fn(entry)->
         trainers = Consensus.trainers_for_height(Entry.height(entry))
         {mut_hash, score, _consensus} = Fabric.best_consensus_by_entryhash(trainers, entry.hash)
@@ -134,6 +138,7 @@ defmodule FabricGen do
 
   defp proc_consensus_1(next_height) do
     next_entries = best_entry_for_height(next_height)
+
     #IO.inspect {next_entries, next_height}
     case List.first(next_entries) do
         #TODO: adjust the maliciousness rate via score
