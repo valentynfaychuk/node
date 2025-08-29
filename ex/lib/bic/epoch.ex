@@ -111,6 +111,7 @@ defmodule BIC.Epoch do
       "6V65RDdHU8T7TbFxGh42sp2hmXrfmRRFbuTjmJv4yysikdNhtdSC2yMxr7L95gDCKn",
       "6V668VVot57QvwjY2s1w8RbgeYE2ftBCxUt1uNp5mfJgXPiUoepteUguXUSYpf3a7E"
     ] |> Enum.map(& Base58.decode(&1))
+    def peddlebike67() do @peddlebike67 end
 
     def call(:submit_sol, env, [sol]) do
         hash = Blake3.hash(sol)

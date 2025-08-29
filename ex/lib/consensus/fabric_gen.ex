@@ -147,8 +147,13 @@ defmodule FabricGen do
             cond do
               !mymut ->
                 IO.puts "softfork: rewind to entry #{Base58.encode(best_entry.hash)}, height #{best_entry.header_unpacked.height}"
-                {entry, mut_hash, score} = List.first(best_entry_for_height(next_height - 1))
-                true = Consensus.chain_rewind(entry.hash)
+                hash = try do
+                  {entry, mut_hash, score} = List.first(best_entry_for_height(next_height - 1))
+                  entry.hash
+                catch
+                  _,_ -> Consensus.chain_tip()
+                end
+                true = Consensus.chain_rewind(hash)
                 proc_consensus()
 
               mut_hash != mymut.mutations_hash ->
