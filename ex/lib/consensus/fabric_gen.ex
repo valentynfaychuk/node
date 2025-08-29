@@ -157,6 +157,7 @@ defmodule FabricGen do
                 :erlang.halt()
 
               true ->
+                FabricEventGen.event_rooted(best_entry, mut_hash)
                 Fabric.set_rooted_tip(best_entry.hash)
                 proc_consensus()
             end
@@ -216,7 +217,7 @@ defmodule FabricGen do
           result = %{error: :ok} -> result
         end
 
-        send(FabricEventGen, {:entry, entry, m_hash, m, l})
+        FabricEventGen.event_applied(entry, m_hash, m, l)
 
         if !!attestation_packed and FabricSyncAttestGen.isQuorumSyncedOffByX(6) do
           NodeGen.broadcast(:attestation_bulk, :trainers, [[attestation_packed]])

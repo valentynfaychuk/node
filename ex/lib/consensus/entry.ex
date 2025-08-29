@@ -93,7 +93,7 @@ defmodule Entry do
 
             aggpk = BlsEx.aggregate_public_keys!(trainers_signed)
 
-            if !BlsEx.verify?(aggpk, signature, hash, BLS12AggSig.dst_entry()), do: throw(%{error: :invalid_signature})
+            if !BlsEx.verify?(aggpk, signature, hash, BLS12AggSig.dst_entry()), do: throw(%{error: :invalid_mask_signature})
         else
             if !BlsEx.verify?(signer, signature, hash, BLS12AggSig.dst_entry()), do: throw(%{error: :invalid_signature})
         end

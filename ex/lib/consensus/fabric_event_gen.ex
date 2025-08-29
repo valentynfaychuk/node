@@ -1,6 +1,14 @@
 defmodule FabricEventGen do
   use GenServer
 
+  def event_rooted(entry, mut_hash) do
+    send(FabricEventGen, {:entry_rooted, entry, mut_hash})
+  end
+
+  def event_applied(entry, mut_hash, m, l) do
+    send(FabricEventGen, {:entry, entry, mut_hash, m, l})
+  end
+
   def start_link() do
     GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
   end
@@ -26,6 +34,10 @@ defmodule FabricEventGen do
     if logs != [] do
       #IO.inspect {height, logs, muts}
     end
+    {:noreply, state}
+  end
+
+  def handle_info({:entry_rooted, entry, mut_hash}, state) do
     {:noreply, state}
   end
 end
