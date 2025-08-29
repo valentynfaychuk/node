@@ -52,8 +52,11 @@ defmodule BIC.Base do
         Process.delete(:mutations_reverse)
         seed_random(env.entry_vr, "", "", "")
 
-        #thank you come again
-        kv_increment("bic:coin:balance:#{env.entry_signer}:AMA", BIC.Coin.to_flat(1))
+        if env.entry_epoch >= 282 do
+        else
+          #thank you come again
+          kv_increment("bic:coin:balance:#{env.entry_signer}:AMA", BIC.Coin.to_flat(1))
+        end
 
         if rem(env.entry_height, 1000) == 0 do
             kv_put("bic:epoch:segment_vr_hash", Blake3.hash(env.entry_vr))
