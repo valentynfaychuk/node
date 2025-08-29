@@ -14,6 +14,14 @@ defmodule BIC.Epoch do
       |> BIC.Coin.to_flat()
     end
 
+    def epoch_emission(epoch) when epoch >= 282 do
+        epoch_emission_1(epoch)
+    end
+
+    def epoch_emission(epoch) when epoch >= 103 do
+        epoch_emission_1(epoch) + @epoch_emission_fixed * 2
+    end
+
     def epoch_emission(epoch) do
         epoch_emission_1(epoch) + @epoch_emission_fixed
     end

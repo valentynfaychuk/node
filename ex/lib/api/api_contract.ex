@@ -27,4 +27,16 @@ defmodule API.Contract do
             %{error: :system, reason: :timeout}
         end
     end
+
+    def richlist() do
+      %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+      opts = %{db: db, cf: cf.contractstate, to_integer: true}
+      RocksDB.get_prefix("bic:coin:balance:", opts)
+      |> Enum.map(fn({pk_symbol, coins})->
+          <<pk::48-binary,":",symbol::binary>> = pk_symbol
+          %{pk: Base58.encode(pk), symbol: symbol, flat: coins, float: trunc(BIC.Coin.from_flat(coins))}
+      end)
+      |> Enum.filter(& &1.symbol == "AMA")
+      |> Enum.sort_by(& &1.flat, :desc)
+    end
 end
