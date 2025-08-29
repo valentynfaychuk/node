@@ -244,7 +244,11 @@ defmodule FabricGen do
 
     #prevent double-entries due to severe system lag (you shouldnt be validator in the first place)
     lastSlot = :persistent_term.get(:last_made_entry_slot, nil)
-    emptyHeight = Fabric.entries_by_height(next_height) == []
+
+    rooted_tip = Fabric.rooted_tip()
+    emptyHeight = Fabric.entries_by_height(next_height)
+    |> Enum.filter(& &1.header_unpacked.prev_hash == rooted_tip)
+    emptyHeight = emptyHeight == []
 
     cond do
       !FabricSyncAttestGen.isQuorumSynced() -> nil

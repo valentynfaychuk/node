@@ -108,9 +108,12 @@ defmodule Fabric do
     end
 
     def entries_by_height(height) do
+        softfork_deny_hash = :persistent_term.get(SoftforkDenyHash, [])
+
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
         RocksDB.get_prefix("#{height}:", %{db: db, cf: cf.entry_by_height})
         |> Enum.map(& Entry.unpack(entry_by_hash(elem(&1,0))))
+        |> Enum.reject(& &1.hash in softfork_deny_hash)
     end
 
     def entries_last_x(cnt) do
@@ -136,7 +139,10 @@ defmodule Fabric do
     end
 
     def consensuses_by_height(height) do
+        softfork_deny_hash = :persistent_term.get(SoftforkDenyHash, [])
+
         entries = Fabric.entries_by_height(height)
+        |> Enum.reject(& &1.hash in softfork_deny_hash)
         Enum.map(entries, fn(entry)->
             map = consensuses_by_entryhash(entry.hash) || %{}
             Enum.map(map, fn {mutations_hash, %{mask: mask, aggsig: aggsig}} ->
