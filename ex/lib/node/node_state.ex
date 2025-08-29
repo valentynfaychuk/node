@@ -62,7 +62,8 @@ defmodule NodeState do
       send(NodeGen, {:handle_sync, :ping_ns, istate, term})
     catch
       e,{:badmatch, %{error: :wrong_epoch}} -> nil
-      e,r -> IO.inspect {:error_ping, e, r, term, istate.peer.ip}
+      e,r -> nil
+        #IO.inspect {:error_ping, e, r, term, istate.peer.ip, __STACKTRACE__}
     end
   end
   def handle(:ping_ns, istate, term) do
@@ -134,7 +135,7 @@ defmodule NodeState do
       sol.epoch != Consensus.chain_epoch() ->
         #IO.inspect {:broadcasted_sol_invalid_epoch, sol.epoch, Consensus.chain_epoch()}
         nil
-      !BIC.Sol.verify(term.sol, %{vr_b3: :crypto.strong_rand_bytes(32)}) ->
+      !BIC.Sol.verify(term.sol, %{vr_b3: :crypto.strong_rand_bytes(32), segment_vr_hash: API.Contract.get("bic:epoch:segment_vr_hash")}) ->
         IO.inspect {:peer_sent_invalid_sol, :TODO_block_malicious_peer}
         nil
       !BlsEx.verify?(sol.pk, sol.pop, sol.pk, BLS12AggSig.dst_pop()) ->

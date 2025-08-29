@@ -28,11 +28,12 @@ defmodule BIC.Base do
         end)
 
         #parallel verify sols
+        segment_vr_hash = kv_get("bic:epoch:segment_vr_hash")
         steam = Task.async_stream(txus, fn txu ->
             sol = Enum.find_value(txu.tx.actions, fn(a)-> a.function == "submit_sol" and length(a.args) != [] and hd(a.args) end)
             if sol do
               hash = Blake3.hash(sol)
-              valid = try do BIC.Sol.verify(sol, %{hash: hash, vr_b3: env.entry_vr_b3}) catch _,_ -> false end
+              valid = try do BIC.Sol.verify(sol, %{hash: hash, vr_b3: env.entry_vr_b3, segment_vr_hash: segment_vr_hash}) catch _,_ -> false end
               %{hash: hash, valid: valid}
             end
         end)
