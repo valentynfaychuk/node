@@ -57,6 +57,19 @@ defmodule API.Chain do
         end)
     end
 
+    def pflops() do
+      #A*B=C M=16 K=50240 N=16 u8xi8=i32
+      height_in_epoch = rem(Consensus.chain_height(), 100_000)
+      total_score = API.Epoch.score() |> Enum.map(& Enum.at(&1,1))|> Enum.sum()
+      diff_multiplier = 256*256*256
+      total_calcs = total_score * diff_multiplier
+      macs = 16*16*50240
+      ops = macs*2
+
+      seconds = height_in_epoch * 0.5
+      ((total_calcs * ops) / seconds) / 1.0e15
+    end
+
     def stats() do
       %{
         height: Consensus.chain_height(),
@@ -69,6 +82,7 @@ defmodule API.Chain do
         circulating: BIC.Coin.from_flat(BIC.Epoch.circulating_without_burn(Consensus.chain_epoch())),
         total_supply_y3: BIC.Coin.from_flat(BIC.Epoch.circulating_without_burn(500*3)),
         total_supply_y30: BIC.Coin.from_flat(BIC.Epoch.circulating_without_burn(500*30)),
+        pflops: pflops(),
       }
     end
 
