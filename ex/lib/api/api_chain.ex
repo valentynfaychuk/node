@@ -66,7 +66,7 @@ defmodule API.Chain do
       macs = 16*16*50240
       ops = macs*2
 
-      seconds = height_in_epoch * 0.5
+      seconds = height_in_epoch * 0.5 + 1
       ((total_calcs * ops) / seconds) / 1.0e15
     end
 
