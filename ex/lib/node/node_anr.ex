@@ -65,10 +65,8 @@ defmodule NodeANR do
   def verify_and_unpack(anr) do
     try do
       # Not wound into future
-      ts = :os.system_time(1000)
-      delta = ts - anr.ts
-      min10 = 60*10
-      goodDelta = delta > -min10
+      ts = :os.system_time(1)
+      goodDelta = (ts - anr.ts) > -3600 #60 minutes max into future
 
       # Not too big
       bin = :erlang.term_to_binary(anr, [:deterministic])
