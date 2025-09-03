@@ -35,43 +35,59 @@ defmodule TXPool do
         end)
     end
 
+    def validate_tx(txu, args \\ %{}) do
+      chain_epoch = Map.get_lazy(args, :epoch, fn()-> Consensus.chain_epoch() end)
+      chain_segment_vr_hash = Map.get_lazy(args, :segment_vr_hash, fn()-> Consensus.chain_segment_vr_hash() end)
+      batch_state = Map.get_lazy(args, :batch_state, fn()-> %{} end)
+
+      try do
+        chainNonce = Map.get_lazy(batch_state, {:chain_nonce, txu.tx.signer}, fn()-> Consensus.chain_nonce(txu.tx.signer) end)
+        nonceValid = !chainNonce or txu.tx.nonce > chainNonce
+        if !nonceValid, do: throw(%{error: :invalid_tx_nonce, key: {txu.tx.nonce, txu.hash}})
+        batch_state = Map.put(batch_state, {:chain_nonce, txu.tx.signer}, txu.tx.nonce)
+
+        balance = Map.get_lazy(batch_state, {:balance, txu.tx.signer}, fn()-> Consensus.chain_balance(txu.tx.signer) end)
+        balance = balance - BIC.Base.exec_cost(txu)
+        balance = balance - BIC.Coin.to_cents(1)
+        if balance < 0, do: throw(%{error: :not_enough_tx_exec_balance, key: {txu.tx.nonce, txu.hash}})
+        batch_state = Map.put(batch_state, {:balance, txu.tx.signer}, balance)
+
+        hasSol = Enum.find_value(txu.tx.actions, fn(a)-> a.function == "submit_sol" and hd(a.args) end)
+        epochSolValid = if !hasSol do true else
+          <<sol_epoch::32-little, sol_svrh::32-binary, _::binary>> = hasSol
+
+          chain_epoch == sol_epoch
+          and chain_segment_vr_hash == sol_svrh
+          and byte_size(hasSol) == BIC.Sol.size()
+        end
+        if !epochSolValid, do: throw(%{error: :invalid_tx_sol, key: {txu.tx.nonce, txu.hash}})
+
+        %{error: :ok, batch_state: batch_state}
+      catch
+        :throw, r -> r
+      end
+    end
+
     def grab_next_valid(amt \\ 1) do
         try do
             chain_epoch = Consensus.chain_epoch()
+            segment_vr_hash = Consensus.chain_segment_vr_hash()
             {acc, state} = :ets.foldl(fn({key, txu}, {acc, state_old})->
                 try do
-                    state = state_old
-
-                    chainNonce = Map.get_lazy(state, {:chain_nonce, txu.tx.signer}, fn()-> Consensus.chain_nonce(txu.tx.signer) end)
-                    nonceValid = !chainNonce or txu.tx.nonce > chainNonce
-                    if !nonceValid, do: throw(%{error: :invalid_tx_nonce, key: {txu.tx.nonce, txu.hash}})
-                    state = Map.put(state, {:chain_nonce, txu.tx.signer}, txu.tx.nonce)
-
-                    balance = Map.get_lazy(state, {:balance, txu.tx.signer}, fn()-> Consensus.chain_balance(txu.tx.signer) end)
-                    balance = balance - BIC.Base.exec_cost(txu)
-                    balance = balance - BIC.Coin.to_cents(1)
-                    if balance < 0, do: throw(%{error: :not_enough_tx_exec_balance, key: {txu.tx.nonce, txu.hash}})
-                    state = Map.put(state, {:balance, txu.tx.signer}, balance)
-
-                    hasSol = Enum.find_value(txu.tx.actions, fn(a)-> a.function == "submit_sol" and hd(a.args) end)
-                    epochSolValid = if !hasSol do true else
-                        <<sol_epoch::32-little, _::binary>> = hasSol
-                        chain_epoch == sol_epoch and byte_size(hasSol) == BIC.Sol.size()
-                    end
-                    if !epochSolValid, do: throw(%{error: :invalid_tx_sol_epoch, key: {txu.tx.nonce, txu.hash}})
-
-                    acc = acc ++ [TX.pack(txu)]
-                    if length(acc) == amt do
-                        throw {:choose, acc}
-                    end
-
-                    {acc, state}
-                catch
-                    :throw,{:choose, txs_packed} -> throw {:choose, txs_packed}
-                    :throw,%{error: error, key: key} when error in [:invalid_tx_nonce, :not_enough_tx_exec_balance, :invalid_tx_sol_epoch] ->
+                  case validate_tx(txu, %{epoch: chain_epoch, segment_vr_hash: segment_vr_hash, batch_state: state_old}) do
+                    %{error: :ok, batch_state: batch_state} ->
+                      acc = acc ++ [TX.pack(txu)]
+                      if length(acc) == amt do
+                          throw {:choose, acc}
+                      end
+                      {acc, batch_state}
+                    #delete stale
+                    %{key: key} ->
                       :ets.delete(TXPool, key)
                       {acc, state_old}
-                    :throw,_ -> {acc, state_old}
+                  end
+                catch
+                    :throw,{:choose, txs_packed} -> throw {:choose, txs_packed}
                 end
             end, {[], %{}}, TXPool)
             acc
