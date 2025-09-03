@@ -157,10 +157,11 @@ defmodule Entry do
         txus = Enum.map(next_entry.txs, & TX.unpack(&1))
         chain_epoch = Consensus.chain_epoch()
         segment_vr_hash = Consensus.chain_segment_vr_hash()
-        Enum.reduce(txus, %{}, fn(txu, state)->
-            case TXPool.validate_tx(txu, %{epoch: chain_epoch, segment_vr_hash: segment_vr_hash, batch_state: state}) do
+        Enum.reduce(txus, %{}, fn(txu, batch_state)->
+            case TXPool.validate_tx(txu, %{epoch: chain_epoch, segment_vr_hash: segment_vr_hash, batch_state: batch_state}) do
                %{error: :ok, batch_state: batch_state} -> batch_state
-               %{error: error} -> throw %{error: error}
+               %{error: error} when error in [:invalid_tx_nonce, :not_enough_tx_exec_balance] -> throw %{error: error}
+               _ -> batch_state
             end
         end)
 

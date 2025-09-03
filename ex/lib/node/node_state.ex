@@ -110,7 +110,20 @@ defmodule NodeState do
   end
 
   def handle(:txpool, istate, term) do
-    good = Enum.filter(term.txs_packed, & TX.validate(&1).error == :ok)
+    chain_epoch = Consensus.chain_epoch()
+    segment_vr_hash = Consensus.chain_segment_vr_hash()
+
+    {good, _} = Enum.reduce(term.txs_packed, {[], %{}}, fn(tx_packed, {acc, batch_state})->
+      case TX.validate(tx_packed) do
+        %{error: :ok, txu: txu} ->
+          case TXPool.validate_tx(txu, %{epoch: chain_epoch, segment_vr_hash: segment_vr_hash, batch_state: batch_state}) do
+            %{error: :ok, batch_state: batch_state} -> {acc ++ [tx_packed], batch_state}
+            %{error: error} -> {acc, batch_state}
+          end
+        _ -> {acc, batch_state}
+      end
+    end)
+
     TXPool.insert(good)
   end
 
