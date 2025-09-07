@@ -81,6 +81,24 @@ defmodule RocksDB do
         end
     end
 
+    def get_bit(key, bit_idx, opts) do
+      db = opts[:db]
+      cf = opts[:cf]
+      rtx = opts[:rtx]
+      cond do
+          !!rtx and !!cf -> :rocksdb.transaction_get(rtx, cf, key, [])
+          !!rtx -> :rocksdb.transaction_get(rtx, key, [])
+          !!db and !!cf -> :rocksdb.get(db, cf, key, [])
+          !!db -> :rocksdb.get(db, key, [])
+      end
+      |> case do
+          :not_found -> nil
+          {:ok, value} ->
+            << left::size(bit_idx), bit::size(1), _::bitstring >> = value
+            bit
+      end
+    end
+
     def put(key, value, opts) do
         db = opts[:db]
         cf = opts[:cf]
