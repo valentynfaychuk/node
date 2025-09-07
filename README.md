@@ -30,6 +30,20 @@ EOT
 ```
 
 ```
+cat <<EOT > /etc/security/limits.conf
+root hard nofile 1048576
+root soft nofile 1048576
+* hard nofile 1048576
+* soft nofile 1048576
+root hard nproc unlimited
+root soft nproc unlimited
+* hard nproc unlimited
+* soft nproc unlimited
+root hard memlock unlimited
+root soft memlock unlimited
+* hard memlock unlimited
+* soft memlock unlimited
+EOT
 cat <<EOT > /etc/systemd/system.conf
 [Manager]
 DefaultTasksMax=infinity

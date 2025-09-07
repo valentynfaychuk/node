@@ -155,9 +155,6 @@ defmodule TXPool do
 
     def add_gifted_sol(sol) do
       hash = Blake3.hash(sol)
-      case :ets.lookup(GiftedSolCache, hash) do
-        [] -> :ets.insert(GiftedSolCache, {hash, Consensus.chain_epoch()})
-        _ -> false
-      end
+      :ets.insert_new(GiftedSolCache, {hash, Consensus.chain_epoch()})
     end
 end

@@ -53,27 +53,15 @@ defmodule BIC.Sol do
           vr_b3 = Map.get_lazy(opts, :vr_b3, fn()-> :crypto.strong_rand_bytes(32) end)
           verify_hash(epoch, hash) and Blake3.freivalds_e260(sol, vr_b3)
         epoch >= 156 ->
-          #if kv_get("bic:epoch:segment_vr_hash") != segment_vr_hash, do: throw %{error: :segment_vr_hash}
           if byte_size(sol) != @sol_size, do: throw(%{error: :invalid_sol_seed_size})
           hash = Map.get_lazy(opts, :hash, fn()-> Blake3.hash(sol) end)
           verify_hash(epoch, hash) and Blake3.freivalds(sol)
         epoch >= 1 ->
           if byte_size(sol) != 320, do: throw(%{error: :invalid_sol_seed_size})
-          verify_cache(UPOW1, sol)
+          throw(%{error: :null})
         true ->
           if byte_size(sol) != 256, do: throw(%{error: :invalid_sol_seed_size})
-          verify_cache(UPOW0, sol)
+          throw(%{error: :null})
       end
-    end
-
-    def verify_cache(module, sol = <<epoch::32-little, _::binary>>) do
-        isVerified = :ets.lookup_element(SOLVerifyCache, sol, 2, nil)
-        if isVerified == :valid do
-            :ets.delete(SOLVerifyCache, sol)
-            true
-        else
-            hash = module.calculate(sol)
-            verify_hash(epoch, hash)
-        end
     end
 end

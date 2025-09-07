@@ -142,36 +142,38 @@ defmodule NodeState do
 
   #def handle(:sol, istate, term) do nil end
   def handle(:sol, istate, term) do
-    sol = BIC.Sol.unpack(term.sol)
-    trainer_pk = Application.fetch_env!(:ama, :trainer_pk)
-    cond do
-      sol.epoch != Consensus.chain_epoch() ->
-        #IO.inspect {:broadcasted_sol_invalid_epoch, sol.epoch, Consensus.chain_epoch()}
-        nil
-      !BIC.Sol.verify(term.sol, %{vr_b3: :crypto.strong_rand_bytes(32), segment_vr_hash: API.Contract.get("bic:epoch:segment_vr_hash")}) ->
-        IO.inspect {:peer_sent_invalid_sol, :TODO_block_malicious_peer}
-        nil
-      !BlsEx.verify?(sol.pk, sol.pop, sol.pk, BLS12AggSig.dst_pop()) ->
-        IO.inspect {:peer_sent_invalid_sol_pop, :TODO_block_malicious_peer}
-        nil
-      !TXPool.add_gifted_sol(term.sol) ->
-        IO.inspect {:peer_sent_duplicate_sol, :TODO_block_malicious_peer}
-        nil
-      trainer_pk == sol.pk and Consensus.chain_balance(trainer_pk) >= BIC.Coin.to_flat(1) ->
-        sk = Application.fetch_env!(:ama, :trainer_sk)
-        #self compute
-        if trainer_pk == sol.computor do
-          tx_packed1 = TX.build(sk, "Epoch", "submit_sol", [term.sol])
-          TXPool.insert([tx_packed1])
-          NodeGen.broadcast(:txpool, :trainers, [[tx_packed1]])
-        else
-          #IO.inspect {:peer_sent_sol, Base58.encode(istate.peer.signer)}
-          tx_packed1 = TX.build(sk, "Epoch", "submit_sol", [term.sol])
-          tx_packed2 = TX.build(sk, "Coin", "transfer", [sol.computor, :erlang.integer_to_binary(BIC.Coin.to_cents(100)), "AMA"])
-          TXPool.insert([tx_packed1, tx_packed2])
-          NodeGen.broadcast(:txpool, :trainers, [[tx_packed1, tx_packed2]])
-        end
-      true -> nil
+    if Application.fetch_env!(:ama, :buy_peer_sol) do
+      sol = BIC.Sol.unpack(term.sol)
+      trainer_pk = Application.fetch_env!(:ama, :trainer_pk)
+      cond do
+        sol.epoch != Consensus.chain_epoch() ->
+          #IO.inspect {:broadcasted_sol_invalid_epoch, sol.epoch, Consensus.chain_epoch()}
+          nil
+        !BIC.Sol.verify(term.sol, %{vr_b3: :crypto.strong_rand_bytes(32), segment_vr_hash: API.Contract.get("bic:epoch:segment_vr_hash")}) ->
+          IO.inspect {:peer_sent_invalid_sol, :TODO_block_malicious_peer}
+          nil
+        !BlsEx.verify?(sol.pk, sol.pop, sol.pk, BLS12AggSig.dst_pop()) ->
+          IO.inspect {:peer_sent_invalid_sol_pop, :TODO_block_malicious_peer}
+          nil
+        !TXPool.add_gifted_sol(term.sol) ->
+          IO.inspect {:peer_sent_duplicate_sol, :TODO_block_malicious_peer}
+          nil
+        trainer_pk == sol.pk and Consensus.chain_balance(trainer_pk) >= BIC.Coin.to_flat(1) ->
+          sk = Application.fetch_env!(:ama, :trainer_sk)
+          #self compute
+          if trainer_pk == sol.computor do
+            tx_packed1 = TX.build(sk, "Epoch", "submit_sol", [term.sol])
+            TXPool.insert([tx_packed1])
+            NodeGen.broadcast(:txpool, :trainers, [[tx_packed1]])
+          else
+            #IO.inspect {:peer_sent_sol, Base58.encode(istate.peer.signer)}
+            tx_packed1 = TX.build(sk, "Epoch", "submit_sol", [term.sol])
+            tx_packed2 = TX.build(sk, "Coin", "transfer", [sol.computor, :erlang.integer_to_binary(BIC.Coin.to_cents(100)), "AMA"])
+            TXPool.insert([tx_packed1, tx_packed2])
+            NodeGen.broadcast(:txpool, :trainers, [[tx_packed1, tx_packed2]])
+          end
+        true -> nil
+      end
     end
   end
 

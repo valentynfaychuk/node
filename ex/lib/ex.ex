@@ -62,8 +62,6 @@ defmodule Ama do
 
     :ets.new(NODEPeers, [:ordered_set, :named_table, :public,
       {:write_concurrency, true}, {:read_concurrency, true}, {:decentralized_counters, false}])
-    :ets.new(SOLVerifyCache, [:ordered_set, :named_table, :public,
-      {:write_concurrency, true}, {:read_concurrency, true}, {:decentralized_counters, false}])
     :ets.new(AttestationCache, [:ordered_set, :named_table, :public,
       {:write_concurrency, true}, {:read_concurrency, true}, {:decentralized_counters, false}])
 
@@ -88,9 +86,15 @@ defmodule Ama do
         atom = :'NodeGenReassemblyGen#{idx}'
         {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: atom, start: {NodeGenReassemblyGen, :start_link, [atom]}, restart: :permanent})
       end)
+
       Enum.each(0..7, fn(idx)->
-        atom = :'NodeGenSocketGen#{idx}'
-        {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: atom, start: {NodeGenSocketGen, :start_link, [ip4, port, atom]}, restart: :permanent})
+        :ets.new(:'NODENetGuardTotalFrames#{idx}', [:ordered_set, :named_table, :public,
+          {:write_concurrency, true}, {:read_concurrency, true}, {:decentralized_counters, false}])
+        :ets.new(:'NODENetGuardPer6Seconds#{idx}', [:ordered_set, :named_table, :public,
+          {:write_concurrency, true}, {:read_concurrency, true}, {:decentralized_counters, false}])
+
+        {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor,
+          %{id: :'NodeGenSocketGen#{idx}', start: {NodeGenSocketGen, :start_link, [ip4, port, idx]}, restart: :permanent})
       end)
 
       #web panel
