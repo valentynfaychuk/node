@@ -25,6 +25,11 @@ defmodule TXPool do
         end)
     end
 
+    def insert_and_broadcast(tx_packed, opts \\ %{}) do
+      TXPool.insert(tx_packed)
+      NodeGen.broadcast(NodeProto.event_tx(tx_packed), opts)
+    end
+
     def purge_stale() do
         cur_epoch = Consensus.chain_epoch()
         :ets.tab2list(TXPool)
@@ -66,6 +71,25 @@ defmodule TXPool do
       catch
         :throw, r -> r
       end
+    end
+
+    def validate_tx_batch(tx_packed) when is_binary(tx_packed) do validate_tx_batch([tx_packed]) end
+    def validate_tx_batch(txs_packed) when is_list(txs_packed) do
+      chain_epoch = Consensus.chain_epoch()
+      segment_vr_hash = Consensus.chain_segment_vr_hash()
+
+      {good, _} = Enum.reduce(txs_packed, {[], %{}}, fn(tx_packed, {acc, batch_state})->
+        case TX.validate(tx_packed) do
+          %{error: :ok, txu: txu} ->
+            case TXPool.validate_tx(txu, %{epoch: chain_epoch, segment_vr_hash: segment_vr_hash, batch_state: batch_state}) do
+              %{error: :ok, batch_state: batch_state} -> {acc ++ [tx_packed], batch_state}
+              %{error: error} -> {acc, batch_state}
+            end
+          _ -> {acc, batch_state}
+        end
+      end)
+
+      good
     end
 
     def grab_next_valid(amt \\ 1) do
@@ -153,8 +177,7 @@ defmodule TXPool do
         end)
     end
 
-    def add_gifted_sol(sol) do
-      hash = Blake3.hash(sol)
-      :ets.insert_new(GiftedSolCache, {hash, Consensus.chain_epoch()})
+    def size() do
+      :ets.info(TXPool, :size)
     end
 end
