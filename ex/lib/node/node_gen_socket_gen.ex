@@ -124,7 +124,10 @@ defmodule NodeGenSocketGen do
           {:ok, ip} = :inet.parse_address(~c'#{ip4}')
           NodeProto.encrypt_message(msg_compressed, NodeANR.get_shared_secret(pk))
           |> Enum.each(fn(msg_packed)->
-            :ok = :gen_udp.send(state.socket, ip, port, msg_packed)
+            case :gen_udp.send(state.socket, ip, port, msg_packed) do
+              :ok -> :ok
+              {:error, :eperm} -> :rand.uniform(100) == 1 && IO.puts("udp_send_error eperm")
+            end
           end)
         end)
 
