@@ -1,5 +1,4 @@
 defmodule Consensus do
-
     def unpack(consensus_packed) when is_binary(consensus_packed) do
         :erlang.binary_to_term(consensus_packed, [:safe])
         |> unpack()

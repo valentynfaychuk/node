@@ -22,44 +22,14 @@ defmodule FabricGen do
 
   def init(state) do
     :persistent_term.put(FabricSyncing, :atomics.new(1, []))
-
-    :erlang.send_after(2500, self(), :tick)
-    :erlang.send_after(2500, self(), :tick_purge_txpool)
+    :erlang.send_after(2000, self(), :tick)
     {:ok, state}
-  end
-
-  def handle_info(:tick_purge_txpool, state) do
-    :erlang.spawn(fn()->
-      task = Task.async(fn -> TXPool.purge_stale() end)
-      try do
-        Task.await(task, 600)
-      catch
-        :exit, {:timeout, _} -> Task.shutdown(task, :brutal_kill)
-      end
-    end)
-
-    :erlang.send_after(6000, self(), :tick_purge_txpool)
-    {:noreply, state}
   end
 
   def handle_info(:tick, state) do
     state = if true do tick(state) else state end
     :erlang.send_after(100, self(), :tick)
     {:noreply, state}
-  end
-
-  def handle_info(:tick_oneshot, state) do
-    if !state[:timer_oneshot_ref] do
-      ref = Process.send_after(self(), :tick_oneshot_resolve, 50)
-      {:noreply, Map.put(state, :timer_oneshot_ref, ref)}
-    else
-      {:noreply, state}
-    end
-  end
-
-  def handle_info(:tick_oneshot_resolve, state) do
-    tick(state)
-    {:noreply, Map.delete(state, :timer_oneshot_ref)}
   end
 
   def tick(state) do
@@ -98,16 +68,6 @@ defmodule FabricGen do
     end
   end
 
-  def proc_consensus() do
-    entry_root = Fabric.rooted_tip_entry()
-    entry_temp = Consensus.chain_tip_entry()
-    height_root = entry_root.header_unpacked.height
-    height_temp = entry_temp.header_unpacked.height
-    if height_root < height_temp do
-      proc_consensus_1(height_root+1)
-    end
-  end
-
   def best_entry_for_height(height) do
     rooted_tip = Fabric.rooted_tip()
     next_entries = height
@@ -134,6 +94,20 @@ defmodule FabricGen do
     end)
     |> Enum.filter(fn {entry, mut_hash, score} -> mut_hash end)
     |> Enum.sort_by(fn {entry, mut_hash, score} -> {entry.header_unpacked.slot, !entry[:mask], entry.hash} end)
+  end
+
+  def proc_consensus() do
+    entry_root = Fabric.rooted_tip_entry()
+    entry_temp = Consensus.chain_tip_entry()
+    height_root = entry_root.header_unpacked.height
+    height_temp = entry_temp.header_unpacked.height
+    if height_root < height_temp do
+      proc_consensus_1(height_root+1)
+      if Fabric.rooted_tip() != entry_root.hash do
+        #  event_consensus
+        #  NodeGen.broadcast_tip()
+      end
+    end
   end
 
   defp proc_consensus_1(next_height) do
@@ -230,8 +204,7 @@ defmodule FabricGen do
         FabricEventGen.event_applied(entry, m_hash, m, l)
 
         if !!attestation_packed and FabricSyncAttestGen.isQuorumSyncedOffByX(6) do
-          NodeGen.broadcast(:attestation_bulk, :trainers, [[attestation_packed]])
-          NodeGen.broadcast(:attestation_bulk, {:not_trainers, 10}, [[attestation_packed]])
+          NodeGen.broadcast(NodeProto.event_attestation(attestation_packed))
         end
 
         TXPool.delete_packed(entry.txs)
@@ -272,9 +245,6 @@ defmodule FabricGen do
 
         IO.puts "🔧 im in slot #{next_slot}, working.. *Click Clak*"
 
-        #%{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
-        #:rocksdb.checkpoint(db, '/tmp/mig/db/fabric/')
-
         proc_if_my_slot_1(next_slot)
 
       true ->
@@ -286,17 +256,8 @@ defmodule FabricGen do
     next_entry = Consensus.produce_entry(next_slot)
     Fabric.insert_entry(next_entry, :os.system_time(1000))
 
-    map = %{entry_packed: Entry.pack(next_entry)}
+    NodeGen.broadcast(NodeProto.event_entry(Entry.pack(next_entry)))
 
-    next_trainer = Consensus.trainer_for_slot(Entry.height(next_entry)+1, next_slot+1)
-    peer = NodePeers.by_pk(next_trainer)
-    if peer do NodeGen.broadcast(:entry, {:some, [peer.ip]}, [map]) end
-    next_trainer = Consensus.trainer_for_slot(Entry.height(next_entry)+2, next_slot+2)
-    peer2 = NodePeers.by_pk(next_trainer)
-    if peer2 do NodeGen.broadcast(:entry, {:some, [peer2.ip]}, [map]) end
-
-    NodeGen.broadcast(:entry, :trainers, [map])
-    NodeGen.broadcast(:entry, {:not_trainers, 10}, [map])
     next_entry
   end
 end

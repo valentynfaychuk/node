@@ -19,24 +19,26 @@ defmodule FabricCoordinatorGen do
     {:ok, state}
   end
 
-  def calc_syncing() do
+  def calc_syncing(flag) do
     isSyncn = isSyncing()
-    {_, num} = Process.info(self(), :message_queue_len)
+    {_, msgQueueSize} = Process.info(self(), :message_queue_len)
     cond do
-      num >= 10 and !isSyncn -> :persistent_term.get(FabricCoordinatorSyncing) |> :atomics.put(1, 1)
-      num < 10 and isSyncn -> :persistent_term.get(FabricCoordinatorSyncing) |> :atomics.put(1, 0)
+      flag == true and !isSyncn -> :persistent_term.get(FabricCoordinatorSyncing) |> :atomics.put(1, 1)
+      flag == false and isSyncn and msgQueueSize >= 1 -> nil
+      flag == false and isSyncn -> :persistent_term.get(FabricCoordinatorSyncing) |> :atomics.put(1, 0)
+      flag == false and msgQueueSize >= 1 -> :persistent_term.get(FabricCoordinatorSyncing) |> :atomics.put(1, 1)
       true -> nil
     end
   end
 
   def handle_info(:tick, state) do
-    calc_syncing()
+    calc_syncing(false)
     :erlang.send_after(1000, self(), :tick)
     {:noreply, state}
   end
 
   def handle_info({:validate_consensus, consensus}, state) do
-    calc_syncing()
+    calc_syncing(true)
     :erlang.spawn(fn()->
       case Consensus.validate_vs_chain(consensus) do
         %{error: :ok, consensus: consensus} ->
@@ -44,17 +46,19 @@ defmodule FabricCoordinatorGen do
         _ -> nil
       end
     end)
+    calc_syncing(false)
     {:noreply, state}
   end
 
   def handle_info({:insert_consensus, consensus}, state) do
-    calc_syncing()
+    calc_syncing(true)
     Fabric.insert_consensus(consensus)
+    calc_syncing(false)
     {:noreply, state}
   end
 
   def handle_info({:add_attestation, attestation}, state) do
-    calc_syncing()
+    calc_syncing(true)
 
     Fabric.aggregate_attestation(attestation)
 
@@ -79,6 +83,7 @@ defmodule FabricCoordinatorGen do
         end
     end
 
+    calc_syncing(false)
     {:noreply, state}
   end
 end
