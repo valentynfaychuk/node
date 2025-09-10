@@ -46,19 +46,20 @@ defmodule FabricSyncGen do
 
     behind_root = temporal_height - rooted_height
 
-    cond do
-      behind_root > 1000 ->
-        entries = Enum.to_list(rooted_height..temporal_height)
-        IO.puts "Behind Root: Syncing #{length(entries)} entries"
-        next_heights = Enum.to_list(entries)
-        |> Enum.take(1000)
-        |> Enum.uniq()
-        {rooted_peers, temporal_peers} = NodeANR.peers_w_min_height(List.last(next_heights), :any)
-        next_heights
-        |> Enum.map(& %{height: &1, c: true})
-        |> Enum.chunk_every(100)
-        |> fetch_chunks(temporal_peers)
+    if behind_root > 1000 do
+      entries = Enum.to_list(rooted_height..temporal_height)
+      IO.puts "Behind Root: Syncing #{length(entries)} entries"
+      next_heights = Enum.to_list(entries)
+      |> Enum.take(1000)
+      |> Enum.uniq()
+      {rooted_peers, temporal_peers} = NodeANR.peers_w_min_height(List.last(next_heights), :any)
+      next_heights
+      |> Enum.map(& %{height: &1, c: true})
+      |> Enum.chunk_every(200)
+      |> fetch_chunks(temporal_peers)
+    end
 
+    cond do
       behind_bft > 0 ->
         entries = Enum.to_list((temporal_height+1)..height_network_bft)
         IO.puts "Behind BFT: Syncing #{length(entries)} entries"
@@ -68,7 +69,7 @@ defmodule FabricSyncGen do
         {rooted_peers, temporal_peers} = NodeANR.peers_w_min_height(List.last(next_heights), :any)
         next_heights
         |> Enum.map(& %{height: &1, e: true, c: true})
-        |> Enum.chunk_every(10)
+        |> Enum.chunk_every(20)
         |> fetch_chunks(temporal_peers)
 
       behind_root > 0 ->
@@ -78,7 +79,7 @@ defmodule FabricSyncGen do
         {rooted_peers, temporal_peers} = NodeANR.peers_w_min_height(List.last(next_heights), :any)
         next_heights
         |> Enum.map(& %{height: &1, hashes: Enum.map(Fabric.entries_by_height(&1), fn(%{hash: hash})-> hash end), e: true, c: true})
-        |> Enum.chunk_every(10)
+        |> Enum.chunk_every(20)
         |> fetch_chunks(rooted_peers)
 
       #TODO: only fetch missing attestations

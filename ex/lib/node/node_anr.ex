@@ -18,7 +18,7 @@ defmodule NodeANR do
     set_handshaked(Application.fetch_env!(:ama, :trainer_pk))
 
     #TODO: TEMPORARY clear old ANRs
-    :ets.foldl(fn(%{pk: pk, version: version}, _) ->
+    :ets.foldl(fn({pk, %{version: version}}, _) ->
       version < "1.1.7" && MnesiaKV.delete(NODEANR, pk)
     end, nil, NODEANR)
 

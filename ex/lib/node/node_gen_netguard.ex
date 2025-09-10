@@ -1,5 +1,5 @@
 defmodule NodeGenNetguard do
-  @max_frames_per_6_sec 20_000
+  @max_frames_per_6_sec 40_000
   @max_msg_per_6_sec %{
     new_phone_who_dis: 10,
     new_phone_who_dis_reply: 10,
