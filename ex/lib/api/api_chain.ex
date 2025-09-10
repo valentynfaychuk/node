@@ -75,7 +75,7 @@ defmodule API.Chain do
         height: Consensus.chain_height(),
         tip_hash: Consensus.chain_tip() |> Base58.encode(),
         tip: format_entry_for_client(Consensus.chain_tip_entry()),
-        tx_pool_size: NodePeers.size(),
+        tx_pool_size: TXPool.size(),
         cur_validator: Consensus.trainer_for_slot_current() |> Base58.encode(),
         next_validator: Consensus.trainer_for_slot_next() |> Base58.encode(),
         emission_for_epoch: BIC.Coin.from_flat(BIC.Epoch.epoch_emission(Consensus.chain_epoch())),

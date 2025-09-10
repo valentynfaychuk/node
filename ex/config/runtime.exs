@@ -1,5 +1,7 @@
 import Config
 
+config :ama, :node_started_time, :os.system_time(1000)
+
 version = Application.fetch_env!(:ama, :version)
 [v1,v2,v3] = version
 |> String.trim("v")
@@ -65,6 +67,7 @@ anr_name = System.get_env("ANR_NAME")
 anr_desc = System.get_env("ANR_DESC")
 
 config :ama, :anr, NodeANR.build(sk, pk, pop, pub_ipv4, version, anr_name, anr_desc)
+config :ama, :anr_next_refresh, :os.system_time(1000) + 60_000*60
 config :ama, :anr_name, anr_name
 config :ama, :anr_desc, anr_desc
 

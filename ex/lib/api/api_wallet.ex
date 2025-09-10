@@ -33,8 +33,7 @@ defmodule API.Wallet do
         amount = if is_float(amount) do trunc(amount * 1_000_000_000) else amount end
         amount = if is_integer(amount) do :erlang.integer_to_binary(amount) else amount end
         tx_packed = TX.build(from_sk, "Coin", "transfer", [to, amount, symbol])
-        TXPool.insert(tx_packed)
-        NodeGen.broadcast(:txpool, :trainers, [[tx_packed]])
+        TXPool.insert_and_broadcast(tx_packed)
     end
 
     def generate_key() do

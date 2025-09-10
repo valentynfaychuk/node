@@ -3,8 +3,7 @@ defmodule API.Epoch do
       pk = if byte_size(pk) != 48, do: Base58.decode(pk), else: pk
       sk = Application.fetch_env!(:ama, :trainer_sk)
       tx_packed = TX.build(sk, "Epoch", "set_emission_address", [pk])
-      TXPool.insert(tx_packed)
-      NodeGen.broadcast(:txpool, :trainers, [[tx_packed]])
+      TXPool.insert_and_broadcast(tx_packed)
     end
 
     def get_emission_address() do

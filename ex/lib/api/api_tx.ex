@@ -115,19 +115,16 @@ defmodule API.TX do
                 if action.contract == "Contract" and action.function == "deploy" do
                     case BIC.Contract.validate(List.first(action.args)) do
                         %{error: :ok} ->
-                            TXPool.insert(tx_packed)
-                            NodeGen.broadcast(:txpool, :trainers, [[tx_packed]])
+                            TXPool.insert_and_broadcast(tx_packed)
                             %{error: :ok, hash: Base58.encode(result.txu.hash)}
                         error -> error
                     end
                 else
-                    TXPool.insert(tx_packed)
-                    NodeGen.broadcast(:txpool, :trainers, [[tx_packed]])
+                    TXPool.insert_and_broadcast(tx_packed)
                     %{error: :ok, hash: Base58.encode(result.txu.hash)}
                 end
             else
-                TXPool.insert(tx_packed)
-                NodeGen.broadcast(:txpool, :trainers, [[tx_packed]])
+                TXPool.insert_and_broadcast(tx_packed)
                 %{error: :ok, hash: Base58.encode(result.txu.hash)}
             end
         else
