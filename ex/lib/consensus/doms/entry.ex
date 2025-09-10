@@ -82,8 +82,8 @@ defmodule Entry do
     end
 
     def validate_signature(header, signature, signer, mask \\ nil) do
-        try do
         hash = Blake3.hash(header)
+        try do
         if mask do
             header_unpacked = :erlang.binary_to_term(header, [:safe])
 
@@ -99,8 +99,8 @@ defmodule Entry do
         end
         %{error: :ok, hash: hash}
         catch
-            :throw,r -> r
-            e,r -> IO.inspect {Entry, :validate_signature, e, r}; %{error: :unknown}
+            :throw,r -> Map.put(r, :hash, hash)
+            e,r -> IO.inspect {Entry, :validate_signature, e, r}; %{error: :unknown, hash: hash}
         end
     end
 

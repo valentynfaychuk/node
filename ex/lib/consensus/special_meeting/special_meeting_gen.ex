@@ -111,8 +111,7 @@ defmodule SpecialMeetingGen do
       state.slash_trainer.type == :tx and state.slash_trainer[:score_tx] >= 0.67 ->
         tx_packed = build_slash_tx(state.slash_trainer)
         IO.inspect tx_packed
-        TXPool.insert(tx_packed)
-        NodeGen.broadcast(:txpool, :trainers, [[tx_packed]])
+        TXPool.insert_and_broadcast(tx_packed, %{peers: 0})
         Map.delete(state, :slash_trainer)
       state.slash_trainer.type == :entry and state.slash_trainer.state == :gather_tx_sigs and state.slash_trainer[:score_tx] >= 0.67 ->
         entry = build_slash_entry(state.slash_trainer)
@@ -120,7 +119,7 @@ defmodule SpecialMeetingGen do
         put_in(state, [:slash_trainer, :state], :gather_entry_sigs)
       state.slash_trainer.state == :gather_tx_sigs ->
         business = %{op: "slash_trainer_tx", epoch: state.slash_trainer.epoch, malicious_pk: state.slash_trainer.malicious_pk}
-        NodeGen.broadcast(:special_business, :trainers, [business])
+        NodeGen.broadcast(NodeProto.special_business(business), %{peers: 0})
         put_in(state, [:slash_trainer, :attempts], state.slash_trainer.attempts + 1)
 
       state.slash_trainer.type == :entry and state.slash_trainer[:score_entry] >= 0.67 ->
@@ -130,7 +129,7 @@ defmodule SpecialMeetingGen do
         Map.delete(state, :slash_trainer)
       state.slash_trainer.state == :gather_entry_sigs ->
         business = %{op: "slash_trainer_entry", entry_packed: Entry.pack(state.slash_trainer.entry)}
-        NodeGen.broadcast(:special_business, :trainers, [business])
+        NodeGen.broadcast(NodeProto.special_business(business), %{peers: 0})
         put_in(state, [:slash_trainer, :attempts], state.slash_trainer.attempts + 1)
 
       true ->

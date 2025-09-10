@@ -141,15 +141,8 @@ defmodule SpecialMeetingAttestGen do
     isSynced = FabricSyncAttestGen.isQuorumSyncedOffBy1()
 
     trainers = Consensus.trainers_for_height(Consensus.chain_height()+1)
-    onlineTrainers = trainers
-    |> Enum.filter(fn(pk)->
-        p = NodePeers.by_pk(pk)
-        cond do
-          Application.fetch_env!(:ama, :trainer_pk) == pk -> true
-          !!p and NodePeers.is_online(p) -> true
-          true -> false
-        end
-    end)
+    {vals, _} = NodeANR.handshaked_and_online()
+    onlineTrainers = Enum.map(vals, & &1.pk)
     offlineTrainers = trainers -- onlineTrainers
 
     offlineLocal = Process.get(:offlineTrainersSeries, []) |> Enum.take(10)
