@@ -29,13 +29,6 @@ defmodule Ama do
     IO.puts "Initing TXPool.."
     TXPool.init()
 
-    MnesiaKV.load(
-      %{
-        NODEANR => %{index: [:handshaked, :ip4]},
-      },
-      %{path: Path.join([Application.fetch_env!(:ama, :work_folder), "local_kv/"])}
-    )
-
     if !Application.fetch_env!(:ama, :offline) do
       rooted_tip_height = Fabric.rooted_tip_height()
       if rooted_tip_height == nil or rooted_tip_height < Application.fetch_env!(:ama, :snapshot_height) do
@@ -60,16 +53,25 @@ defmodule Ama do
     pk = Application.fetch_env!(:ama, :trainer_pk)
     IO.puts "systems functional. welcome #{Base58.encode(pk)}"
 
-    :ets.new(NODEPeers, [:ordered_set, :named_table, :public,
-      {:write_concurrency, true}, {:read_concurrency, true}, {:decentralized_counters, false}])
     :ets.new(AttestationCache, [:ordered_set, :named_table, :public,
+      {:write_concurrency, true}, {:read_concurrency, true}, {:decentralized_counters, false}])
+    :ets.new(SharedSecretCache, [:ordered_set, :named_table, :public,
+      {:write_concurrency, true}, {:read_concurrency, true}, {:decentralized_counters, false}])
+    :ets.new(NODEANRHOT, [:ordered_set, :named_table, :public,
       {:write_concurrency, true}, {:read_concurrency, true}, {:decentralized_counters, false}])
 
     {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: PG, start: {:pg, :start_link, []}})
     {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: PGWSPanel, start: {:pg, :start_link, [PGWSPanel]}})
 
     if !Application.fetch_env!(:ama, :offline) do
-      {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: ComputorGen, start: {ComputorGen, :start_link, []}})
+      MnesiaKV.load(
+        %{
+          NODEANR => %{index: [:handshaked, :ip4, :placeholder]},
+        },
+        %{path: Path.join([Application.fetch_env!(:ama, :work_folder), "local_kv/"])}
+      )
+
+      #{:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: ComputorGen, start: {ComputorGen, :start_link, []}})
       {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: LoggerGen, start: {LoggerGen, :start_link, []}})
       {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: FabricGen, start: {FabricGen, :start_link, []}})
       {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: FabricSyncAttestGen, start: {FabricSyncAttestGen, :start_link, []}})
@@ -92,7 +94,8 @@ defmodule Ama do
           {:write_concurrency, true}, {:read_concurrency, true}, {:decentralized_counters, false}])
         :ets.new(:'NODENetGuardPer6Seconds#{idx}', [:ordered_set, :named_table, :public,
           {:write_concurrency, true}, {:read_concurrency, true}, {:decentralized_counters, false}])
-
+      end)
+      Enum.each(0..7, fn(idx)->
         {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor,
           %{id: :'NodeGenSocketGen#{idx}', start: {NodeGenSocketGen, :start_link, [ip4, port, idx]}, restart: :permanent})
       end)
