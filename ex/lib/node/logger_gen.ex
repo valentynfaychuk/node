@@ -43,7 +43,9 @@ defmodule LoggerGen do
     height = entry.header_unpacked.height
     slot = entry.header_unpacked.slot
     txpool_size = :ets.info(TXPool, :size)
-    peer_cnt = length(NodePeers.online()) + 1
+
+    {vals, peers} = NodeANR.handshaked_and_online()
+    peer_cnt = length(vals++peers) + 1
 
     pk = Application.fetch_env!(:ama, :trainer_pk)
     coins = Consensus.chain_balance(pk)
