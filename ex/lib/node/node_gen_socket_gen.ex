@@ -1,11 +1,11 @@
 defmodule NodeGenSocketGen do
   use GenServer
 
-  def start_link(ip_tuple, port, name \\ __MODULE__) do
-    GenServer.start_link(__MODULE__, [ip_tuple, port, name], name: name)
+  def start_link(ip_tuple, port, idx) do
+    GenServer.start_link(__MODULE__, [ip_tuple, port, idx], name: :'NodeGenSocketGen#{idx}')
   end
 
-  def init([ip_tuple, port, name]) do
+  def init([ip_tuple, port, idx]) do
     lsocket = listen(port, [{:ifaddr, ip_tuple}])
     {snd, rcv} = get_sys_bufs(lsocket)
     snd_mb = (snd/1024)/1024
@@ -25,9 +25,11 @@ defmodule NodeGenSocketGen do
       IO.puts "net.core.netdev_max_backlog = 300000"
     end
 
+    :erlang.send_after(3000, self(), :netguard_decrement_buckets)
+
     ip = Tuple.to_list(ip_tuple) |> Enum.join(".")
     state = %{
-      name: name,
+      idx: idx,
       ip: ip, ip_tuple: ip_tuple, port: port, socket: lsocket
     }
     {:ok, state}
@@ -54,96 +56,89 @@ defmodule NodeGenSocketGen do
     {size_snd, size_rcv}
   end
 
+  def proc_payload(peer_ip, pk, version, ts_nano, payload) do
+    shared_secret = NodeANR.get_shared_secret(pk)
+    <<iv::12-binary, tag::16-binary, ciphertext::binary>> = payload
+    key = :crypto.hash(:sha256, [shared_secret, :binary.encode_unsigned(ts_nano), iv])
+    plaintext = :crypto.crypto_one_time_aead(:aes_256_gcm, key, iv, ciphertext, <<>>, tag, false)
+
+    msg = plaintext
+    |> NodeProto.deflate_decompress()
+    |> :erlang.binary_to_term([:safe])
+
+    if !NodeGenNetguard.op_ok(peer_ip, msg.op) do
+      IO.inspect {:dropping_due_to_op_flood, peer_ip, msg.op}
+    else
+      peer = %{ip4: peer_ip, pk: pk, version: version}
+      hasPeerANR = NodeANR.handshaked_and_valid_ip4(pk, peer_ip)
+      cond do
+        !hasPeerANR and msg.op in [:new_phone_who_dis, :new_phone_who_dis_reply] ->
+          NodeState.handle(msg.op, %{peer: peer}, msg)
+        !hasPeerANR ->
+          #request ANR
+          if !NodeGenNetguard.op_ok(peer_ip, :new_phone_who_dis) do
+            IO.inspect {:dropping_outgoing_due_to_op_flood, peer_ip, msg.op}
+          else
+            send(NodeGen.get_socket_gen(), {:send_to, [%{ip4: peer_ip, pk: pk}], NodeProto.new_phone_who_dis()})
+          end
+        hasPeerANR ->
+          NodeState.handle(msg.op, %{peer: peer}, msg)
+        true -> nil
+      end
+    end
+  end
+
+  def proc_msg(peer_ip, data) do
+    case NodeProto.unpack_message(data) do
+      %{pk: pk, ts_nano: ts_nano, shard_index: shard_index, shard_total: shard_total, version: version, original_size: original_size, payload: payload} ->
+        if shard_total == 1 do
+          proc_payload(peer_ip, pk, version, ts_nano, payload)
+        else
+          if NodeANR.handshaked_and_valid_ip4(pk, peer_ip) do
+            gen = NodeGen.get_reassembly_gen(pk, ts_nano)
+            send(gen, {:add_shard, {pk, ts_nano, shard_total}, {peer_ip, version, shard_index, original_size}, payload})
+          end
+        end
+      _data ->
+        nil
+    end
+  end
+
   def handle_info(msg, state) do
     case msg do
-      {:udp, _socket, ip, _inportno, data} ->
+      {:udp, _socket, {ipa,ipb,ipc,ipd}, _inportno, data} ->
         #IO.puts IO.ANSI.red() <> inspect({:relay_from, ip, msg.op}) <> IO.ANSI.reset()
         :erlang.spawn(fn()->
-          try do
-          case NodeProto.unpack_message_v2(data) do
-            %{error: :signature, shard_total: 1, pk: pk, version: version, signature: signature, payload: payload} ->
-              if !BlsEx.verify?(pk, signature, Blake3.hash(pk<>payload), BLS12AggSig.dst_node()), do: throw(%{error: :invalid_signature})
-
-              msg = payload
-              |> NodeProto.deflate_decompress()
-              |> :erlang.binary_to_term([:safe])
-
-              peer_ip = Tuple.to_list(ip) |> Enum.join(".")
-              peer = %{ip: peer_ip, signer: pk, version: version}
-
-              hasPermissionSlip = NodeANR.handshaked_and_valid_ip4(pk, peer_ip)
-              cond do
-                hasPermissionSlip -> NodeState.handle(msg.op, %{peer: peer}, msg)
-                msg.op in [:ping, :new_phone_who_dis, :what?] -> NodeState.handle(msg.op, %{peer: peer}, msg)
-                true -> nil
-              end
-
-            %{error: :signature, pk: pk, signature: signature, ts_nano: ts_nano, shard_index: shard_index, shard_total: shard_total,
-              version: version, original_size: original_size, payload: payload}
-            ->
-              peer_ip = Tuple.to_list(ip) |> Enum.join(".")
-
-              hasPermissionSlip = NodeANR.handshaked_and_valid_ip4(pk, peer_ip)
-              if hasPermissionSlip do
-                gen = NodeGen.get_reassembly_gen(pk, ts_nano)
-                send(gen, {:add_shard, {pk, ts_nano, shard_total}, {peer_ip, version, nil, signature, shard_index, original_size}, payload})
-              end
-
-            %{error: :encrypted, shard_total: 1, pk: pk, version: version, ts_nano: ts_nano, payload: payload} ->
-              shared_secret = NodePeers.get_shared_secret(pk)
-
-              <<iv::12-binary, tag::16-binary, ciphertext::binary>> = payload
-              key = :crypto.hash(:sha256, [shared_secret, :binary.encode_unsigned(ts_nano), iv])
-              plaintext = :crypto.crypto_one_time_aead(:aes_256_gcm, key, iv, ciphertext, <<>>, tag, false)
-
-              msg = plaintext
-              |> NodeProto.deflate_decompress()
-              |> :erlang.binary_to_term([:safe])
-
-              peer_ip = Tuple.to_list(ip) |> Enum.join(".")
-              peer = %{ip: peer_ip, signer: pk, version: version}
-
-              hasPermissionSlip = NodeANR.handshaked_and_valid_ip4(pk, peer_ip)
-              cond do
-                hasPermissionSlip -> NodeState.handle(msg.op, %{peer: peer}, msg)
-                msg.op in [:ping, :new_phone_who_dis, :what?] -> NodeState.handle(msg.op, %{peer: peer}, msg)
-                true -> nil
-              end
-
-
-            %{error: :encrypted, pk: pk, ts_nano: ts_nano, shard_index: shard_index, shard_total: shard_total,
-              version: version, original_size: original_size, payload: payload} ->
-              peer_ip = Tuple.to_list(ip) |> Enum.join(".")
-
-              hasPermissionSlip = NodeANR.handshaked_and_valid_ip4(pk, peer_ip)
-              if hasPermissionSlip do
-                shared_secret = NodePeers.get_shared_secret(pk)
-
-                gen = NodeGen.get_reassembly_gen(pk, ts_nano)
-                send(gen, {:add_shard, {pk, ts_nano, shard_total}, {peer_ip, version, shared_secret, nil, shard_index, original_size}, payload})
-              end
-
-            _data ->
-              nil
-          end
-          catch
-            _e, _r -> nil
+          peer_ip = "#{ipa}.#{ipb}.#{ipc}.#{ipd}"
+          if !NodeGenNetguard.frame_ok(peer_ip) do
+            IO.inspect {:dropping_frame_from, peer_ip}
+          else
+            try do proc_msg(peer_ip, data) catch _,_ -> nil end
           end
         end)
 
-      {:send_to_some, peer_ips, msg_compressed} ->
+      {:send_to, peer_pairs, msg} ->
         port = Application.fetch_env!(:ama, :udp_port)
-        Enum.each(peer_ips, fn(ip)->
-          peer = NodePeers.by_ip(ip)
-          {:ok, ip} = :inet.parse_address(~c'#{ip}')
-          msgs_packed = NodeProto.encrypt_message_v2(msg_compressed, peer[:shared_secret])
-          Enum.each(msgs_packed, fn(msg_packed)->
+        msg_compressed = NodeProto.compress(msg)
+        Enum.each(peer_pairs, fn(%{ip4: ip4, pk: pk})->
+          {:ok, ip} = :inet.parse_address(~c'#{ip4}')
+          NodeProto.encrypt_message(msg_compressed, NodeANR.get_shared_secret(pk))
+          |> Enum.each(fn(msg_packed)->
             :ok = :gen_udp.send(state.socket, ip, port, msg_packed)
           end)
         end)
 
       {:udp_passive, _socket} ->
         :ok = :inet.setopts(state.socket, [{:active, 16}])
+
+      :netguard_decrement_buckets ->
+        start = :os.system_time(1000)
+        NodeGenNetguard.decrement_buckets(state.idx)
+        took = :os.system_time(1000) - start
+        if took > 100 do
+          IO.inspect {:decrement_buckets_took, state.idx, took}
+        end
+        :erlang.send_after(3000, self(), :netguard_decrement_buckets)
 
     end
     {:noreply, state}

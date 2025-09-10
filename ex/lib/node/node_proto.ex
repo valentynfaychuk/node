@@ -1,89 +1,53 @@
 defmodule NodeProto do
-  def ping() do
+
+  def new_phone_who_dis() do
+    %{op: :new_phone_who_dis}
+  end
+  def new_phone_who_dis_reply() do
+    anr = NodeANR.build()
+    %{op: :new_phone_who_dis_reply, anr: anr}
+  end
+
+  def get_peer_anrs() do
+    existing_peers = NodeANR.b3_f4()
+    %{op: :get_peer_anrs, hasPeersb3f4: existing_peers}
+  end
+  def get_peer_anrs_reply(missing_anrs) do
+    %{op: :get_peer_anrs_reply, anrs: missing_anrs}
+  end
+
+  def ping(ts_m) do
+    %{op: :ping, ts_m: ts_m}
+  end
+  def ping_reply(ts_m) do
+    %{op: :ping_reply, ts_m: ts_m}
+  end
+
+  def event_tip() do
     tip = Consensus.chain_tip_entry()
     temporal = tip |> Map.take([:header, :signature, :mask])
     rooted = Fabric.rooted_tip_entry() |> Map.take([:header, :signature, :mask])
-    %{op: :ping, temporal: temporal, rooted: rooted, ts_m: :os.system_time(1000)}
+    %{op: :event_tip, temporal: temporal, rooted: rooted, ts_m: :os.system_time(1000)}
   end
 
-  def pong(ts_m) do
-    %{op: :pong, ts_m: ts_m}
+  def event_tx(tx_packed) when is_binary(tx_packed) do event_tx([tx_packed]) end
+  def event_tx(txs_packed) when is_list(txs_packed) do
+    %{op: :event_tx, txs_packed: txs_packed}
   end
 
-  def new_phone_who_dis(challenge) do
-    anr = Application.fetch_env!(:ama, :anr)
-    %{op: :new_phone_who_dis, anr: anr, challenge: challenge}
+  def event_entry(entry_packed) do
+    %{op: :event_entry, entry_packed: entry_packed}
   end
 
-  @doc """
-    @%%%####%%%%@@%%%%@@%%%%%%%%%%%%%%%%%%%%%%#%%%%%%%%%%%%%%@@@@@%%%%%%%%%%%%%%%%%%@@@@%%%%%%%%%%%@@@@@
-    %%%##**###%%%%%%%%%@@@%@@@%*+=---=+#%@@@%%%%%@@%%%%%%%%%%@@@@%%%%%%%%%%%%%%%%%%%%@@@@@@@@%%%%%%%@@@@
-    ##***+**##%%%%%%%%%@@@@%*=::::::::..-#@%%%%%@@@@@%%%%%%%%@@@@%%%%%%%%%%%%%%%%%%%%%%@@@@@@%%%%%%%%%%%
-    *#*****##%%%%%%%%%%@@@#:...::::---::::*@%%%@@@%%%%%%%%%%@@@@@%%%%%%%%%%%%%%%%%%%%%%%@@@@%%%%####%%%%
-    *****####%@@@@@@%%%@@#:....:--------::-%@@@@@@@@%%%%%%%@@@@@@%%%@@@%%@%%%%%%%%%%%%%@@@@%%%%%##*###%%
-    ##########%%%%@@%%%@@-:..:-++*#*+=====-#@@@@@@@@@@%%@@@@@@@@%@@@@@@@@%@@@@@@@@@%@@@@@%%%%%%%#****###
-    %##%%%#####%%%%@%%#**::.::---==+=-=%%*=#@%%#%%####%%###%@##*%#*#%##*#%%#####%*******%%#*++*%#++*+*##
-    %#%%%%###%%%%%%%%%=--::.:--:----=--=+**#%#:-#:-:  +*   +#. .*.  *-  -@*    :*.     .#=. :..-*. +..*#
-    %%%%%%#######%%%%#---:..:-:-===***#+--=#%*.-+.--  ==   =+  :#.  *-  -@= .. .*#+  .+##...#:  =-=#:=##
-    ###%%############%+--::::---++**##**+==#%#####%+  --   -=  -%.  :.  -%: .=  =@*  .#@%###%:  =%%%%%%%
-    ##################*--::----=*%%%%%%%##++#%%%%%%*. :. :.::  +%.  :.  -%. :#. -@#  .#@%:..-.  *@@@@@@@
-    ##################=:::----==-=+%%%%*#+#*=*%%%%%%. ...*...  #%.  *-  =#  .:. .%#  .#@@-::===*@@@@@@@@
-    ###############%%+:::---=+++==****+===+##+*@@@@@-   .%-   .%%.  *-  =+  .+.  *#   %@@-::%@@@@@@@@@@@
-    %%%%%%%###%%%%%#=:::---=++****##++*+---++*+#@@@@*===+@*===+@@===%*==*+==+@+==*%===%@@===%@@@@@@@@@@@
-    %%%%%###*###***#+-::-=++***##%%%#*%#-:------=*@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-    %##%%%%%%%%%%###%%#+===+*#%%%%%%%%#-::--------*#%%@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-    ####%%%%%%%%@%##%%@@%#+=+*#%@%%##*:::---------=+==+%@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-  """
-  def what?(challenge, signature) do
-    anr = Application.fetch_env!(:ama, :anr)
-    %{op: :what?, anr: anr, challenge: challenge, signature: signature}
+  def event_attestation(attestation_packed) do
+    %{op: :event_attestation, attestation_packed: attestation_packed}
   end
 
-  def txpool(txs_packed) do
-    %{op: :txpool, txs_packed: txs_packed}
+  def catchup(height_flags) do
+    %{op: :catchup, height_flags: height_flags}
   end
-
-  def peers(ips) do
-    %{op: :peers, ips: ips}
-  end
-
-  def peers_v2(anrs) do
-      %{op: :peers_v2, anrs: anrs}
-    end
-
-  def sol(sol) do
-    %{op: :sol, sol: sol}
-  end
-
-  def entry(map) do
-    msg = %{op: :entry, entry_packed: map.entry_packed}
-    msg = if !map[:attestation_packed] do msg else Map.put(msg, :attestation_packed, map.attestation_packed) end
-    msg = if !map[:consensus_packed] do msg else Map.put(msg, :consensus_packed, map.consensus_packed) end
-    msg
-  end
-
-  def attestation_bulk(attestations_packed) do
-    %{op: :attestation_bulk, attestations_packed: attestations_packed}
-  end
-
-  def consensus_bulk(consensuses_packed) do
-    %{op: :consensus_bulk, consensuses_packed: consensuses_packed}
-  end
-
-  def catchup_entry(heights) do
-    %{op: :catchup_entry, heights: heights}
-  end
-
-  def catchup_tri(heights) do
-    %{op: :catchup_tri, heights: heights}
-  end
-
-  def catchup_bi(heights) do
-    %{op: :catchup_bi, heights: heights}
-  end
-
-  def catchup_attestation(hashes) do
-    %{op: :catchup_attestation, hashes: hashes}
+  def catchup_reply(tries) do
+    %{op: :catchup_reply, tries: tries}
   end
 
   def special_business(business) do
@@ -94,13 +58,8 @@ defmodule NodeProto do
     %{op: :special_business_reply, business: business}
   end
 
-  def solicit_entry(hash) do
-    %{op: :solicit_entry, hash: hash}
-  end
 
-  def solicit_entry2() do
-    %{op: :solicit_entry2}
-  end
+
 
   def deflate_compress(data) do
     z = :zlib.open()
@@ -125,28 +84,8 @@ defmodule NodeProto do
     |> :erlang.term_to_binary([:deterministic])
     |> deflate_compress()
   end
-  def encrypt_message_v2(msg_compressed, nil) do
-    pk = Application.fetch_env!(:ama, :trainer_pk)
-    sk = Application.fetch_env!(:ama, :trainer_sk)
-    version_3byte = Application.fetch_env!(:ama, :version_3b)
 
-    signature = BlsEx.sign!(sk, Blake3.hash(pk<>msg_compressed), BLS12AggSig.dst_node())
-
-    ts_n = :os.system_time(:nanosecond)
-
-    if byte_size(msg_compressed) < 1300 do
-      [<<"AMA", version_3byte::binary, 0::7, 1::1, pk::binary, signature::binary, 0::16, 1::16, ts_n::64, byte_size(msg_compressed)::32, msg_compressed::binary>>]
-    else
-      shards = div(byte_size(msg_compressed)+1023, 1024)
-      r = ReedSolomonEx.create_resource(shards, shards, 1024)
-      ReedSolomonEx.encode_shards(r, msg_compressed)
-      |> Enum.take(shards+1+div(shards,4))
-      |> Enum.map(fn {idx, shard}->
-        <<"AMA", version_3byte::binary, 0::7, 1::1, pk::binary, signature::binary, idx::16, (shards*2)::16, ts_n::64, byte_size(msg_compressed)::32, shard::binary>>
-      end)
-    end
-  end
-  def encrypt_message_v2(msg_compressed, shared_key) do
+  def encrypt_message(msg_compressed, shared_key) do
     pk = Application.fetch_env!(:ama, :trainer_pk)
     version_3byte = Application.fetch_env!(:ama, :version_3b)
 
@@ -156,7 +95,7 @@ defmodule NodeProto do
     {ciphertext, tag} = :crypto.crypto_one_time_aead(:aes_256_gcm, key, iv, msg_compressed, <<>>, 16, true)
 
     payload = <<iv::binary, tag::binary, ciphertext::binary>>
-    if byte_size(payload) < 1380 do
+    if byte_size(payload) < 1360 do
       [<<"AMA", version_3byte::binary, 0, pk::binary, 0::16, 1::16, ts_n::64, byte_size(payload)::32, payload::binary>>]
     else
       shards = div(byte_size(payload)+1023, 1024)
@@ -169,38 +108,25 @@ defmodule NodeProto do
     end
   end
 
-  def unpack_message_v2(<<"AMA", version_3byte::3-binary, 0::7, 1::1, pk::48-binary, signature::96-binary,
-    shard_index::16, shard_total::16, ts_n::64, original_size::32, msg_compressed_or_shard::binary>>) do
+  def unpack_message(<<"AMA", va, vb, vc, 0::8, pk::48-binary, s_idx::16, s_total::16, ts_n::64, original_size::32, payload::binary>>) do
     try do
       if pk == Application.fetch_env!(:ama, :trainer_pk), do: throw(%{error: :msg_to_self})
 
-      <<a,b,c>> = version_3byte
-      version = "#{a}.#{b}.#{c}"
+      version = "#{va}.#{vb}.#{vc}"
+      if version < "1.1.7", do: throw(%{error: :old_version})
 
-      %{error: :signature, pk: :binary.copy(pk), ts_nano: ts_n, shard_index: shard_index, shard_total: shard_total, version: version,
-        signature: :binary.copy(signature), original_size: original_size, payload: msg_compressed_or_shard}
+      if s_total >= 10_000, do: throw(%{error: :too_large_shard})
+      if original_size >= 1024_0_000, do: throw(%{error: :too_large_size})
+
+      %{pk: pk, ts_nano: ts_n, shard_index: s_idx, shard_total: s_total, version: version,
+        original_size: original_size, payload: :binary.copy(payload)}
     catch
       throw,r -> %{error: r}
       e,r -> %{error: e, reason: r}
     end
   end
 
-  def unpack_message_v2(<<"AMA", version_3byte::3-binary, 0::8, pk::48-binary,
-    shard_index::16, shard_total::16, ts_n::64, original_size::32, msg_compressed_or_shard::binary>>) do
-    try do
-      if pk == Application.fetch_env!(:ama, :trainer_pk), do: throw(%{error: :msg_to_self})
-
-      <<a,b,c>> = version_3byte
-      version = "#{a}.#{b}.#{c}"
-
-      %{error: :encrypted, pk: :binary.copy(pk), ts_nano: ts_n, shard_index: shard_index, shard_total: shard_total, version: version,
-        original_size: original_size, payload: msg_compressed_or_shard}
-    catch
-      throw,r -> %{error: r}
-      e,r -> %{error: e, reason: r}
-    end
-  end
-
-  def unpack_message_v2(data) do
+  def unpack_message(data) do
+    %{error: :unknown_data}
   end
 end

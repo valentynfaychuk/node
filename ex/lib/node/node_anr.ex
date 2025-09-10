@@ -16,6 +16,12 @@ defmodule NodeANR do
     end)
     insert(build())
     set_handshaked(Application.fetch_env!(:ama, :trainer_pk))
+
+    #TODO: TEMPORARY clear old ANRs
+    :ets.foldl(fn(%{pk: pk, version: version}, _) ->
+      version < "1.1.7" && MnesiaKV.delete(NODEANR, pk)
+    end, nil, NODEANR)
+
     Enum.each(handshaked(), fn(%{pk: pk})->
       pk != Application.fetch_env!(:ama, :trainer_pk) && set_last_message(pk)
     end)

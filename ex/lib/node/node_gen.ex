@@ -8,7 +8,6 @@ defmodule NodeGen do
   def init([ip_tuple, _port]) do
     ip = Tuple.to_list(ip_tuple) |> Enum.join(".")
     NodeANR.seed()
-    NodePeers.seed(ip)
 
     state = %{
       ns: NodeState.init()
@@ -17,6 +16,7 @@ defmodule NodeGen do
     :erlang.send_after(1000, self(), :tick)
     :erlang.send_after(1000, self(), :tick_ping)
     :erlang.send_after(1000, self(), :tick_anr)
+    :erlang.send_after(6000, self(), :tick_purge_txpool)
     {:ok, state}
   end
 
@@ -30,75 +30,45 @@ defmodule NodeGen do
     :'NodeGenReassemblyGen#{idx}'
   end
 
-  def broadcast_ping() do
-    :erlang.spawn(fn()->
-      msg = NodeProto.ping()
-      ips = NodePeers.all() |> Enum.map(& &1.ip)
-      send(get_socket_gen(), {:send_to_some, ips, NodeProto.compress(msg)})
-    end)
+  def broadcast(msg, opts \\ %{validators: 1000, peers: 10}) do
+    {vals, peers} = NodeANR.handshaked_and_online()
+    vals = Enum.take(vals, opts[:validators] || 1000)
+    peers = Enum.take(peers, opts[:peers] || 10)
+    send(get_socket_gen(), {:send_to, vals ++ peers, msg})
   end
 
-  def broadcast_check_anr() do
+  def broadcast_check_unverified_anr() do
     my_pk = Application.fetch_env!(:ama, :trainer_pk)
-    NodeANR.get_random_unverified(3)
-    |> Enum.filter(& elem(&1,0) != my_pk)
-    |> Enum.each(fn({pk, ip})->
-      #IO.inspect {:anr_request_to, ip}
-      challenge = :os.system_time(1)
-      :erlang.spawn(fn()->
-        msg = NodeProto.new_phone_who_dis(challenge)
-        send(get_socket_gen(), {:send_to_some, [ip], NodeProto.compress(msg)})
-      end)
-    end)
+    peers = NodeANR.get_random_unverified(3)
+    |> Enum.filter(& &1.pk != my_pk)
+    #IO.inspect {:handshake_anr, peers}
+    send(get_socket_gen(), {:send_to, peers, NodeProto.new_phone_who_dis()})
   end
 
-  def broadcast(:txpool, who, [txs_packed]) do
-    :erlang.spawn(fn()->
-      msg = NodeProto.txpool(txs_packed)
-      ips = NodePeers.by_who(who)
-      send(get_socket_gen(), {:send_to_some, ips, NodeProto.compress(msg)})
-    end)
+  def broadcast_request_peer_anrs() do
+    my_pk = Application.fetch_env!(:ama, :trainer_pk)
+    peers = NodeANR.get_random_verified(3)
+    |> Enum.filter(& &1.pk != my_pk)
+
+    send(get_socket_gen(), {:send_to, peers, NodeProto.get_peer_anrs()})
   end
 
-  def broadcast(:entry, who, [map]) do
+  def broadcast_ping_and_tip(ts_m) do
     :erlang.spawn(fn()->
-      msg = NodeProto.entry(map)
-      ips = NodePeers.by_who(who)
-      send(get_socket_gen(), {:send_to_some, ips, NodeProto.compress(msg)})
-    end)
-  end
+      msg = NodeProto.ping(ts_m)
+      msg2 = NodeProto.event_tip()
 
-  def broadcast(:attestation_bulk, who, [attestations_packed]) do
-    :erlang.spawn(fn()->
-      msg = NodeProto.attestation_bulk(attestations_packed)
-      ips = NodePeers.by_who(who)
-      send(get_socket_gen(), {:send_to_some, ips, NodeProto.compress(msg)})
-    end)
-  end
-
-  def broadcast(:sol, who, [sol]) do
-    :erlang.spawn(fn()->
-      msg = NodeProto.sol(sol)
-      ips = NodePeers.by_who(who)
-      send(get_socket_gen(), {:send_to_some, ips, NodeProto.compress(msg)})
-    end)
-  end
-
-  def broadcast(:special_business, who, [business]) do
-    :erlang.spawn(fn()->
-      msg = NodeProto.special_business(business)
-      ips = NodePeers.by_who(who)
-      send(get_socket_gen(), {:send_to_some, ips, NodeProto.compress(msg)})
+      {vals, peers} = NodeANR.handshaked_and_online()
+      send(get_socket_gen(), {:send_to, vals ++ peers, msg})
+      send(get_socket_gen(), {:send_to, vals ++ Enum.take(peers, 10), msg2})
     end)
   end
 
   def tick() do
-    NodePeers.clear_stale()
   end
 
   def handle_info(msg, state) do
     state = case msg do
-
       :tick ->
         :erlang.send_after(1000, self(), :tick)
         tick()
@@ -106,13 +76,40 @@ defmodule NodeGen do
 
       :tick_ping ->
         :erlang.send_after(500, self(), :tick_ping)
-        broadcast_ping()
-        state
+
+        ts_m = :os.system_time(1000)
+        cutoff = ts_m - 8_000
+        ping_challenge = Map.filter(state.ns.ping_challenge, fn {k, _} -> k > cutoff end)
+        ping_challenge = Map.put(ping_challenge, ts_m, 1)
+
+        broadcast_ping_and_tip(ts_m)
+
+        put_in(state, [:ns, :ping_challenge], ping_challenge)
 
       :tick_anr ->
-        :erlang.send_after(1000, self(), :tick_anr)
-        broadcast_check_anr()
+        :erlang.send_after(3000, self(), :tick_anr)
+
+        started = Application.fetch_env!(:ama, :node_started_time)
+        if (:os.system_time(1000) - started) > 30_000 do
+          NodeANR.clear_verified_offline()
+        end
+
+        broadcast_check_unverified_anr()
+        broadcast_request_peer_anrs()
         state
+
+      :tick_purge_txpool ->
+        :erlang.spawn(fn()->
+          task = Task.async(fn -> TXPool.purge_stale() end)
+          try do
+            Task.await(task, 600)
+          catch
+            :exit, {:timeout, _} -> Task.shutdown(task, :brutal_kill)
+          end
+        end)
+        :erlang.send_after(6000, self(), :tick_purge_txpool)
+        state
+
 
       {:handle_sync, op, innerstate, args} ->
         #TODO: ns dropped

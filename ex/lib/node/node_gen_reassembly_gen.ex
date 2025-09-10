@@ -26,66 +26,33 @@ defmodule NodeGenReassemblyGen do
     {:noreply, state}
   end
 
-  def handle_info({:add_shard, key={pk, ts_nano, shard_total}, {ip, version_3byte, shared_secret, signature, shard_index, original_size}, shard}, state) do
+  def handle_info({:add_shard, key={pk, ts_nano, shard_total}, {peer_ip, version, shard_index, original_size}, shard}, state) do
     old_shards = get_in(state, [:reorg, key])
     cond do
-        !old_shards -> {:noreply, put_in(state, [:reorg, key], %{shard_index=> shard})}
-        old_shards == :spent -> {:noreply, state}
+      !old_shards -> {:noreply, put_in(state, [:reorg, key], %{shard_index=> shard})}
+      old_shards == :spent -> {:noreply, state}
 
-        map_size(old_shards) < (div(shard_total,2)-1) -> {:noreply, put_in(state, [:reorg, key, shard_index], shard)}
+      map_size(old_shards) < (div(shard_total,2)-1) -> {:noreply, put_in(state, [:reorg, key, shard_index], shard)}
 
-        true ->
-            state = put_in(state, [:reorg, key], :spent)
+      true ->
+        state = put_in(state, [:reorg, key], :spent)
 
-            shards = :maps.to_list(old_shards) ++ [{shard_index, shard}]
+        shards = :maps.to_list(old_shards) ++ [{shard_index, shard}]
 
-            try do
-                r = ReedSolomonEx.create_resource(div(shard_total,2), div(shard_total,2), 1024)
-                payload = ReedSolomonEx.decode_shards(r, shards, shard_total, original_size)
-                proc_msg(pk, shared_secret, signature, ts_nano, ip, version_3byte, payload)
-            catch
-                e,r -> IO.inspect {:msg_reassemble_failed, e, r, __STACKTRACE__}
-            end
-            {:noreply, state}
-    end
-  end
-
-  def proc_msg(pk, shared_secret, signature, ts_nano, ip, version_3byte, payload) do
-    try do
-      if signature do
-        valid = BlsEx.verify?(pk, signature, Blake3.hash(pk<>payload), BLS12AggSig.dst_node())
-        if valid do
-
-          msg = payload
-          |> NodeProto.deflate_decompress()
-          |> :erlang.binary_to_term([:safe])
-
-          #IO.inspect {:reassembled, msg}
-
+        try do
+          r = ReedSolomonEx.create_resource(div(shard_total,2), div(shard_total,2), 1024)
+          payload = ReedSolomonEx.decode_shards(r, shards, shard_total, original_size)
           :erlang.spawn(fn()->
-            peer = %{ip: ip, version: version_3byte, signer: pk}
-            NodeState.handle(msg.op, %{peer: peer}, msg)
+            try do
+              NodeGenSocketGen.proc_payload(peer_ip, pk, version, ts_nano, payload)
+            catch
+              _,_ -> nil
+            end
           end)
+        catch
+          e,r -> IO.inspect {:msg_reassemble_failed, e, r, __STACKTRACE__}
         end
-      else
-        <<iv::12-binary, tag::16-binary, ciphertext::binary>> = payload
-        key = :crypto.hash(:sha256, [shared_secret, :binary.encode_unsigned(ts_nano), iv])
-        plaintext = :crypto.crypto_one_time_aead(:aes_256_gcm, key, iv, ciphertext, <<>>, tag, false)
-
-        msg = plaintext
-        |> NodeProto.deflate_decompress()
-        |> :erlang.binary_to_term([:safe])
-
-        #IO.inspect {:reassembled, msg}
-
-        :erlang.spawn(fn()->
-          peer = %{ip: ip, version: version_3byte, signer: pk}
-          NodeState.handle(msg.op, %{peer: peer}, msg)
-        end)
-      end
-    catch
-        _,_ -> nil
-        #e,r -> IO.inspect {:msg_decode_failed, e, r, __STACKTRACE__}
+        {:noreply, state}
     end
   end
 end

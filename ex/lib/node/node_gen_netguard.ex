@@ -3,15 +3,15 @@ defmodule NodeGenNetguard do
   @max_msg_per_6_sec %{
     new_phone_who_dis: 10,
     new_phone_who_dis_reply: 10,
-    peers: 10,
-    peers_reply: 10,
-    ping: 10,
-    ping_reply: 10,
+    get_peer_anrs: 10,
+    get_peer_anrs_reply: 10,
+    ping: 30,
+    ping_reply: 30,
     special_business: 10,
     special_business_reply: 10,
     catchup: 10,
     catchup_reply: 10,
-    solicit_entry: 10,
+    event_tip: 30,
     event_entry: 30,
     event_tx: 6000,
     event_attestion: 6000,
@@ -36,13 +36,15 @@ defmodule NodeGenNetguard do
 
   def decrement_buckets(idx) do
     step = trunc(@max_frames_per_6_sec / 2)
-    :ets.foldl(fn({peer_ip, _}, nil)->
-      :ets.update_counter(:'NODENetGuardTotalFrames#{idx}', peer_ip, {2, -step, 0, 0})
+    :ets.foldl(fn({peer_ip, _}, _)->
+      ctr = :ets.update_counter(:'NODENetGuardTotalFrames#{idx}', peer_ip, {2, -step, 0, 0})
+      ctr == 0 && :ets.delete(:'NODENetGuardTotalFrames#{idx}', peer_ip)
     end, nil, :'NODENetGuardTotalFrames#{idx}')
 
-    :ets.foldl(fn({{peer_ip, op}, _}, nil)->
+    :ets.foldl(fn({{peer_ip, op}, _}, _)->
       step = trunc(@max_msg_per_6_sec[op] / 2)
-      :ets.update_counter(:'NODENetGuardPer6Seconds#{idx}', {peer_ip, op}, {2, -step, 0, 0})
+      ctr = :ets.update_counter(:'NODENetGuardPer6Seconds#{idx}', {peer_ip, op}, {2, -step, 0, 0})
+      ctr == 0 && :ets.delete(:'NODENetGuardPer6Seconds#{idx}', {peer_ip, op})
     end, nil, :'NODENetGuardPer6Seconds#{idx}')
   end
 end
