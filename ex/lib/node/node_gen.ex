@@ -59,7 +59,7 @@ defmodule NodeGen do
       msg2 = NodeProto.event_tip()
 
       {vals, peers} = NodeANR.handshaked_and_online()
-      send(get_socket_gen(), {:send_to, vals ++ peers, msg})
+      send(get_socket_gen(), {:send_to, vals ++ Enum.take(peers, 10), msg})
       send(get_socket_gen(), {:send_to, vals ++ Enum.take(peers, 10), msg2})
     end)
   end
