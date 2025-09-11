@@ -281,7 +281,7 @@ defmodule NodeANR do
       k = :math.ceil(pct * n) |> trunc()
 
       peers
-      |> Enum.frequencies_by(& &1.height)
+      |> Enum.frequencies_by(& &1.height_root)
       |> Enum.sort_by(fn {h, _} -> h end, :desc)
       |> Enum.reduce_while(0, fn {h, cnt}, acc ->
         acc = acc + cnt
@@ -291,13 +291,19 @@ defmodule NodeANR do
 
   def highest_validator_height() do
     {vals, peers} = NodeANR.handshaked_and_online()
-    total = vals ++ peers
-    total = Enum.map(total, fn(%{ip4: ip4, pk: pk})->
+    vals = Enum.map(vals, fn(%{ip4: ip4, pk: pk})->
       height_root = :ets.lookup_element(NODEANRHOT, pk, 5, nil)[:header_unpacked][:height]
       height_temp = :ets.lookup_element(NODEANRHOT, pk, 6, nil)[:header_unpacked][:height]
       %{pk: pk, ip4: ip4, height_root: height_root, height_temp: height_temp}
     end)
     |> Enum.filter(& &1.height_root && &1.height_temp)
+    peers = Enum.map(peers, fn(%{ip4: ip4, pk: pk})->
+      height_root = :ets.lookup_element(NODEANRHOT, pk, 5, nil)[:header_unpacked][:height]
+      height_temp = :ets.lookup_element(NODEANRHOT, pk, 6, nil)[:header_unpacked][:height]
+      %{pk: pk, ip4: ip4, height_root: height_root, height_temp: height_temp}
+    end)
+    |> Enum.filter(& &1.height_root && &1.height_temp)
+    total = vals ++ peers
 
     max_height_rooted = total
     |> Enum.sort_by(& &1.height_root, :desc)
