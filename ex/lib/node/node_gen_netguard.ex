@@ -9,13 +9,13 @@ defmodule NodeGenNetguard do
     ping_reply: 30,
     special_business: 10,
     special_business_reply: 10,
-    catchup: 10,
-    catchup_reply: 10,
+    catchup: 20,
+    catchup_reply: 20,
     event_tip: 30,
     event_entry: 30,
     event_tx: 6000,
-    event_attestion: 6000,
-    solicity_entry: 2,
+    event_attestation: 6000,
+    solicit_entry: 2,
     sell_sol: 10_000,
   }
   @msg_ops Enum.into(@max_msg_per_6_sec, %{}, & {elem(&1,0), true})
