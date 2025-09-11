@@ -39,7 +39,7 @@ defmodule NodeState do
     end)
     |> Enum.shuffle()
     |> Enum.take(3)
-    |> Enum.map(& NodeANR.by_pk(&1))
+    |> Enum.map(& NodeANR.pack(NodeANR.by_pk(&1)))
 
     send(NodeGen.get_socket_gen(), {:send_to, [%{ip4: istate.peer.ip4, pk: istate.peer.pk}], NodeProto.get_peer_anrs_reply(missing_anrs)})
   end
