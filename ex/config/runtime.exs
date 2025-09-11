@@ -26,13 +26,9 @@ config :ama, :http_port, (System.get_env("HTTP_PORT") || "80") |> :erlang.binary
 
 udp_ipv4_iface =  ((System.get_env("UDP_IPV4") || "0.0.0.0") |> :unicode.characters_to_list() |> :inet.parse_ipv4_address() |> (case do {:ok, addr}-> addr end))
 config :ama, :udp_ipv4_tuple, udp_ipv4_iface
-config :ama, :udp_port, 36969
+config :ama, :udp_port, (System.get_env("UDP_PORT") || "36969") |> :erlang.binary_to_integer()
 
 #Nodes
-config :ama, :seednodes, ["104.218.45.23", "72.9.144.110"]
-config :ama, :othernodes, (try do (System.get_env("OTHERNODES") |> String.split(",")) || [] catch _,_ -> [] end)
-config :ama, :trustfactor, (try do System.get_env("TRUSTFACTOR") |> :erlang.binary_to_float() catch _,_ -> 0.8 end)
-
 if !Util.verify_time_sync() do
     IO.puts "🔴 🕒 time not synced OR systemd-ntp client not found; DYOR 🔴"
 end

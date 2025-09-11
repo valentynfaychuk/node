@@ -1,8 +1,8 @@
 defmodule NodeGenNetguard do
   @max_frames_per_6_sec 40_000
   @max_msg_per_6_sec %{
-    new_phone_who_dis: 10,
-    new_phone_who_dis_reply: 10,
+    new_phone_who_dis: 20,
+    new_phone_who_dis_reply: 20,
     get_peer_anrs: 10,
     get_peer_anrs_reply: 10,
     ping: 30,
