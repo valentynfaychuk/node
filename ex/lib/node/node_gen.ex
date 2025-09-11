@@ -32,9 +32,13 @@ defmodule NodeGen do
 
   def broadcast(msg, opts \\ %{validators: 1000, peers: 10}) do
     {vals, peers} = NodeANR.handshaked_and_online()
+    self = if !opts[:self] do [] else
+      anr = NodeANR.by_pk(Application.fetch_env!(:ama, :trainer_pk))
+      [%{ip4: anr.ip4, pk: anr.pk}]
+    end
     vals = Enum.take(vals, opts[:validators] || 1000)
     peers = Enum.take(peers, opts[:peers] || 10)
-    send(get_socket_gen(), {:send_to, vals ++ peers, msg})
+    send(get_socket_gen(), {:send_to, self ++ vals ++ peers, msg})
   end
 
   def broadcast_check_unverified_anr() do

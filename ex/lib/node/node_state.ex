@@ -163,8 +163,7 @@ defmodule NodeState do
           pk = Application.fetch_env!(:ama, :trainer_pk)
           business = %{op: "slash_trainer_tx_reply", epoch: term.business.epoch, malicious_pk: term.business.malicious_pk,
             pk: pk, signature: signature}
-          msg = NodeProto.special_business_reply(business)
-          :erlang.spawn(fn()-> send(NodeGen.get_socket_gen(), {:send_to_some, [istate.peer.ip4], compress(msg)}) end)
+          send(NodeGen.get_socket_gen(), {:send_to, [%{ip4: istate.peer.ip4, pk: istate.peer.pk}], NodeProto.special_business_reply(business)})
         end
       op == "slash_trainer_entry" ->
         signature = SpecialMeetingAttestGen.maybe_attest("slash_trainer_entry", term.business.entry_packed)
@@ -172,8 +171,7 @@ defmodule NodeState do
         if signature do
           pk = Application.fetch_env!(:ama, :trainer_pk)
           business = %{op: "slash_trainer_entry_reply", entry_hash: entry.hash, pk: pk, signature: signature}
-          msg = NodeProto.special_business_reply(business)
-          :erlang.spawn(fn()-> send(NodeGen.get_socket_gen(), {:send_to_some, [istate.peer.ip4], compress(msg)}) end)
+          send(NodeGen.get_socket_gen(), {:send_to, [%{ip4: istate.peer.ip4, pk: istate.peer.pk}], NodeProto.special_business_reply(business)})
         end
     end
   end
