@@ -131,7 +131,7 @@ defmodule FabricSyncAttestGen do
     rooted = Fabric.rooted_tip_entry()
     rooted_height = rooted.header_unpacked.height
 
-    {height_abs, height_rooted_abs, height_bft} = NodeANR.highest_validator_height()
+    {height_rooted_abs, height_abs, height_bft} = NodeANR.highest_validator_height()
 
     old_highest_abs = highestTemporalHeight()
     new_highest_abs = max(temporal_height, height_abs)

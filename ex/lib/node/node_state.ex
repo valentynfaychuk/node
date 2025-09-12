@@ -15,9 +15,9 @@ defmodule NodeState do
   def handle(:new_phone_who_dis_reply, istate, term) do
     anr = NodeANR.verify_and_unpack(term.anr)
 
-    #signed within 6 seconds
+    #signed within 60 seconds
     ts = :os.system_time(1)
-    fresh6s = abs(ts - term.anr.ts) <= 6
+    fresh6s = abs(ts - term.anr.ts) <= 60
 
     if !!anr and istate.peer.ip4 == anr.ip4 and fresh6s do
       send(NodeGen, {:handle_sync, :new_phone_who_dis_reply_ns, istate, %{pk: anr.pk, anr: anr}})
