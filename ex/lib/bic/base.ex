@@ -3,9 +3,9 @@ defmodule BIC.Base do
 
     def exec_cost(epoch, txu) do
         bytes = byte_size(txu.tx_encoded) + 32 + 96
-        #3x lower fee, 1 cent AMA base per tx
+        #10-12x lower fee, 1 cent AMA base per tx
         if epoch >= 295 do
-          BIC.Coin.to_cents( 1 + div(bytes, 256) * 1 )
+          BIC.Coin.to_cents( 1 + div(bytes, 1024) * 1 )
         else
           BIC.Coin.to_cents( 3 + div(bytes, 256) * 3 )
         end
