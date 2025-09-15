@@ -43,6 +43,7 @@ defmodule TXPool do
     def validate_tx(txu, args \\ %{}) do
       chain_epoch = Map.get_lazy(args, :epoch, fn()-> Consensus.chain_epoch() end)
       chain_segment_vr_hash = Map.get_lazy(args, :segment_vr_hash, fn()-> Consensus.chain_segment_vr_hash() end)
+      chain_diff_bits = Map.get_lazy(args, :diff_bits, fn()-> Consensus.chain_diff_bits() end)
       batch_state = Map.get_lazy(args, :batch_state, fn()-> %{} end)
 
       try do
@@ -52,7 +53,7 @@ defmodule TXPool do
         batch_state = Map.put(batch_state, {:chain_nonce, txu.tx.signer}, txu.tx.nonce)
 
         balance = Map.get_lazy(batch_state, {:balance, txu.tx.signer}, fn()-> Consensus.chain_balance(txu.tx.signer) end)
-        balance = balance - BIC.Base.exec_cost(txu)
+        balance = balance - BIC.Base.exec_cost(chain_epoch, txu)
         balance = balance - BIC.Coin.to_cents(1)
         if balance < 0, do: throw(%{error: :not_enough_tx_exec_balance, key: {txu.tx.nonce, txu.hash}})
         batch_state = Map.put(batch_state, {:balance, txu.tx.signer}, balance)
@@ -77,11 +78,12 @@ defmodule TXPool do
     def validate_tx_batch(txs_packed) when is_list(txs_packed) do
       chain_epoch = Consensus.chain_epoch()
       segment_vr_hash = Consensus.chain_segment_vr_hash()
+      diff_bits = Consensus.chain_diff_bits()
 
       {good, _} = Enum.reduce(txs_packed, {[], %{}}, fn(tx_packed, {acc, batch_state})->
         case TX.validate(tx_packed) do
           %{error: :ok, txu: txu} ->
-            case TXPool.validate_tx(txu, %{epoch: chain_epoch, segment_vr_hash: segment_vr_hash, batch_state: batch_state}) do
+            case TXPool.validate_tx(txu, %{epoch: chain_epoch, segment_vr_hash: segment_vr_hash, diff_bits: diff_bits, batch_state: batch_state}) do
               %{error: :ok, batch_state: batch_state} -> {acc ++ [tx_packed], batch_state}
               %{error: error} -> {acc, batch_state}
             end

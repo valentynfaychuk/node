@@ -199,3 +199,34 @@ defmodule MatrixMul do
         IO.iodata_to_binary(iodata)
     end
 end
+
+defmodule MatMulTest do
+  def test(m \\ 16, n \\ 16, k \\ 64) do
+    a = Enum.map(0..(m*k-1), fn(idx)-> rem(idx, 256) end)
+    b = Enum.map(0..(k*n-1), fn(idx)-> r = rem(idx, 256); if r > 127 do r-256 else r end end)
+    c =
+      Enum.map(0..15, fn m ->
+        Enum.map(0..15, fn n ->
+          Enum.reduce(0..(k-1), 0, fn k, acc ->
+            acc + Enum.at(a, m*k + k) * Enum.at(b, k*16 + n)
+          end)
+        end)
+      end)
+  end
+
+  def test2() do
+    a = Enum.map(0..(16*128-1), fn(idx)-> rem(idx, 256) end)
+    b = Enum.map(0..(128*16-1), fn(idx)-> r = rem(idx, 256); if r > 127 do r-256 else r end end)
+    c =
+      Enum.map(0..15, fn m ->
+        Enum.map(0..15, fn n ->
+          Enum.reduce(0..(128-1), 0, fn k, acc ->
+            acc + Enum.at(a, m*128 + k) * Enum.at(b, k*16 + n)
+          end)
+        end)
+      end)
+  end
+
+  def test(m, n, k) do
+  end
+end

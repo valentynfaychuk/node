@@ -7,7 +7,7 @@ defmodule BIC.Epoch do
 
     @a 23_072_960_000
     @c 1110.573766
-    @start_epoch 500
+    @start_epoch 420
 
     def epoch_emission(epoch) when epoch >= @start_epoch do
       floor(0.5 * @a / :math.pow(epoch - @start_epoch + @c, 1.5))
@@ -140,12 +140,15 @@ defmodule BIC.Epoch do
     end
 
     def next(env) do
-        epoch_fin = env.entry_epoch
-        epoch_next = epoch_fin + 1
+      if env.entry_epoch >= 295 or env.entry_epoch < 420 do
+        next_420(env)
+      else
+        epoch_cur = env.entry_epoch
+        epoch_next = epoch_cur + 1
         top_x = 99
 
         # slash sols for malicious trainers
-        removedTrainers = kv_get("bic:epoch:trainers:removed:#{epoch_fin}", %{term: true}) || []
+        removedTrainers = kv_get("bic:epoch:trainers:removed:#{epoch_cur}", %{term: true}) || []
         leaders = kv_get_prefix("bic:epoch:solutions_count:", %{to_integer: true})
         |> Enum.reduce(%{}, fn({pk, count}, acc)->
             if pk in removedTrainers do
@@ -156,14 +159,14 @@ defmodule BIC.Epoch do
         end)
         |> Enum.sort_by(& {elem(&1,1), elem(&1,0)}, :desc)
 
-        trainers = kv_get("bic:epoch:trainers:#{epoch_fin}", %{term: true})
+        trainers = kv_get("bic:epoch:trainers:#{epoch_cur}", %{term: true})
         trainers_to_recv_emissions = leaders
         |> Enum.filter(& elem(&1,0) in trainers)
         |> Enum.take(top_x)
 
         total_sols = Enum.reduce(trainers_to_recv_emissions, 0, & &2 + elem(&1,1))
         Enum.each(trainers_to_recv_emissions, fn({trainer, trainer_sols})->
-            coins = div(trainer_sols * epoch_emission(epoch_fin), total_sols)
+            coins = div(trainer_sols * epoch_emission(epoch_cur), total_sols)
 
             emission_address = kv_get("bic:epoch:emission_address:#{trainer}")
             if emission_address do
@@ -189,6 +192,91 @@ defmodule BIC.Epoch do
 
         height = String.pad_leading("#{env.entry_height+1}", 12, "0")
         kv_put("bic:epoch:trainers:height:#{height}", new_validators, %{term: true})
+      end
+    end
+
+    def next_420(env) do
+        epoch_cur = env.entry_epoch
+        epoch_next = epoch_cur + 1
+        top_x = 99
+
+        # slash sols for malicious trainers
+        removedTrainers = kv_get("bic:epoch:trainers:removed:#{epoch_cur}", %{term: true}) || []
+        leaders = kv_get_prefix("bic:epoch:solutions_count:", %{to_integer: true})
+        |> Enum.reduce(%{}, fn({pk, count}, acc)->
+            if pk in removedTrainers do
+                acc
+            else
+                Map.put(acc, pk, count)
+            end
+        end)
+        |> Enum.sort_by(& {elem(&1,1), elem(&1,0)}, :desc)
+
+        trainers = kv_get("bic:epoch:trainers:#{epoch_cur}", %{term: true})
+        trainers_to_recv_emissions = leaders
+        |> Enum.filter(& elem(&1,0) in trainers and elem(&1,0) not in @peddlebike67)
+        |> Enum.take(top_x)
+
+        epoch_total_emission = epoch_emission(epoch_cur)
+        epoch_early_adopter_emission = div(epoch_total_emission, 7)
+        epoch_communityfund_emission = epoch_total_emission - epoch_early_adopter_emission
+        #Community fund for grants such as building open source code and building onchain/ecosystem
+        #alot of interest from early adopters to receive grants for building
+
+        n_count = length(@peddlebike67)
+        q = div(epoch_communityfund_emission, n_count)
+        r = rem(epoch_communityfund_emission, n_count)
+        n_summed = List.duplicate(q + 1, r) ++ List.duplicate(q, n_count - r)
+
+        Enum.zip(@peddlebike67, n_summed)
+        |> Enum.each(fn({trainer, coins})->
+          emission_address = kv_get("bic:epoch:emission_address:#{trainer}")
+          if emission_address do
+              kv_increment("bic:coin:balance:#{emission_address}:AMA", coins)
+          else
+              kv_increment("bic:coin:balance:#{trainer}:AMA", coins)
+          end
+        end)
+
+        total_sols = Enum.reduce(trainers_to_recv_emissions, 0, & &2 + elem(&1,1))
+        if total_sols > 0 do
+          Enum.each(trainers_to_recv_emissions, fn({trainer, trainer_sols})->
+              coins = div(trainer_sols * epoch_early_adopter_emission, total_sols)
+
+              emission_address = kv_get("bic:epoch:emission_address:#{trainer}")
+              if emission_address do
+                  kv_increment("bic:coin:balance:#{emission_address}:AMA", coins)
+              else
+                  kv_increment("bic:coin:balance:#{trainer}:AMA", coins)
+              end
+          end)
+        end
+
+        leaders = Enum.map(leaders, fn{pk, _}-> pk end)
+
+        #REMOVE THIS LATER, first we must start with a peddle bike as a
+        #UAV proved to have a lack of skilled pilots
+        leaders = leaders -- @peddlebike67
+        new_validators = (@peddlebike67 ++ leaders)
+        |> Enum.take(top_x)
+        |> Enum.shuffle()
+
+        kv_put("bic:epoch:trainers:#{epoch_next}", new_validators, %{term: true})
+
+        height = String.pad_leading("#{env.entry_height+1}", 12, "0")
+        kv_put("bic:epoch:trainers:height:#{height}", new_validators, %{term: true})
+
+        #new difficulty handling
+        old_diff_bits = kv_get("bic:epoch:diff_bits", %{to_integer: true}) || 24
+        next_diff_bits = SolDifficulty.next(old_diff_bits, total_sols)
+        kv_put("bic:epoch:diff_bits", next_diff_bits, %{to_integer: true})
+
+        #log for analysis / potential backseek in future upgrade
+        kv_put("bic:epoch:diff_bits:#{epoch_next}", next_diff_bits, %{to_integer: true})
+        kv_put("bic:epoch:total_sols:#{epoch_cur}", total_sols, %{to_integer: true})
+
+        kv_clear("bic:epoch:solbloom:")
+        kv_clear("bic:epoch:solutions_count:")
     end
 
     def slash_trainer_verify(cur_epoch, malicious_pk, trainers, mask, signature) do

@@ -38,8 +38,20 @@ defmodule BIC.Sol do
         a == 0
     end
 
+    def verify_hash_diff(_epoch, hash, diff_bits) do
+      <<a::size(diff_bits), _::bitstring>> = hash
+      a == 0
+    end
+
     def verify(sol = <<epoch::32-little, _::binary>>, opts \\ %{}) do
       cond do
+        epoch >= 295 ->
+          usol = unpack(sol)
+          if opts.segment_vr_hash != usol.segment_vr_hash, do: throw %{error: :segment_vr_hash}
+          if byte_size(sol) != @sol_size, do: throw(%{error: :invalid_sol_seed_size})
+          hash = Map.get_lazy(opts, :hash, fn()-> Blake3.hash(sol) end)
+          vr_b3 = Map.get_lazy(opts, :vr_b3, fn()-> :crypto.strong_rand_bytes(32) end)
+          verify_hash_diff(epoch, hash, opts.diff_bits) and Blake3.freivalds_e260(sol, vr_b3)
         epoch >= 282 ->
           usol = unpack(sol)
           if opts.segment_vr_hash != usol.segment_vr_hash, do: throw %{error: :segment_vr_hash}

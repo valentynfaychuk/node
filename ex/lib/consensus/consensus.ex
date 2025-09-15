@@ -125,6 +125,16 @@ defmodule Consensus do
       RocksDB.get("bic:epoch:segment_vr_hash", %{db: db, cf: cf.contractstate})
     end
 
+    def chain_diff_bits() do
+      %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+      RocksDB.get("bic:epoch:diff_bits", %{db: db, cf: cf.contractstate, to_integer: true}) || 24
+    end
+
+    def chain_total_sols() do
+      %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+      RocksDB.get("bic:epoch:total_sols", %{db: db, cf: cf.contractstate, to_integer: true}) || 0
+    end
+
     def chain_pop(pk) do
       %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
       RocksDB.get("bic:epoch:pop:#{pk}", %{db: db, cf: cf.contractstate})

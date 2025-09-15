@@ -1,9 +1,14 @@
 defmodule BIC.Base do
     import ConsensusKV
 
-    def exec_cost(txu) do
+    def exec_cost(epoch, txu) do
         bytes = byte_size(txu.tx_encoded) + 32 + 96
-        BIC.Coin.to_cents( 3 + div(bytes, 256) * 3 )
+        #3x lower fee, 1 cent AMA base per tx
+        if epoch >= 295 do
+          BIC.Coin.to_cents( 1 + div(bytes, 256) * 1 )
+        else
+          BIC.Coin.to_cents( 3 + div(bytes, 256) * 3 )
+        end
 
         #for future update
         #BIC.Coin.to_tenthousandth( 18 + div(bytes, 256) * 3 )
@@ -22,18 +27,28 @@ defmodule BIC.Base do
 
         Enum.each(txus, fn(txu)->
             kv_put("bic:base:nonce:#{txu.tx.signer}", txu.tx.nonce, %{to_integer: true})
-            exec_cost = exec_cost(txu)
+            exec_cost = exec_cost(env.entry_epoch, txu)
             kv_increment("bic:coin:balance:#{txu.tx.signer}:AMA", -exec_cost)
-            kv_increment("bic:coin:balance:#{env.entry_signer}:AMA", exec_cost)
+
+            if env.entry_epoch >= 295 do
+              #burn 50% to prevent MEV/FreeChainGrowth attack
+              half_exec_cost = div(exec_cost, 2)
+              kv_increment("bic:coin:balance:#{env.entry_signer}:AMA", half_exec_cost)
+              kv_increment("bic:coin:balance:#{BIC.Coin.burn_address()}:AMA", half_exec_cost)
+            else
+              kv_increment("bic:coin:balance:#{env.entry_signer}:AMA", exec_cost)
+            end
         end)
 
         #parallel verify sols
         segment_vr_hash = kv_get("bic:epoch:segment_vr_hash")
+        diff_bits = kv_get("bic:epoch:diff_bits", %{to_integer: true}) || 24
         steam = Task.async_stream(txus, fn txu ->
             sol = Enum.find_value(txu.tx.actions, fn(a)-> a.function == "submit_sol" and length(a.args) != [] and hd(a.args) end)
             if sol do
               hash = Blake3.hash(sol)
-              valid = try do BIC.Sol.verify(sol, %{hash: hash, vr_b3: env.entry_vr_b3, segment_vr_hash: segment_vr_hash}) catch _,_ -> false end
+              opts = %{hash: hash, vr_b3: env.entry_vr_b3, segment_vr_hash: segment_vr_hash, diff_bits: diff_bits}
+              valid = try do BIC.Sol.verify(sol, opts) catch _,_ -> false end
               %{hash: hash, valid: valid}
             end
         end)
@@ -52,12 +67,6 @@ defmodule BIC.Base do
         Process.delete(:mutations)
         Process.delete(:mutations_reverse)
         seed_random(env.entry_vr, "", "", "")
-
-        if env.entry_epoch >= 282 do
-        else
-          #thank you come again
-          kv_increment("bic:coin:balance:#{env.entry_signer}:AMA", BIC.Coin.to_flat(1))
-        end
 
         if rem(env.entry_height, 1000) == 0 do
             kv_put("bic:epoch:segment_vr_hash", Blake3.hash(env.entry_vr))
@@ -110,9 +119,19 @@ defmodule BIC.Base do
 
                     muts = Process.get(:mutations, []); Process.delete(:mutations)
                     muts_rev = Process.get(:mutations_reverse, []); Process.delete(:mutations_reverse)
+
                     exec_used = (result[:exec_used] || 0) * 100
-                    kv_increment("bic:coin:balance:#{env.entry_signer}:AMA", exec_used)
                     kv_increment("bic:coin:balance:#{env.tx_signer}:AMA", -exec_used)
+
+                    if env.entry_epoch >= 295 do
+                      #burn 50% to prevent MEV/FreeChainGrowth attack
+                      half_exec_cost = div(exec_used, 2)
+                      kv_increment("bic:coin:balance:#{env.entry_signer}:AMA", half_exec_cost)
+                      kv_increment("bic:coin:balance:#{BIC.Coin.burn_address()}:AMA", half_exec_cost)
+                    else
+                      kv_increment("bic:coin:balance:#{env.entry_signer}:AMA", exec_used)
+                    end
+
                     Process.put(:mutations_gas, Process.get(:mutations, []))
                     Process.put(:mutations_gas_reverse, Process.get(:mutations_reverse, []))
                     Process.put(:mutations, muts)

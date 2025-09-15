@@ -114,7 +114,8 @@ defmodule API.Peer do
       |> anr_for_web()
     end
 
-    def anr_for_web(anrs) when is_list(anrs) do Enum.map(anrs, & anr_for_web(&1)) end
+    def anr_for_web(anrs) when is_list(anrs) do Enum.map(anrs, & anr_for_web(&1)) |> Enum.filter(& &1) end
+    def anr_for_web(nil) do nil end
     def anr_for_web(anr) do
       %{
         pk: Base58.encode(anr.pk),
