@@ -269,6 +269,7 @@ defmodule FabricGen do
     #TODO: fix this in a better way later
     peers = Application.fetch_env!(:ama, :seedanrs_as_peers)
     send(NodeGen.get_socket_gen(), {:send_to, peers, msg})
+    send(NodeGen, :signal_tips_change)
 
     next_entry
   end

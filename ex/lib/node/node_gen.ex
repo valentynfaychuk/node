@@ -121,6 +121,14 @@ defmodule NodeGen do
         innerstate = NodeState.handle(op, innerstate, args)
         Map.put(state, :ns, innerstate)
 
+      :signal_tips_change ->
+        :erlang.spawn(fn()->
+          msg = NodeProto.event_tip()
+          {vals, peers} = NodeANR.handshaked_and_online()
+          send(get_socket_gen(), {:send_to, vals ++ Enum.take(peers, 10), msg})
+        end)
+        state
+
     end
     {:noreply, state}
   end

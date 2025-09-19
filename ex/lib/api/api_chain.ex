@@ -90,7 +90,7 @@ defmodule API.Chain do
 
     def stat_txs_sec() do
       height = Fabric.rooted_tip_height()
-      last_100 = Enum.sum_by(height..(height-100), fn(height)->
+      last_100 = Enum.sum_by((height-100)..height, fn(height)->
         length(Fabric.entries_by_height(height) |> List.first() |> Map.get(:txs))
       end)
       last_100/50
