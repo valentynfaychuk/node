@@ -39,4 +39,8 @@ defmodule API.Contract do
       |> Enum.filter(& &1.symbol == "AMA")
       |> Enum.sort_by(& &1.flat, :desc)
     end
+
+    def total_burned() do
+      API.Wallet.balance(BIC.Coin.burn_address())
+    end
 end

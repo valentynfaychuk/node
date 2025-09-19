@@ -61,7 +61,7 @@ defmodule API.Chain do
       #A*B=C M=16 K=50240 N=16 u8xi8=i32
       height_in_epoch = rem(Consensus.chain_height(), 100_000)
       total_score = API.Epoch.score() |> Enum.map(& Enum.at(&1,1))|> Enum.sum()
-      diff_multiplier = 256*256*256
+      diff_multiplier = Bitwise.bsl(1, API.Epoch.get_diff_bits())
       total_calcs = total_score * diff_multiplier
       macs = 16*16*50240
       ops = macs*2
@@ -83,9 +83,20 @@ defmodule API.Chain do
         total_supply_y3: BIC.Coin.from_flat(BIC.Epoch.circulating_without_burn(500*3)),
         total_supply_y30: BIC.Coin.from_flat(BIC.Epoch.circulating_without_burn(500*30)),
         pflops: pflops(),
+        burned: API.Contract.total_burned().float,
+        txs_per_sec: stat_txs_sec()
       }
     end
 
+    def stat_txs_sec() do
+      height = Fabric.rooted_tip_height()
+      last_100 = Enum.sum_by(height..(height-100), fn(height)->
+        length(Fabric.entries_by_height(height) |> List.first() |> Map.get(:txs))
+      end)
+      last_100/50
+    end
+
+    def format_entry_for_client(nil) do nil end
     def format_entry_for_client(entry) do
         hash = entry.hash
         entry = Map.put(entry, :tx_count, length(entry.txs))

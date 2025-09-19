@@ -114,7 +114,7 @@ defmodule Ama.MultiServer do
             r.method == "GET" and String.starts_with?(r.path, "/api/chain/tx/") ->
                 txid = String.replace(r.path, "/api/chain/tx/", "")
                 result = API.TX.get(txid)
-                quick_reply(state, result)
+                quick_reply(state, JSX.encode!(result))
 
             r.method == "GET" and String.starts_with?(r.path, "/api/epoch/score") ->
                 pk = String.replace(r.path, "/api/epoch/score/", "")

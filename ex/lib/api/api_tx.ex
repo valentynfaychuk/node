@@ -132,6 +132,7 @@ defmodule API.TX do
         end
     end
 
+    def format_tx_for_client(nil) do nil end
     def format_tx_for_client(tx) do
         tx = Map.drop(tx, [:tx_encoded])
         tx = Map.put(tx, :signature, Base58.encode(tx.signature))

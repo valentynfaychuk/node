@@ -27,13 +27,14 @@ defmodule API.Wallet do
         transfer(sk, to, amount, symbol)
     end
 
-    def transfer(from_sk, to, amount, symbol) do
+    def transfer(from_sk, to, amount, symbol, broadcast \\ true) do
         from_sk = if byte_size(from_sk) != 64, do: Base58.decode(from_sk), else: from_sk
         to = if byte_size(to) != 48, do: Base58.decode(to), else: to
         amount = if is_float(amount) do trunc(amount * 1_000_000_000) else amount end
         amount = if is_integer(amount) do :erlang.integer_to_binary(amount) else amount end
         tx_packed = TX.build(from_sk, "Coin", "transfer", [to, amount, symbol])
-        TXPool.insert_and_broadcast(tx_packed)
+        broadcast && TXPool.insert_and_broadcast(tx_packed)
+        tx_packed
     end
 
     def generate_key() do
