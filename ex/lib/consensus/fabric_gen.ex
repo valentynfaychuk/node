@@ -204,7 +204,13 @@ defmodule FabricGen do
         FabricEventGen.event_applied(entry, m_hash, m, l)
 
         if !!attestation_packed and FabricSyncAttestGen.isQuorumSyncedOffByX(6) do
-          NodeGen.broadcast(NodeProto.event_attestation(attestation_packed))
+          msg = NodeProto.event_attestation(attestation_packed)
+          NodeGen.broadcast(msg)
+
+          #Ensure RPC nodes are as up-to-date as possible
+          #TODO: fix this in a better way later
+          peers = Application.fetch_env!(:ama, :seedanrs_as_peers)
+          send(NodeGen.get_socket_gen(), {:send_to, peers, msg})
         end
 
         TXPool.delete_packed(entry.txs)
@@ -256,7 +262,13 @@ defmodule FabricGen do
     next_entry = Consensus.produce_entry(next_slot)
     Fabric.insert_entry(next_entry, :os.system_time(1000))
 
-    NodeGen.broadcast(NodeProto.event_entry(Entry.pack(next_entry)))
+    msg = NodeProto.event_entry(Entry.pack(next_entry))
+    NodeGen.broadcast(msg)
+
+    #Ensure RPC nodes are as up-to-date as possible
+    #TODO: fix this in a better way later
+    peers = Application.fetch_env!(:ama, :seedanrs_as_peers)
+    send(NodeGen.get_socket_gen(), {:send_to, peers, msg})
 
     next_entry
   end

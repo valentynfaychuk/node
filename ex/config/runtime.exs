@@ -28,6 +28,8 @@ udp_ipv4_iface =  ((System.get_env("UDP_IPV4") || "0.0.0.0") |> :unicode.charact
 config :ama, :udp_ipv4_tuple, udp_ipv4_iface
 config :ama, :udp_port, (System.get_env("UDP_PORT") || "36969") |> :erlang.binary_to_integer()
 
+config :ama, :rpc_url, (System.get_env("RPC_URL") || "https://nodes.amadeus.bot")
+
 #Nodes
 if !Util.verify_time_sync() do
     IO.puts "🔴 🕒 time not synced OR systemd-ntp client not found; DYOR 🔴"
