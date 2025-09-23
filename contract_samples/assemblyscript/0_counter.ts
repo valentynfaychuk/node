@@ -1,7 +1,8 @@
 import * as sdk from "./sdk";
+import { b, b58 } from "./sdk";
 
 export function get(): void {
-  let cur_counter = sdk.kv_get<i64>("the_counter");
+  let cur_counter = sdk.kv_get_or<i64>(b("the_counter"), 0);
   sdk.return_value(cur_counter);
 }
 

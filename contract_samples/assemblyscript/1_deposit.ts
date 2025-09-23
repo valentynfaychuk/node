@@ -8,7 +8,7 @@ function vaultKey(symbol: string): Uint8Array {
 
 export function balance(symbol_ptr: i32): void {
   let symbol = sdk.memory_read_string(symbol_ptr);
-  let balance = sdk.kv_get_bytes<u64>(vaultKey(symbol));
+  let balance = sdk.kv_get<u64>(vaultKey(symbol));
   sdk.return_value(balance);
 }
 
@@ -28,7 +28,7 @@ export function withdraw(symbol_ptr: i32, amount_ptr: i32): void {
 
   let amount_int = parseInt(amount, 10) as u64
   sdk.log(`int ${amount_int}`)
-  let balance = sdk.kv_get_bytes<u64>(vaultKey(symbol))
+  let balance = sdk.kv_get<u64>(vaultKey(symbol))
 
   assert(amount_int > 0, "amount lte 0")
   assert(balance >= amount_int, "insufficent funds")

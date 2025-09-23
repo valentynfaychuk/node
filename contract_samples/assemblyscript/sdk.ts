@@ -147,6 +147,10 @@ export function memory_read_string(ptr: i32): string {
   return String.UTF8.decodeUnsafe(ptr+4, load<i32>(ptr), false)
 }
 
+export function exit(error: string): void {
+  abort(error, "0", 0, 0);
+}
+
 @external("env", "entry_signer_ptr")
 declare const entry_signer_ptr: i32;
 export function entry_signer(): Uint8Array { return memory_read_bytes(entry_signer_ptr) }
@@ -252,9 +256,14 @@ export function kv_increment<T>(key: T, val: string): string {
 @external("env", "import_kv_get")
 declare function import_kv_get(ptr: i32, len: i32): i32;
 function __kv_get<T>(ptr: i32, len: i32): T {
+
   const termPtr = import_kv_get(ptr, len);
-  const size    = load<i32>(termPtr);
+  const size = load<i32>(termPtr);
   const dataPtr = termPtr + 4;
+
+  if (size == -1) {
+    exit("kv_get_key_does_not_exist");
+  }
 
   if (isInteger<T>()) {
     // all int<32
@@ -271,13 +280,36 @@ function __kv_get<T>(ptr: i32, len: i32): T {
     abort("kv_get_invalid_return_type");
   }
 }
-export function kv_get<T>(key: string): T {
-  const buf = String.UTF8.encode(key, false);
-  return __kv_get<T>(changetype<i32>(buf), buf.byteLength);
-}
-export function kv_get_bytes<T>(key: Uint8Array): T {
-  log(`${key.dataStart}`)
+export function kv_get<T>(key: Uint8Array): T {
   return __kv_get<T>(changetype<i32>(key.dataStart), key.byteLength);
+}
+
+function __kv_get_or<T>(ptr: i32, len: i32, vdefault: T): T {
+  const termPtr = import_kv_get(ptr, len);
+  const size = load<i32>(termPtr);
+  const dataPtr = termPtr + 4;
+
+  if (size == -1) {
+    return vdefault;
+  }
+
+  if (isInteger<T>()) {
+    // all int<32
+    let s = String.UTF8.decodeUnsafe(dataPtr, size, false);
+    return parseInt(s, 10) as T;
+  } else if (idof<T>() == idof<i64>()) {
+    let s = String.UTF8.decodeUnsafe(dataPtr, size, false);
+    return parseI64(s) as unknown as T;
+  } else if (idof<T>() == idof<string>()) {
+    return String.UTF8.decodeUnsafe(dataPtr, size, false) as unknown as T;
+  } else if (idof<T>() == idof<Uint8Array>()) {
+    return memory_read_bytes(termPtr) as unknown as T;
+  } else {
+    abort("kv_get_invalid_return_type");
+  }
+}
+export function kv_get_or<T>(key: Uint8Array, vdefault: T): T {
+  return __kv_get_or<T>(changetype<i32>(key.dataStart), key.byteLength, vdefault);
 }
 
 @external("env", "import_call_0")
