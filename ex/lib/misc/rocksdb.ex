@@ -106,8 +106,8 @@ defmodule RocksDB do
         value = if opts[:term] do :erlang.term_to_binary(value, [:deterministic]) else value end
         value = if opts[:to_integer] do :erlang.integer_to_binary(value) else value end
         cond do
-            !!rtx and !!cf -> :rocksdb.transaction_put(rtx, cf, key, value)
-            !!rtx -> :rocksdb.transaction_put(rtx, key, value)
+            !!rtx and !!cf -> :ok = :rocksdb.transaction_put(rtx, cf, key, value)
+            !!rtx -> :ok = :rocksdb.transaction_put(rtx, key, value)
             !!db and !!cf -> :rocksdb.put(db, cf, key, value, [])
             !!db -> :rocksdb.put(db, key, value, [])
         end
@@ -152,6 +152,15 @@ defmodule RocksDB do
             !!db and !!cf -> :rocksdb.iterator(db, cf, [])
             !!db -> :rocksdb.iterator(db, [])
         end
+    end
+
+    def transaction(db) do
+      {:ok, rtx} = :rocksdb.transaction(db, [])
+      rtx
+    end
+
+    def transaction_commit(rtx) do
+      :ok = :rocksdb.transaction_commit(rtx)
     end
 
     def dump(db_ref, cf) do

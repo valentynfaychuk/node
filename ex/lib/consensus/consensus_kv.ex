@@ -19,7 +19,7 @@ defmodule ConsensusKV do
             Process.put(:mutations_reverse, Process.get(:mutations_reverse, []) ++ [%{op: :delete, key: key}])
         end
 
-        :ok = :rocksdb.transaction_put(db.rtx, db.cf.contractstate, key, value)
+        RocksDB.put(key, value, %{rtx: db.rtx, cf: db.cf.contractstate})
     end
 
     ## TOO COMPLEX a func for a strong typed 100% always correct lang sorry
@@ -59,19 +59,19 @@ defmodule ConsensusKV do
             Process.put(:mutations_reverse, Process.get(:mutations_reverse, []) ++ [%{op: :delete, key: key}])
         end
 
-        :ok = :rocksdb.transaction_put(db.rtx, db.cf.contractstate, key, new_value)
+        RocksDB.put(key, new_value, %{rtx: db.rtx, cf: db.cf.contractstate})
         new_value
     end
 
     def kv_delete(key) do
         db = Process.get({RocksDB, :ctx})
-        case :rocksdb.transaction_get(db.rtx, db.cf.contractstate, key, []) do
-            :not_found -> :ok
-            {:ok, value} ->
+        case RocksDB.get(key, %{rtx: db.rtx, cf: db.cf.contractstate}) do
+            nil -> :ok
+            value ->
                 Process.put(:mutations, Process.get(:mutations, []) ++ [%{op: :delete, key: key}])
                 Process.put(:mutations_reverse, Process.get(:mutations_reverse, []) ++ [%{op: :put, key: key, value: value}])
         end
-        :ok = :rocksdb.transaction_delete(db.rtx, db.cf.contractstate, key)
+        RocksDB.delete(key, %{rtx: db.rtx, cf: db.cf.contractstate})
     end
 
     def kv_get(key, opts \\ %{}) do
@@ -131,9 +131,9 @@ defmodule ConsensusKV do
 
     def kv_exists(key) do
         db = Process.get({RocksDB, :ctx})
-        case :rocksdb.transaction_get(db.rtx, db.cf.contractstate, key, []) do
-            :not_found -> false
-            {:ok, _value} -> true
+        case RocksDB.get(key, %{rtx: db.rtx, cf: db.cf.contractstate}) do
+            nil -> false
+            _ -> true
         end
     end
 
@@ -175,7 +175,7 @@ defmodule ConsensusKV do
                 res = :rocksdb.iterator_move(it, :next)
 
                 key = prefix <> key
-                :ok = :rocksdb.transaction_delete(db.rtx, db.cf.contractstate, key)
+                RocksDB.delete(key, %{rtx: db.rtx, cf: db.cf.contractstate})
                 muts = muts ++ [%{op: :delete, key: key}]
                 muts_rev = muts_rev ++ [%{op: :put, key: key, value: value}]
                 kv_clear_1(db, prefix, it, res, muts, muts_rev)
@@ -202,7 +202,7 @@ defmodule ConsensusKV do
             Process.put(:mutations_reverse, Process.get(:mutations_reverse, []) ++ [%{op: :delete, key: key}])
         end
         new_value = << left::size(bit_idx), 1::size(1), right::bitstring >>
-        :ok = :rocksdb.transaction_put(db.rtx, db.cf.contractstate, key, new_value)
+        RocksDB.put(key, new_value, %{rtx: db.rtx, cf: db.cf.contractstate})
         true
       end
     end
@@ -218,14 +218,14 @@ defmodule ConsensusKV do
         |> Enum.each(fn(mut)->
             case mut.op do
                 :put ->
-                    :ok = :rocksdb.transaction_put(db.rtx, db.cf.contractstate, mut.key, mut.value)
+                    RocksDB.put(mut.key, mut.value, %{rtx: db.rtx, cf: db.cf.contractstate})
                 :delete ->
-                    :ok = :rocksdb.transaction_delete(db.rtx, db.cf.contractstate, mut.key)
+                    RocksDB.delete(mut.key, %{rtx: db.rtx, cf: db.cf.contractstate})
                 :clear_bit ->
-                    {:ok, old_value} = :rocksdb.transaction_get(db.rtx, db.cf.contractstate, mut.key, [])
+                    old_value = RocksDB.get(mut.key, %{rtx: db.rtx, cf: db.cf.contractstate})
                     << left::size(mut.value), _old_bit::size(1), right::bitstring >> = old_value
                     new_value = << left::size(mut.value), 0::size(1), right::bitstring >>
-                    :ok = :rocksdb.transaction_put(db.rtx, db.cf.contractstate, mut.key, new_value)
+                    RocksDB.put(mut.key, new_value, %{rtx: db.rtx, cf: db.cf.contractstate})
             end
         end)
     end

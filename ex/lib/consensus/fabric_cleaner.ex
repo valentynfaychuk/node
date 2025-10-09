@@ -42,16 +42,16 @@ defmodule FabricCleaner do
 
   def clean_muts_rev(epoch, start, fin) do
     %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
-    {:ok, rtx} = :rocksdb.transaction(db, [])
+    rtx = RocksDB.transaction(db)
     Enum.each(start..fin, fn(height)->
       if rem(height, 1000) == 0 do
         IO.inspect {:clean_muts_rev, height}
       end
       entries = Fabric.entries_by_height(height)
       Enum.each(entries, fn %{hash: hash} ->
-        :ok = :rocksdb.transaction_delete(rtx, cf.muts_rev, hash)
+        RocksDB.delete(hash, %{rtx: rtx, cf: cf.muts_rev})
       end)
     end)
-    :ok = :rocksdb.transaction_commit(rtx)
+    :ok = RocksDB.transaction_commit(rtx)
   end
 end

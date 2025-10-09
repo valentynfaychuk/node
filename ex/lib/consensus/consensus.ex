@@ -177,22 +177,22 @@ defmodule Consensus do
             !in_chain -> false
             true ->
                 %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
-                {:ok, rtx} = :rocksdb.transaction(db, [])
+                rtx = RocksDB.transaction(db)
                 Process.put({RocksDB, :ctx}, %{rtx: rtx, cf: cf})
 
                 tip_entry = Consensus.chain_tip_entry()
                 entry = chain_rewind_1(tip_entry, target_hash)
 
-                :ok = :rocksdb.transaction_put(rtx, cf.sysconf, "temporal_tip", entry.hash)
-                :ok = :rocksdb.transaction_put(rtx, cf.sysconf, "temporal_height", :erlang.term_to_binary(entry.header_unpacked.height, [:deterministic]))
+                RocksDB.put("temporal_tip", entry.hash, %{rtx: rtx, cf: cf.sysconf})
+                RocksDB.put("temporal_height", entry.header_unpacked.height, %{rtx: rtx, cf: cf.sysconf, term: true})
 
                 rooted_hash = RocksDB.get("rooted_tip", %{rtx: rtx, cf: cf.sysconf})
                 rooted_entry = RocksDB.get(rooted_hash, %{rtx: rtx, cf: cf.default})
                 if !rooted_entry do
-                    :ok = :rocksdb.transaction_put(rtx, cf.sysconf, "rooted_tip", entry.hash)
+                    RocksDB.put("rooted_tip", entry.hash, %{rtx: rtx, cf: cf.sysconf})
                 end
 
-                :ok = :rocksdb.transaction_commit(rtx)
+                :ok = RocksDB.transaction_commit(rtx)
 
                 true
         end
@@ -202,20 +202,20 @@ defmodule Consensus do
         ConsensusKV.revert(m_rev)
 
         %{rtx: rtx, cf: cf} = Process.get({RocksDB, :ctx})
-        :ok = :rocksdb.transaction_delete(rtx, cf.default, current_entry.hash)
-        :ok = :rocksdb.transaction_delete(rtx, cf.my_seen_time_for_entry, current_entry.hash)
-        :ok = :rocksdb.transaction_delete(rtx, cf.entry_by_height, "#{current_entry.header_unpacked.height}:#{current_entry.hash}")
-        :ok = :rocksdb.transaction_delete(rtx, cf.entry_by_slot, "#{current_entry.header_unpacked.slot}:#{current_entry.hash}")
-        :ok = :rocksdb.transaction_delete(rtx, cf.consensus_by_entryhash, current_entry.hash)
-        :ok = :rocksdb.transaction_delete(rtx, cf.my_attestation_for_entry, current_entry.hash)
+        RocksDB.delete(current_entry.hash, %{rtx: rtx, cf: cf.default})
+        RocksDB.delete(current_entry.hash, %{rtx: rtx, cf: cf.my_seen_time_for_entry})
+        RocksDB.delete("#{current_entry.header_unpacked.height}:#{current_entry.hash}", %{rtx: rtx, cf: cf.entry_by_height})
+        RocksDB.delete("#{current_entry.header_unpacked.slot}:#{current_entry.hash}", %{rtx: rtx, cf: cf.entry_by_slot})
+        RocksDB.delete(current_entry.hash, %{rtx: rtx, cf: cf.consensus_by_entryhash})
+        RocksDB.delete(current_entry.hash, %{rtx: rtx, cf: cf.my_attestation_for_entry})
         Enum.each(current_entry.txs, fn(tx_packed)->
             txu = TX.unpack(tx_packed)
-            :ok = :rocksdb.transaction_delete(rtx, cf.tx, txu.hash)
+            RocksDB.delete(txu.hash, %{rtx: rtx, cf: cf.tx})
             nonce_padded = String.pad_leading("#{txu.tx.nonce}", 20, "0")
-            :ok = :rocksdb.transaction_delete(rtx, cf.tx_account_nonce, "#{txu.tx.signer}:#{nonce_padded}")
+            RocksDB.delete("#{txu.tx.signer}:#{nonce_padded}", %{rtx: rtx, cf: cf.tx_account_nonce})
             TX.known_receivers(txu)
             |> Enum.each(fn(receiver)->
-                :ok = :rocksdb.transaction_delete(rtx, cf.tx_receiver_nonce, "#{receiver}:#{nonce_padded}")
+                RocksDB.delete("#{receiver}:#{nonce_padded}", %{rtx: rtx, cf: cf.tx_receiver_nonce})
             end)
         end)
 
@@ -325,7 +325,7 @@ defmodule Consensus do
 
     def apply_entry(next_entry) do
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
-        {:ok, rtx} = :rocksdb.transaction(db, [])
+        rtx = RocksDB.transaction(db)
         height = RocksDB.get("temporal_height", %{rtx: rtx, cf: cf.sysconf, term: true})
         if !height or (height + 1) == Entry.height(next_entry) do
             apply_entry_1(next_entry, cf, rtx)
@@ -369,43 +369,43 @@ defmodule Consensus do
 
         attestation = Attestation.sign(next_entry.hash, mutations_hash)
         attestation_packed = Attestation.pack(attestation)
-        :ok = :rocksdb.transaction_put(rtx, cf.my_attestation_for_entry, next_entry.hash, attestation_packed)
+        RocksDB.put(next_entry.hash, attestation_packed, %{rtx: rtx, cf: cf.my_attestation_for_entry})
 
         pk = Application.fetch_env!(:ama, :trainer_pk)
         trainers = trainers_for_height(Entry.height(next_entry), %{rtx: rtx, cf: cf})
         is_trainer = pk in trainers
 
         seen_time = :os.system_time(1000)
-        :ok = :rocksdb.transaction_put(rtx, cf.my_seen_time_for_entry, next_entry.hash, :erlang.term_to_binary(seen_time, [:deterministic]))
+        RocksDB.put(next_entry.hash, seen_time, %{rtx: rtx, cf: cf.my_seen_time_for_entry, term: true})
 
-        :ok = :rocksdb.transaction_put(rtx, cf.sysconf, "temporal_tip", next_entry.hash)
-        :ok = :rocksdb.transaction_put(rtx, cf.sysconf, "temporal_height", :erlang.term_to_binary(next_entry.header_unpacked.height, [:deterministic]))
+        RocksDB.put("temporal_tip", next_entry.hash, %{rtx: rtx, cf: cf.sysconf})
+        RocksDB.put("temporal_height", next_entry.header_unpacked.height, %{rtx: rtx, cf: cf.sysconf, term: true})
         #:ok = :rocksdb.transaction_put(rtx, cf.my_mutations_hash_for_entry, next_entry.hash, mutations_hash)
-        :ok = :rocksdb.transaction_put(rtx, cf.muts_rev, next_entry.hash, :erlang.term_to_binary(m_rev, [:deterministic]))
+        RocksDB.put(next_entry.hash, m_rev, %{rtx: rtx, cf: cf.muts_rev, term: true})
 
-        {:ok, entry_packed} = :rocksdb.transaction_get(rtx, cf.default, next_entry.hash, [])
+        entry_packed = RocksDB.get(next_entry.hash, %{rtx: rtx, cf: cf.default})
         Enum.each(Enum.zip(next_entry.txs, l), fn({tx_packed, result})->
             txu = TX.unpack(tx_packed)
             case :binary.match(entry_packed, tx_packed) do
               {index_start, index_size} ->
                 value = %{entry_hash: next_entry.hash, result: result, index_start: index_start, index_size: index_size}
                 value = :erlang.term_to_binary(value, [:deterministic])
-                :ok = :rocksdb.transaction_put(rtx, cf.tx, txu.hash, value)
+                RocksDB.put(txu.hash, value, %{rtx: rtx, cf: cf.tx})
 
                 nonce_padded = String.pad_leading("#{txu.tx.nonce}", 20, "0")
-                :ok = :rocksdb.transaction_put(rtx, cf.tx_account_nonce, "#{txu.tx.signer}:#{nonce_padded}", txu.hash)
+                RocksDB.put("#{txu.tx.signer}:#{nonce_padded}", txu.hash, %{rtx: rtx, cf: cf.tx_account_nonce})
                 TX.known_receivers(txu)
                 |> Enum.each(fn(receiver)->
-                    :ok = :rocksdb.transaction_put(rtx, cf.tx_receiver_nonce, "#{receiver}:#{nonce_padded}", txu.hash)
+                    RocksDB.put("#{receiver}:#{nonce_padded}", txu.hash, %{rtx: rtx, cf: cf.tx_receiver_nonce})
                 end)
             end
         end)
 
         if Application.fetch_env!(:ama, :archival_node) do
-            :ok = :rocksdb.transaction_put(rtx, cf.muts, next_entry.hash, :erlang.term_to_binary(m, [:deterministic]))
+            RocksDB.put(next_entry.hash, m, %{rtx: rtx, cf: cf.muts, term: true})
         end
 
-        :ok = :rocksdb.transaction_commit(rtx)
+        :ok = RocksDB.transaction_commit(rtx)
 
         ap = if is_trainer do
             #TODO: not ideal in super tight latency constrains but its 1 line and it works

@@ -125,7 +125,7 @@ defmodule EntryGenesis do
         entry_signed = Entry.sign(entry)
 
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
-        {:ok, rtx} = :rocksdb.transaction(db, [])
+        rtx = RocksDB.transaction(db)
         Process.put({RocksDB, :ctx}, %{rtx: rtx, cf: cf})
         {mutations, _} = BIC.Base.call_exit(%{entry: entry})
 

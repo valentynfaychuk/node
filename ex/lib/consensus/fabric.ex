@@ -235,9 +235,9 @@ defmodule Fabric do
 
     def set_rooted_tip(hash) do
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
-        {:ok, rtx} = :rocksdb.transaction(db, [])
-        :ok = :rocksdb.transaction_put(rtx, cf.sysconf, "rooted_tip", hash)
-        :ok = :rocksdb.transaction_commit(rtx)
+        rtx = RocksDB.transaction(db)
+        RocksDB.put("rooted_tip", hash, %{rtx: rtx, cf: cf.sysconf})
+        :ok = RocksDB.transaction_commit(rtx)
     end
 
     def insert_genesis() do
@@ -266,16 +266,17 @@ defmodule Fabric do
         seen_time = if seen_time do seen_time else :os.system_time(1000) end
 
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
-        {:ok, rtx} = :rocksdb.transaction(db, [])
+        rtx = RocksDB.transaction(db)
+
         has_entry = RocksDB.get(e.hash, %{rtx: rtx, cf: cf.default})
         if !has_entry do
-            :ok = :rocksdb.transaction_put(rtx, cf.default, e.hash, entry_packed)
-            :ok = :rocksdb.transaction_put(rtx, cf.my_seen_time_for_entry, e.hash, :erlang.term_to_binary(seen_time, [:deterministic]))
-            :ok = :rocksdb.transaction_put(rtx, cf.entry_by_height, "#{e.header_unpacked.height}:#{e.hash}", e.hash)
-            :ok = :rocksdb.transaction_put(rtx, cf.entry_by_slot, "#{e.header_unpacked.slot}:#{e.hash}", e.hash)
+            RocksDB.put(e.hash, entry_packed, %{rtx: rtx, cf: cf.default})
+            RocksDB.put(e.hash, seen_time, %{rtx: rtx, cf: cf.my_seen_time_for_entry, term: true})
+            RocksDB.put("#{e.header_unpacked.height}:#{e.hash}", e.hash, %{rtx: rtx, cf: cf.entry_by_height})
+            RocksDB.put("#{e.header_unpacked.slot}:#{e.hash}", e.hash, %{rtx: rtx, cf: cf.entry_by_slot})
         end
 
-        :rocksdb.transaction_commit(rtx)
+        RocksDB.transaction_commit(rtx)
     end
 
     def get_or_resign_my_attestation(entry_hash) do
@@ -302,7 +303,7 @@ defmodule Fabric do
             {opts.cf, opts.rtx}
         else
             %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
-            {:ok, rtx} = :rocksdb.transaction(db, [])
+            rtx = RocksDB.transaction(db)
             {cf, rtx}
         end
 
@@ -323,11 +324,11 @@ defmodule Fabric do
                     true -> BLS12AggSig.add(consensus, trainers, a.signer, a.signature)
                 end
                 consensuses = Map.put(consensuses, mutations_hash, consensus)
-                :ok = :rocksdb.transaction_put(rtx, cf.consensus_by_entryhash, entry_hash, :erlang.term_to_binary(consensuses, [:deterministic]))
+                RocksDB.put(entry_hash, consensuses, %{rtx: rtx, cf: cf.consensus_by_entryhash, term: true})
             end
 
             if !opts[:rtx] do
-                :ok = :rocksdb.transaction_commit(rtx)
+                RocksDB.transaction_commit(rtx)
             end
         end
     end
@@ -338,12 +339,12 @@ defmodule Fabric do
         {_, oldScore, _} = best_consensus_by_entryhash(Consensus.trainers_for_height(Entry.height(entry)), entry_hash)
         if consensus.score >= 0.67 and consensus.score > (oldScore||0) do
             %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
-            {:ok, rtx} = :rocksdb.transaction(db, [])
+            rtx = RocksDB.transaction()
 
             consensuses = RocksDB.get(entry_hash, %{rtx: rtx, cf: cf.consensus_by_entryhash, term: true}) || %{}
             consensuses = put_in(consensuses, [consensus.mutations_hash], %{mask: consensus.mask, aggsig: consensus.aggsig})
-            :ok = :rocksdb.transaction_put(rtx, cf.consensus_by_entryhash, entry_hash, :erlang.term_to_binary(consensuses, [:deterministic]))
-            :ok = :rocksdb.transaction_commit(rtx)
+            RocksDB.put(entry_hash, consensuses, %{rtx: rtx, cf: cf.consensus_by_entryhash, term: true})
+            RocksDB.transaction_commit(rtx)
         else
             #IO.inspect {:insert_consensus, :rejected_by_score, oldScore, consensus.score}
         end
