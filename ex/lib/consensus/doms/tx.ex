@@ -72,8 +72,7 @@ defmodule TX do
       end)
 
       cond do
-        :lists.member(action.contract, ["Epoch", "Coin", "Contract"])
-        and :lists.member(action.function, ["submit_sol", "transfer", "set_emission_address", "slash_trainer", "deploy"]) -> :ok
+        BIC.Base.valid_bic_action(action.contract, action.function) -> :ok
         BlsEx.validate_public_key(action.contract) -> :ok
         true -> throw %{error: :invalid_contract_or_function}
       end

@@ -84,6 +84,11 @@ defmodule BIC.Base do
         {Process.get(:mutations, []), Process.get(:mutations_reverse, [])}
     end
 
+    def valid_bic_action(contract, function) do
+      contract in ["Epoch", "Coin", "Contract"]
+      and function in ["submit_sol", "transfer", "set_emission_address", "slash_trainer", "deploy", "create_and_mint", "mint", "pause"]
+    end
+
     def call_tx_actions(env, txu) do
         Process.delete(:mutations_gas)
         Process.delete(:mutations_gas_reverse)
@@ -144,8 +149,7 @@ defmodule BIC.Base do
             else
                 seed_random(env.entry_vr, env.tx_hash, "0", "")
 
-                if action.contract not in ["Epoch", "Coin", "Contract"], do: throw(%{error: :invalid_bic})
-                if action.function not in ["submit_sol", "transfer", "set_emission_address", "slash_trainer", "deploy"], do: throw %{error: :invalid_function}
+                if !valid_bic_action(action.contract, action.function), do: throw(%{error: :invalid_bic_action})
 
                 contract = "Elixir.BIC.#{action.contract}"
                 module = String.to_existing_atom(contract)

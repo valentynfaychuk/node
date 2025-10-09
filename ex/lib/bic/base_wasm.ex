@@ -126,8 +126,7 @@ defmodule BIC.Base.WASM do
                     env = Map.put(env, :account_caller, last_account)
 
                     result = try do
-                        if contract not in ["Epoch", "Coin", "Contract"], do: throw(%{error: :invalid_bic})
-                        if function not in ["submit_sol", "transfer", "set_emission_address", "slash_trainer", "deploy"], do: throw %{error: :invalid_function}
+                        if !BIC.Base.valid_bic_action(contract, function), do: throw(%{error: :invalid_bic_action})
                         module = String.to_existing_atom("Elixir.BIC.#{contract}")
                         function = String.to_existing_atom(function)
 
