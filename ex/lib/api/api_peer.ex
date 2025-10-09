@@ -62,7 +62,7 @@ defmodule API.Peer do
         {vals, peers} = NodeANR.handshaked_and_online()
         vals = Enum.map(vals, & Map.put(&1, :is_trainer, true))
         (vals ++ peers)
-        |> Enum.map(fn(%{pk: pk, ip4: ip4})->
+        |> Enum.map(fn(pd=%{pk: pk, ip4: ip4})->
           peer = NodeANR.get_peer_hotdata(pk)
           if peer do
             %{
@@ -72,7 +72,8 @@ defmodule API.Peer do
               temporal_height: get_in(peer, [:temporal, :header_unpacked, :height]),
               temporal_hash: get_in(peer, [:temporal, :hash]) |> Base58.encode(),
               rooted_height: get_in(peer, [:rooted, :header_unpacked, :height]),
-              rooted_hash: get_in(peer, [:rooted, :hash]) |> Base58.encode()
+              rooted_hash: get_in(peer, [:rooted, :hash]) |> Base58.encode(),
+              is_trainer: pd[:is_trainer]
             }
           end
         end)
