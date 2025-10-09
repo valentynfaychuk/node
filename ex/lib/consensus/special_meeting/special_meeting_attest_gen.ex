@@ -138,11 +138,13 @@ defmodule SpecialMeetingAttestGen do
   end
 
   def tick_offline(state) do
+    my_pk = Application.fetch_env!(:ama, :trainer_pk)
     isSynced = FabricSyncAttestGen.isQuorumSyncedOffBy1()
 
     trainers = Consensus.trainers_for_height(Consensus.chain_height()+1)
     {vals, _} = NodeANR.handshaked_and_online()
     onlineTrainers = Enum.map(vals, & &1.pk)
+    onlineTrainers = if my_pk in onlineTrainers do onlineTrainers else onlineTrainers ++ [my_pk] end
     offlineTrainers = trainers -- onlineTrainers
 
     offlineLocal = Process.get(:offlineTrainersSeries, []) |> Enum.take(10)
