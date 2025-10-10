@@ -1,0 +1,20 @@
+[package]
+name = "rdb"
+version = "0.1.0"
+authors = []
+edition = "2021"
+
+[lib]
+name = "rdb"
+crate-type = ["cdylib"]
+
+[dependencies]
+rustler = "0.36.1"
+rand = "0.9.1"
+sha2 = "0.10.8"
+rust-librocksdb-sys = "*"
+
+[dependencies.rust-rocksdb]
+version = "0.43"
+default-features = false
+features = ["zstd", "zstd-static-linking-only", "multi-threaded-cf"] #"jemalloc", "malloc-usable-size",

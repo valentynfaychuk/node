@@ -34,6 +34,7 @@ defmodule Ama.MixProject do
       {:photon, git: "https://github.com/vans163/photon.git"},
       {:mnesia_kv, git: "https://github.com/xenomorphtech/mnesia_kv.git"},
 
+      {:rustler, ">= 0.36.1", optional: true},
       {:blake3, git: "https://github.com/vans163/blake3", branch: "finalize_xof"},
       {:bls_ex, git: "https://github.com/amadeus-robot/bls_ex"},
       {:reedsolomon_ex, git: "https://github.com/amadeus-robot/reedsolomon_ex"},
@@ -41,7 +42,6 @@ defmodule Ama.MixProject do
 
       {:comsat, git: "https://github.com/vans163/ComSat.git"},
       {:ex_stun, git: "https://github.com/elixir-webrtc/ex_stun.git"},
-
     ]
   end
 
