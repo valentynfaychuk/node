@@ -81,15 +81,11 @@ defmodule CymruRouting do
       "end\n"
     ]
 
-    with {:ok, sock} <- :gen_tcp.connect(@host, @port, @tcp_opts, @connect_timeout),
-         :ok <- :gen_tcp.send(sock, q),
-         data <- recv_all(sock, <<>>),
-         :ok <- :gen_tcp.close(sock) do
-      {:ok, parse_whois(data)}
-    else
-      {:error, reason} -> {:error, {:connect_failed, reason}}
-      _ -> {:error, :send_or_recv_failed}
-    end
+    {:ok, sock} = :gen_tcp.connect(@host, @port, @tcp_opts, @connect_timeout)
+    :ok = :gen_tcp.send(sock, q)
+    data = recv_all(sock, <<>>)
+    :ok = :gen_tcp.close(sock)
+    {:ok, parse_whois(data)}
   end
 
   defp recv_all(sock, acc) do
