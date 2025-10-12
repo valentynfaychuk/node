@@ -17,11 +17,6 @@ defmodule NodeANR do
     insert(build())
     set_handshaked(Application.fetch_env!(:ama, :trainer_pk))
 
-    #TODO: TEMPORARY clear old ANRs
-    :ets.foldl(fn({pk, %{version: version}}, _) ->
-      version < "1.1.7" && MnesiaKV.delete(NODEANR, pk)
-    end, nil, NODEANR)
-
     Enum.each(handshaked(), fn(%{pk: pk})->
       pk != Application.fetch_env!(:ama, :trainer_pk) && set_last_message(pk)
     end)
@@ -63,6 +58,11 @@ defmodule NodeANR do
     anr_to_sign = anr |> :erlang.term_to_binary([:deterministic])
     sig = BlsEx.sign!(sk, anr_to_sign, BLS12AggSig.dst_anr())
     anr = Map.put(anr, :signature, sig)
+  end
+
+  def delete(pk) do
+    MnesiaKV.delete(NODEANR, pk)
+    :ets.delete(NODEANRHOT, pk)
   end
 
   def pack(anr) do
@@ -113,7 +113,9 @@ defmodule NodeANR do
   def insert(anr) do
     anr = Map.put(anr, :hasChainPop, !!Consensus.chain_pop(anr.pk))
     old_anr = MnesiaKV.get(NODEANR, anr.pk)
+    routed = if !Application.fetch_env!(:ama, :check_routed_peer) do true else CymruRouting.globally_routed?(anr.ip4) end
     cond do
+      !routed -> nil
       !old_anr -> insert_new(anr)
       anr.ts <= old_anr.ts -> nil
       old_anr.ip4 == anr.ip4 and old_anr.port == anr.port -> MnesiaKV.merge(NODEANR, anr.pk, anr)

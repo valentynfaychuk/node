@@ -45,6 +45,15 @@ defmodule NodeGen do
     my_pk = Application.fetch_env!(:ama, :trainer_pk)
     peers = NodeANR.get_random_unverified(3)
     |> Enum.filter(& &1.pk != my_pk)
+    |> Enum.filter(fn %{ip4: ip4, pk: pk} ->
+      case CymruRouting.globally_routed?(ip4) do
+        true -> true
+        false ->
+          NodeANR.delete(pk)
+          false
+      end
+    end)
+
     #IO.inspect {:handshake_anr, peers}
     send(get_socket_gen(), {:send_to, peers, NodeProto.new_phone_who_dis()})
   end

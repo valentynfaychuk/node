@@ -61,6 +61,9 @@ config :ama, :public_udp_ipv4, pub_ipv4
 config :ama, :max_peers, (System.get_env("MAX_PEERS") || "300") |> :erlang.binary_to_integer()
 config :ama, :buy_peer_sol, System.get_env("BUY_PEER_SOL") in ["true", "y", "yes"]
 
+not_check_routed_peer = System.get_env("CHECK_ROUTED_PEER") in ["false", "n", "no"]
+config :ama, :check_routed_peer, !not_check_routed_peer
+
 anr_name = System.get_env("ANR_NAME")
 anr_desc = System.get_env("ANR_DESC")
 
