@@ -15,8 +15,7 @@ config :ama, :work_folder, work_folder
 
 #load env
 #Envvar.load(Path.join([work_folder, ".env"]))
-
-config :ama, :snapshot_height, (System.get_env("SNAPSHOT_HEIGHT") || "28812306") |> :erlang.binary_to_integer()
+config :ama, :snapshot_height, (System.get_env("SNAPSHOT_HEIGHT") || "33627392") |> :erlang.binary_to_integer()
 
 #Bind Interaces
 config :ama, :offline, (!!System.get_env("OFFLINE") || nil)

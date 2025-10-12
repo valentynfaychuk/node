@@ -56,9 +56,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.40"
+version = "1.2.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1d05d92f4b1fd76aad469d46cdd858ca761576082cd37df81416691e50199fb"
+checksum = "ac9fe6cdbb24b6ade63616c0a0688e45bb56732262c158df3c0c4bea4ca47cb7"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -129,9 +129,9 @@ checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
 
 [[package]]
 name = "find-msvc-tools"
-version = "0.1.3"
+version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0399f9d26e5191ce32c498bebd31e7a3ceabc2745f0ac54af3f335126c3f24b3"
+checksum = "52051878f80a721bb68ebfbc930e07b65ba72f2da88968ea5c06fd6ca3d3a127"
 
 [[package]]
 name = "generic-array"
@@ -402,8 +402,7 @@ checksum = "caf4aa5b0f434c91fe5c7f1ecb6a5ece2130b02ad2a590589dda5146df959001"
 [[package]]
 name = "rust-librocksdb-sys"
 version = "0.39.0+10.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "29bd25c12159c153158008a67cb95a879b09e317c7be19362c7c1a833611844c"
+source = "git+https://github.com/vans163/rust-rocksdb?rev=b3e3f248ecc1b47be3e77aa99e5aa60129e606b8#b3e3f248ecc1b47be3e77aa99e5aa60129e606b8"
 dependencies = [
  "bindgen",
  "bzip2-sys",
@@ -417,8 +416,7 @@ dependencies = [
 [[package]]
 name = "rust-rocksdb"
 version = "0.43.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32acf115610698835348708c8e0fd18d44ea6bb597bfd92eb1736d6cb8e691c8"
+source = "git+https://github.com/vans163/rust-rocksdb?rev=b3e3f248ecc1b47be3e77aa99e5aa60129e606b8#b3e3f248ecc1b47be3e77aa99e5aa60129e606b8"
 dependencies = [
  "libc",
  "parking_lot",

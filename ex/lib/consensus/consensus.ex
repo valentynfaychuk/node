@@ -187,7 +187,7 @@ defmodule Consensus do
                 RocksDB.put("temporal_height", entry.header_unpacked.height, %{rtx: rtx, cf: cf.sysconf, term: true})
 
                 rooted_hash = RocksDB.get("rooted_tip", %{rtx: rtx, cf: cf.sysconf})
-                rooted_entry = RocksDB.get(rooted_hash, %{rtx: rtx, cf: cf.default})
+                rooted_entry = RocksDB.get(rooted_hash, %{rtx: rtx, cf: cf.entry})
                 if !rooted_entry do
                     RocksDB.put("rooted_tip", entry.hash, %{rtx: rtx, cf: cf.sysconf})
                 end
@@ -202,7 +202,7 @@ defmodule Consensus do
         ConsensusKV.revert(m_rev)
 
         %{rtx: rtx, cf: cf} = Process.get({RocksDB, :ctx})
-        RocksDB.delete(current_entry.hash, %{rtx: rtx, cf: cf.default})
+        RocksDB.delete(current_entry.hash, %{rtx: rtx, cf: cf.entry})
         RocksDB.delete(current_entry.hash, %{rtx: rtx, cf: cf.my_seen_time_for_entry})
         RocksDB.delete("#{current_entry.header_unpacked.height}:#{current_entry.hash}", %{rtx: rtx, cf: cf.entry_by_height})
         RocksDB.delete("#{current_entry.header_unpacked.slot}:#{current_entry.hash}", %{rtx: rtx, cf: cf.entry_by_slot})
@@ -383,7 +383,7 @@ defmodule Consensus do
         #:ok = :rocksdb.transaction_put(rtx, cf.my_mutations_hash_for_entry, next_entry.hash, mutations_hash)
         RocksDB.put(next_entry.hash, m_rev, %{rtx: rtx, cf: cf.muts_rev, term: true})
 
-        entry_packed = RocksDB.get(next_entry.hash, %{rtx: rtx, cf: cf.default})
+        entry_packed = RocksDB.get(next_entry.hash, %{rtx: rtx, cf: cf.entry})
         Enum.each(Enum.zip(next_entry.txs, l), fn({tx_packed, result})->
             txu = TX.unpack(tx_packed)
             case :binary.match(entry_packed, tx_packed) do

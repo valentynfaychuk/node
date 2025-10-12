@@ -29,7 +29,7 @@ defmodule Ama.MixProject do
 
   defp deps do
     [
-      {:bakeware, git: "https://github.com/bake-bake-bake/bakeware", branch: "main", runtime: false},
+      {:bakeware, git: "https://github.com/vans163/bakeware", branch: "main", runtime: false},
 
       {:photon, git: "https://github.com/vans163/photon.git"},
       {:mnesia_kv, git: "https://github.com/xenomorphtech/mnesia_kv.git"},

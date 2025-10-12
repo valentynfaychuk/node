@@ -4,13 +4,13 @@ defmodule RocksDB do
         cf = opts[:cf]
         rtx = opts[:rtx]
         cond do
-            !!rtx and !!cf -> :rocksdb.transaction_get(rtx, cf, key, [])
-            !!rtx -> :rocksdb.transaction_get(rtx, key, [])
-            !!db and !!cf -> :rocksdb.get(db, cf, key, [])
-            !!db -> :rocksdb.get(db, key, [])
+            !!rtx and !!cf -> RDB.transaction_get_cf(rtx, cf, key)
+            !!rtx -> RDB.transaction_get(rtx, key)
+            !!db and !!cf -> RDB.get_cf(cf, key)
+            !!db -> RDB.get(db, key)
         end
         |> case do
-            :not_found -> nil
+            {:ok, nil} -> nil
             {:ok, value} ->
                 cond do
                     opts[:term] -> :erlang.binary_to_term(value, [:safe])
@@ -24,16 +24,16 @@ defmodule RocksDB do
         {:ok, it} = iterator(opts)
 
         seek_string = prefix <> key
-        seek_res = :rocksdb.iterator_move(it, {:seek, seek_string})
+        seek_res = RDB.iterator_move(it, {:seek, seek_string})
         seek_res = case seek_res do
-            {:ok, ^seek_string, _value} -> :rocksdb.iterator_move(it, :next)
+            {:ok, ^seek_string, _value} -> RDB.iterator_move(it, :next)
             other -> other
         end
 
         offset = opts[:offset] || 0
         seek_res = if offset <= 0 do seek_res else
             Enum.reduce(1..offset, seek_res, fn(_, _)->
-                :rocksdb.iterator_move(it, :next)
+                RDB.iterator_move(it, :next)
             end)
         end
 
@@ -49,16 +49,16 @@ defmodule RocksDB do
         {:ok, it} = iterator(opts)
 
         seek_string = prefix <> key
-        seek_res = :rocksdb.iterator_move(it, {:seek_for_prev, "#{prefix}#{key}"})
+        seek_res = RDB.iterator_move(it, {:seek_for_prev, "#{prefix}#{key}"})
         seek_res = case seek_res do
-            {:ok, ^seek_string, _value} -> :rocksdb.iterator_move(it, :prev)
+            {:ok, ^seek_string, _value} -> RDB.iterator_move(it, :prev)
             other -> other
         end
 
         offset = opts[:offset] || 0
         seek_res = if offset <= 0 do seek_res else
             Enum.reduce(1..offset, seek_res, fn(_, _)->
-                :rocksdb.iterator_move(it, :prev)
+                RDB.iterator_move(it, :prev)
             end)
         end
 
@@ -72,7 +72,7 @@ defmodule RocksDB do
 
     def get_prev_or_first(prefix, key, opts) do
         {:ok, it} = iterator(opts)
-        res = :rocksdb.iterator_move(it, {:seek_for_prev, "#{prefix}#{key}"})
+        res = RDB.iterator_move(it, {:seek_for_prev, "#{prefix}#{key}"})
         case res do
             {:ok, <<^prefix::binary, prev_key::binary>>, value} ->
                 value = if opts[:term] do :erlang.binary_to_term(value, [:safe]) else value end
@@ -86,13 +86,13 @@ defmodule RocksDB do
       cf = opts[:cf]
       rtx = opts[:rtx]
       cond do
-          !!rtx and !!cf -> :rocksdb.transaction_get(rtx, cf, key, [])
-          !!rtx -> :rocksdb.transaction_get(rtx, key, [])
-          !!db and !!cf -> :rocksdb.get(db, cf, key, [])
-          !!db -> :rocksdb.get(db, key, [])
+          !!rtx and !!cf -> RDB.transaction_get_cf(rtx, cf, key)
+          !!rtx -> RDB.transaction_get(rtx, key)
+          !!db and !!cf -> RDB.get_cf(db, cf, key)
+          !!db -> RDB.get(db, key)
       end
       |> case do
-          :not_found -> nil
+          {:ok, nil} -> nil
           {:ok, value} ->
             << left::size(bit_idx), bit::size(1), _::bitstring >> = value
             bit
@@ -106,10 +106,10 @@ defmodule RocksDB do
         value = if opts[:term] do :erlang.term_to_binary(value, [:deterministic]) else value end
         value = if opts[:to_integer] do :erlang.integer_to_binary(value) else value end
         cond do
-            !!rtx and !!cf -> :ok = :rocksdb.transaction_put(rtx, cf, key, value)
-            !!rtx -> :ok = :rocksdb.transaction_put(rtx, key, value)
-            !!db and !!cf -> :rocksdb.put(db, cf, key, value, [])
-            !!db -> :rocksdb.put(db, key, value, [])
+            !!rtx and !!cf -> :ok = RDB.transaction_put_cf(rtx, cf, key, value)
+            !!rtx -> :ok = RDB.transaction_put(rtx, key, value)
+            !!db and !!cf -> RDB.put_cf(db, cf, key, value)
+            !!db -> RDB.put(db, key, value)
         end
     end
 
@@ -118,16 +118,16 @@ defmodule RocksDB do
         cf = opts[:cf]
         rtx = opts[:rtx]
         cond do
-            !!rtx and !!cf -> :rocksdb.transaction_delete(rtx, cf, key)
-            !!rtx -> :rocksdb.transaction_delete(rtx, key)
-            !!db and !!cf -> :rocksdb.delete(db, cf, key, [])
-            !!db -> :rocksdb.delete(db, key, [])
+            !!rtx and !!cf -> RDB.transaction_delete_cf(rtx, cf, key)
+            !!rtx -> RDB.transaction_delete(rtx, key)
+            !!db and !!cf -> RDB.delete_cf(db, cf, key)
+            !!db -> RDB.delete(db, key)
         end
     end
 
     def get_prefix(prefix, opts) do
         {:ok, it} = iterator(opts)
-        res = :rocksdb.iterator_move(it, {:seek, prefix})
+        res = RDB.iterator_move(it, {:seek, prefix})
         get_prefix_1(prefix, it, res, opts, [])
     end
     defp get_prefix_1(prefix, it, res, opts, acc) do
@@ -135,7 +135,7 @@ defmodule RocksDB do
             {:ok, <<^prefix::binary, key::binary>>, value} ->
                 value = if opts[:term] do :erlang.binary_to_term(value, [:safe]) else value end
                 value = if opts[:to_integer] do :erlang.binary_to_integer(value) else value end
-                res = :rocksdb.iterator_move(it, :next)
+                res = RDB.iterator_move(it, :next)
                 get_prefix_1(prefix, it, res, opts, acc ++ [{key, value}])
             {:error, :invalid_iterator} -> acc
             _ -> acc
@@ -147,32 +147,32 @@ defmodule RocksDB do
         cf = opts[:cf]
         rtx = opts[:rtx]
         cond do
-            !!rtx and !!cf -> :rocksdb.transaction_iterator(rtx, cf, [])
-            !!rtx -> :rocksdb.transaction_iterator(rtx, [])
-            !!db and !!cf -> :rocksdb.iterator(db, cf, [])
-            !!db -> :rocksdb.iterator(db, [])
+            !!rtx and !!cf -> RDB.transaction_iterator_cf(rtx, cf)
+            !!rtx -> RDB.transaction_iterator(rtx)
+            !!db and !!cf -> RDB.iterator_cf(cf)
+            !!db -> RDB.iterator(db)
         end
     end
 
     def transaction(db) do
-      {:ok, rtx} = :rocksdb.transaction(db, [])
+      {:ok, rtx} = RDB.transaction(db)
       rtx
     end
 
     def transaction_commit(rtx) do
-      :ok = :rocksdb.transaction_commit(rtx)
+      :ok = RDB.transaction_commit(rtx)
     end
 
     def dump(db_ref, cf) do
-        {:ok, it} = :rocksdb.iterator(db_ref, cf, [])
-        res = :rocksdb.iterator_move(it, :first)
+        {:ok, it} = RDB.iterator_cf(db_ref, cf)
+        res = RDB.iterator_move(it, :first)
         dump_1(it, res)
     end
     defp dump_1(it, res) do
         case res do
             {:ok, key, value} ->
                 IO.inspect {key, value}
-                res = :rocksdb.iterator_move(it, :next)
+                res = RDB.iterator_move(it, :next)
                 dump_1(it, res)
             {:error, :invalid_iterator} -> nil
             _ -> nil
@@ -180,7 +180,7 @@ defmodule RocksDB do
     end
 
     def checkpoint(db_ref, path) do
-        :rocksdb.checkpoint(db_ref, path)
+        RDB.checkpoint(db_ref, path)
     end
 
     def snapshot(output_path) do
@@ -192,16 +192,19 @@ defmodule RocksDB do
     def restore_from_snapshot(path) do
     end
 
-    def flush_all(db, cfs) do
+    def flush_all(cfs) do
         Enum.each(Map.values(cfs), fn(cf)->
-            :ok = :rocksdb.flush(db, cf, [{:wait, true},{:allow_write_stall, true}])
+            RDB.flush_cf(cf)
         end)
     end
 
-    def compact_all(db, cfs) do
+    def flush_wal(db) do
+        RDB.flush_wal(db, true)
+    end
+
+    def compact_all(cfs) do
         Enum.each(Map.values(cfs), fn(cf)->
-            :ok = :rocksdb.compact_range(db, cf, :undefined, :undefined, [])
-            #:ok = :rocksdb.compact_range(db, cf, <<"user:0000">>, <<"user:9999">>, [])
+            RDB.compact_range_cf_all(cf)
         end)
     end
 

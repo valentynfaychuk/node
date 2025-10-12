@@ -1,5 +1,5 @@
 defmodule VanityGenerator do
-  # VanityGenerator.parallel("77777", false, true, 10_000_000)
+  # VanityGenerator.parallel("77777", false, false, 10_000_000)
   def parallel(prefix, skip_leading \\ true, case_insensitive \\ true, max_tries \\ 10000) do
     stream = Task.async_stream(1..max_tries, fn(_)-> go(prefix, skip_leading, case_insensitive, max_tries) end, [{:ordered, false}, {:timeout, :infinity}])
     Enum.find(stream, & &1)

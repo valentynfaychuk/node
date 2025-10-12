@@ -10,61 +10,91 @@ defmodule Fabric do
         path = Path.join([workdir, "db/fabric/"])
         File.mkdir_p!(path)
 
-        #{:ok, lru_cache} = :rocksdb.new_lru_cache(2 * 1024 * 1024 * 1024)
-        {:ok, db_ref, cf_ref_list} = :rocksdb.open_optimistic_transaction_db('#{path}',
+        cfs = [
+          "default",
+          "entry",
+          "entry_by_height|height->entryhash",
+          "entry_by_slot|slot->entryhash",
+          "my_seen_time_entry|entryhash->ts_sec",
+          "my_attestation_for_entry|entryhash->attestation",
+
+          "tx|txhash->entryhash",
+          "tx_account_nonce|account:nonce->txhash",
+          "tx_receiver_nonce|receiver:nonce->txhash",
+
+          "consensus",
+          "consensus_by_entryhash|Map<mutationshash,consensus>",
+
+          "contractstate",
+          "muts",
+          "muts_rev",
+
+          "sysconf",
+        ]
+        try do
+          {:ok, db_ref, cf_ref_list} = RDB.open_transaction_db(path, cfs)
           [
-            {:create_if_missing, true}, {:create_missing_column_families, true},
-            {:target_file_size_base, 2 * 1024 * 1024 * 1024}, #2GB
-            {:target_file_size_multiplier, 2},
-            {:merge_operator, {:bitset_merge_operator, SolBloom.page_size()}},
+              default_cf, entry_cf, entry_height_cf, entry_slot_cf,
+              tx_cf, tx_account_nonce_cf, tx_receiver_nonce_cf,
+              my_seen_time_for_entry_cf, my_attestation_for_entry_cf,
+              consensus_cf, consensus_by_entryhash_cf,
+              contractstate_cf, muts_cf, muts_rev_cf,
+              sysconf_cf
+          ] = cf_ref_list
+          cf = %{
+              default: default_cf, entry: entry_cf, entry_by_height: entry_height_cf, entry_by_slot: entry_slot_cf,
+              tx: tx_cf, tx_account_nonce: tx_account_nonce_cf, tx_receiver_nonce: tx_receiver_nonce_cf,
+              my_seen_time_for_entry: my_seen_time_for_entry_cf, my_attestation_for_entry: my_attestation_for_entry_cf,
+              #my_mutations_hash_for_entry: my_mutations_hash_for_entry_cf,
+              consensus: consensus_cf, consensus_by_entryhash: consensus_by_entryhash_cf,
+              contractstate: contractstate_cf, muts: muts_cf, muts_rev: muts_rev_cf,
+              sysconf: sysconf_cf
+          }
+          :persistent_term.put({:rocksdb, Fabric}, %{db: db_ref, cf_list: cf_ref_list, cf: cf, path: path})
+        catch
+          e,r ->
+            IO.inspect :using_old_db
+            init_old()
+        end
+    end
 
-            #{:table_factory,
-            #  {:block_based_table_factory, [{:block_cache_size, 2 * 1024 * 1024 * 1024},{:cache_index_and_filter_blocks, true}]}
-            #}
-            #{:block_based_table_options, [{:block_cache, lru_cache}]},
-            #{:table_factory,
-            #  {:block_based_table_factory, [
-            #      {:block_cache_size, 2 * 1024 * 1024 * 1024} #2G LRU cache
-            #  ]}
-            #}
-          ],
-          [
-            {'default', @args},
-            {'entry_by_height|height:entryhash', @args},
-            {'entry_by_slot|slot:entryhash', @args},
-            {'tx|txhash:entryhash', @args},
-            {'tx_account_nonce|account:nonce->txhash', @args},
-            {'tx_receiver_nonce|receiver:nonce->txhash', @args},
+    def init_old() do
+        workdir = Application.fetch_env!(:ama, :work_folder)
 
-            {'my_seen_time_entry|entryhash', @args},
-            {'my_attestation_for_entry|entryhash', @args},
-            #{'my_mutations_hash_for_entry|entryhash', @args},
+        path = Path.join([workdir, "db/fabric/"])
+        File.mkdir_p!(path)
 
-            #{'attestation|attestationhash', []},
-            #{'attestation_for_entry|entryhash', []},
-            #{'attestation_by_entry_signer|entryhash:signer:attestationhash', []},
+        cfs = [
+          "default",
+          "entry_by_height|height:entryhash",
+          "entry_by_slot|slot:entryhash",
+          "my_seen_time_entry|entryhash",
+          "my_attestation_for_entry|entryhash",
 
-            {'consensus', @args},
-            {'consensus_by_entryhash|Map<mutationshash,consensus>', @args},
+          "tx|txhash:entryhash",
+          "tx_account_nonce|account:nonce->txhash",
+          "tx_receiver_nonce|receiver:nonce->txhash",
 
-            {'contractstate', @args}, # ++ [{:table_factory_block_cache_size, 2 * 1024 * 1024 * 1024}]
-            {'muts', @args},
-            {'muts_rev', @args},
+          "consensus",
+          "consensus_by_entryhash|Map<mutationshash,consensus>",
 
-            {'sysconf', @args},
-          ]
-        )
+          "contractstate",
+          "muts",
+          "muts_rev",
+
+          "sysconf",
+        ]
+        {:ok, db_ref, cf_ref_list} = RDB.open_transaction_db(path, cfs)
         [
             default_cf, entry_height_cf, entry_slot_cf,
             tx_cf, tx_account_nonce_cf, tx_receiver_nonce_cf,
             my_seen_time_for_entry_cf, my_attestation_for_entry_cf,
-            #my_mutations_hash_for_entry_cf,
             consensus_cf, consensus_by_entryhash_cf,
             contractstate_cf, muts_cf, muts_rev_cf,
             sysconf_cf
         ] = cf_ref_list
         cf = %{
-            default: default_cf, entry_by_height: entry_height_cf, entry_by_slot: entry_slot_cf,
+            default: default_cf, entry: default_cf, entry_by_height: entry_height_cf, entry_by_slot: entry_slot_cf,
             tx: tx_cf, tx_account_nonce: tx_account_nonce_cf, tx_receiver_nonce: tx_receiver_nonce_cf,
             my_seen_time_for_entry: my_seen_time_for_entry_cf, my_attestation_for_entry: my_attestation_for_entry_cf,
             #my_mutations_hash_for_entry: my_mutations_hash_for_entry_cf,
@@ -76,8 +106,7 @@ defmodule Fabric do
     end
 
     def close() do
-        %{db: db} = :persistent_term.get({:rocksdb, Fabric})
-        :ok = :rocksdb.close(db)
+        %{db: db} = :persistent_term.delete({:rocksdb, Fabric})
     end
 
     def entry_by_hash(nil) do nil end
@@ -268,9 +297,9 @@ defmodule Fabric do
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
         rtx = RocksDB.transaction(db)
 
-        has_entry = RocksDB.get(e.hash, %{rtx: rtx, cf: cf.default})
+        has_entry = RocksDB.get(e.hash, %{rtx: rtx, cf: cf.entry})
         if !has_entry do
-            RocksDB.put(e.hash, entry_packed, %{rtx: rtx, cf: cf.default})
+            RocksDB.put(e.hash, entry_packed, %{rtx: rtx, cf: cf.entry})
             RocksDB.put(e.hash, seen_time, %{rtx: rtx, cf: cf.my_seen_time_for_entry, term: true})
             RocksDB.put("#{e.header_unpacked.height}:#{e.hash}", e.hash, %{rtx: rtx, cf: cf.entry_by_height})
             RocksDB.put("#{e.header_unpacked.slot}:#{e.hash}", e.hash, %{rtx: rtx, cf: cf.entry_by_slot})
