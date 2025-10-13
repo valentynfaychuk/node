@@ -88,7 +88,7 @@ defmodule RocksDB do
       cond do
           !!rtx and !!cf -> RDB.transaction_get_cf(rtx, cf, key)
           !!rtx -> RDB.transaction_get(rtx, key)
-          !!db and !!cf -> RDB.get_cf(db, cf, key)
+          !!db and !!cf -> RDB.get_cf(cf, key)
           !!db -> RDB.get(db, key)
       end
       |> case do
@@ -108,7 +108,7 @@ defmodule RocksDB do
         cond do
             !!rtx and !!cf -> :ok = RDB.transaction_put_cf(rtx, cf, key, value)
             !!rtx -> :ok = RDB.transaction_put(rtx, key, value)
-            !!db and !!cf -> RDB.put_cf(db, cf, key, value)
+            !!db and !!cf -> RDB.put_cf(cf, key, value)
             !!db -> RDB.put(db, key, value)
         end
     end
@@ -120,7 +120,7 @@ defmodule RocksDB do
         cond do
             !!rtx and !!cf -> RDB.transaction_delete_cf(rtx, cf, key)
             !!rtx -> RDB.transaction_delete(rtx, key)
-            !!db and !!cf -> RDB.delete_cf(db, cf, key)
+            !!db and !!cf -> RDB.delete_cf(cf, key)
             !!db -> RDB.delete(db, key)
         end
     end
