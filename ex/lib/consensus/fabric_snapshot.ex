@@ -87,14 +87,14 @@ defmodule FabricSnapshot do
 
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
         :ok = File.mkdir_p!("/tmp/#{height_padded}/db/")
-        RocksDB.checkpoint(db, '/tmp/#{height_padded}/db/fabric/')
+        RocksDB.checkpoint(db, "/tmp/#{height_padded}/db/fabric/")
         height
     end
 
     def upload_latest() do
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
         :ok = File.mkdir_p!("/tmp/000011351825/db/")
-        RocksDB.checkpoint(db, '/tmp/000011351825/db/fabric/')
+        RocksDB.checkpoint(db, "/tmp/000011351825/db/fabric/")
 
         "https://snapshots.amadeus.bot/000019900088.zip"
 
