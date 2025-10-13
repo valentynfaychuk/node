@@ -53,7 +53,7 @@ defmodule Fabric do
           :persistent_term.put({:rocksdb, Fabric}, %{db: db_ref, cf_list: cf_ref_list, cf: cf, path: path})
         catch
           e,r ->
-            IO.inspect :using_old_db
+            IO.inspect {:using_old_db, "node might stall during compression, either wait a long time to download from snapshot"}
             init_old()
         end
     end
@@ -106,19 +106,20 @@ defmodule Fabric do
     end
 
     def close() do
-        %{db: db} = :persistent_term.delete({:rocksdb, Fabric})
+        %{db: db} = :persistent_term.get({:rocksdb, Fabric})
+        RDB.close_db(db)
     end
 
     def entry_by_hash(nil) do nil end
     def entry_by_hash(hash) do
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
-        RocksDB.get(hash, %{db: db, term: true})
+        RocksDB.get(hash, %{db: db, cf: cf.entry, term: true})
         |> Entry.unpack()
     end
 
     def entry_by_hash_w_mutsrev(hash) do
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
-        entry = RocksDB.get(hash, %{db: db, term: true})
+        entry = RocksDB.get(hash, %{db: db, cf: cf.entry, term: true})
         |> Entry.unpack()
         mutsrev = RocksDB.get(hash, %{db: db, cf: cf.muts_rev})
         if !!mutsrev and !!entry do
@@ -272,7 +273,7 @@ defmodule Fabric do
     def insert_genesis() do
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
         genesis = EntryGenesis.get()
-        if !RocksDB.get(genesis.hash, %{db: db}) do
+        if !RocksDB.get(genesis.hash, %{db: db, cf: cf.entry}) do
             IO.puts "🌌  Ahhh... Fresh Fabric. Marking genesis.."
             insert_entry(genesis)
 

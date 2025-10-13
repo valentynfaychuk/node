@@ -99,8 +99,8 @@ defmodule FabricSnapshot do
         "https://snapshots.amadeus.bot/000019900088.zip"
 
         height_padded = String.pad_leading("10168922", 12, "0")
-        "cd /tmp/000019704697/ && zip -0 -r 000022421203.zip db/ && cd /root"
+        "cd /tmp/000019704697/ && zip -0 -r 000034076355.zip db/ && cd /root"
         "aws s3 cp --checksum-algorithm=CRC32 --endpoint-url https://20bf2f5d11d26a322e389687896a6601.r2.cloudflarestorage.com #{height_padded}.zip s3://ama-snapshot"
-        "aws s3 cp --checksum-algorithm=CRC32 --endpoint-url https://20bf2f5d11d26a322e389687896a6601.r2.cloudflarestorage.com 000022421203.zip s3://ama-snapshot"
+        "aws s3 cp --checksum-algorithm=CRC32 --endpoint-url https://20bf2f5d11d26a322e389687896a6601.r2.cloudflarestorage.com 000034076355.zip s3://ama-snapshot"
     end
 end

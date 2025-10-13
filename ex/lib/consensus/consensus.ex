@@ -156,8 +156,8 @@ defmodule Consensus do
     end
 
     def chain_tip_entry() do
-        %{db: db} = :persistent_term.get({:rocksdb, Fabric})
-        RocksDB.get(chain_tip(), %{db: db, term: true})
+        %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+        RocksDB.get(chain_tip(), %{db: db, cf: cf.entry, term: true})
         |> Entry.unpack()
     end
 
@@ -242,7 +242,7 @@ defmodule Consensus do
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
         map = RocksDB.get(tx_hash, %{db: db, cf: cf.tx ,term: true})
         if map do
-            entry_bytes = RocksDB.get(map.entry_hash, %{db: db})
+            entry_bytes = RocksDB.get(map.entry_hash, %{db: db, cf: cf.entry})
             entry = Fabric.entry_by_hash(map.entry_hash)
             tx_bytes = binary_part(entry_bytes, map.index_start, map.index_size)
             TX.unpack(tx_bytes)

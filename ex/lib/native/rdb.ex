@@ -6,6 +6,7 @@ defmodule RDB do
     crate: "rdb"
 
   def open_transaction_db(_path, _cf_names), do: :erlang.nif_error(:nif_not_loaded)
+  def close_db(_db), do: :erlang.nif_error(:nif_not_loaded)
   def property_value(_db, _key), do: :erlang.nif_error(:nif_not_loaded)
   def property_value_cf(_cf, _key), do: :erlang.nif_error(:nif_not_loaded)
   def compact_range_cf_all(_cf), do: :erlang.nif_error(:nif_not_loaded)

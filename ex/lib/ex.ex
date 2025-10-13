@@ -32,6 +32,7 @@ defmodule Ama do
     if !Application.fetch_env!(:ama, :offline) do
       rooted_tip_height = Fabric.rooted_tip_height()
       if rooted_tip_height == nil or rooted_tip_height < Application.fetch_env!(:ama, :snapshot_height) do
+        IO.inspect {"tip - snapshot_height", rooted_tip_height, Application.fetch_env!(:ama, :snapshot_height)}
         Fabric.close()
         FabricSnapshot.download_latest()
         Fabric.init()

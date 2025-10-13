@@ -4,13 +4,10 @@ use rustler::{
     NifTaggedEnum
 };
 
-//use std::collections::HashMap;
-//use sha2::{Sha256, Digest};
-
 use rust_rocksdb::{TransactionDB, MultiThreaded, TransactionDBOptions, Options,
     Transaction, WriteOptions, TransactionOptions, CompactOptions, BottommostLevelCompaction,
     DBRawIteratorWithThreadMode,
-    Cache, LruCacheOptions, BlockBasedOptions, DBCompressionType,
+    Cache, LruCacheOptions, BlockBasedOptions, DBCompressionType, BlockBasedIndexType,
     ColumnFamilyDescriptor, AsColumnFamilyRef};
 
 use std::path::Path;
@@ -82,7 +79,6 @@ impl ItResource {
   }
 }
 
-// tiny helper to avoid duplicate matches
 macro_rules! with_it { ($s:expr, $it:ident => $body:expr) => {{
   let mut g = $s.it.lock().unwrap();
   match &mut *g { IterInner::Db($it) => $body, IterInner::Tx($it) => $body }
@@ -112,25 +108,6 @@ impl ItResource {
   }
 }
 
-/*
-pub struct ItResource {
-    db: ResourceArc<DbResource>,
-    it: Mutex<DbIter<'static>>,
-}
-unsafe impl Send for ItResource {}
-unsafe impl Sync for ItResource {}
-
-pub struct ItTxResource {
-    // keep owners alive so the transmuted iterator stays valid
-    db: ResourceArc<DbResource>,
-    tx: ResourceArc<TxResource>,
-    cf: ResourceArc<CfResource>,
-    it: Mutex<DbTxIter<'static>>,
-}
-unsafe impl Send for ItTxResource {}
-unsafe impl Sync for ItTxResource {}
-*/
-
 #[allow(non_local_definitions)]
 fn on_load(env: Env, _: Term) -> bool {
     let _ = rustler::resource!(DbResource, env);
@@ -151,25 +128,25 @@ fn to_nif_err(err: Atom) -> Error {
 #[rustler::nif]
 fn open_transaction_db<'a>(env: Env<'a>, path: String, cf_names: Vec<String>) -> NifResult<Term<'a>> {
     let mut lru_opts = LruCacheOptions::default();
-    lru_opts.set_capacity(3 * 1024 * 1024 * 1024); //3GB
+    lru_opts.set_capacity(4 * 1024 * 1024 * 1024); //4GB
     lru_opts.set_num_shard_bits(8);
     let row_cache = Cache::new_lru_cache_opts(&lru_opts);
 
-    let block_cache = Cache::new_lru_cache(3 * 1024 * 1024 * 1024); //3GB
+    let block_cache = Cache::new_lru_cache(4 * 1024 * 1024 * 1024); //4GB
 
     let mut db_opts = Options::default();
     db_opts.create_if_missing(true);
     db_opts.create_missing_column_families(true);
     db_opts.set_max_open_files(30000);
     //more threads
-    //db_opts.increase_parallelism(8);
-    //db_opts.set_max_background_jobs(4);
+    db_opts.increase_parallelism(4);
+    db_opts.set_max_background_jobs(2);
 
     db_opts.set_max_total_wal_size(2 * 1024 * 1024 * 1024); // 2GB
     db_opts.set_target_file_size_base(8 * 1024 * 1024 * 1024);
     //db_opts.set_target_file_size_base(2 * 1024 * 1024 * 1024);
     //db_opts.set_target_file_size_multiplier(2);
-    db_opts.set_max_compaction_bytes(8 * 1024 * 1024 * 1024);
+    db_opts.set_max_compaction_bytes(20 * 1024 * 1024 * 1024);
 
     db_opts.enable_statistics();
     db_opts.set_statistics_level(rust_rocksdb::statistics::StatsLevel::All);
@@ -185,7 +162,7 @@ fn open_transaction_db<'a>(env: Env<'a>, path: String, cf_names: Vec<String>) ->
     db_opts.set_level_zero_stop_writes_trigger(100);
     db_opts.set_max_subcompactions(2);
 
-    //db_opts.set_level_compaction_dynamic_level_bytes(true);
+    //db_opts.set_level_compaction_dynamic_level_bytes(false);
 
     let mut txn_db_opts = TransactionDBOptions::default();
     txn_db_opts.set_default_lock_timeout(3000);
@@ -197,8 +174,13 @@ fn open_transaction_db<'a>(env: Env<'a>, path: String, cf_names: Vec<String>) ->
 
     let mut block_based_options = BlockBasedOptions::default();
     block_based_options.set_block_cache(&block_cache);
-    //block_based_options.set_cache_index_and_filter_blocks(true);
-    //block_based_options.set_pin_l0_filter_and_index_blocks_in_cache(true);
+
+    block_based_options.set_index_type(BlockBasedIndexType::TwoLevelIndexSearch);
+    block_based_options.set_partition_filters(true);
+    block_based_options.set_cache_index_and_filter_blocks(true);
+    block_based_options.set_cache_index_and_filter_blocks_with_high_priority(true);
+    block_based_options.set_pin_top_level_index_and_filter(true);
+    block_based_options.set_pin_l0_filter_and_index_blocks_in_cache(false);
     cf_opts.set_block_based_table_factory(&block_based_options);
 
     let dict_bytes = 32 * 1024;
@@ -225,20 +207,20 @@ fn open_transaction_db<'a>(env: Env<'a>, path: String, cf_names: Vec<String>) ->
     cf_opts.set_target_file_size_base(8 * 1024 * 1024 * 1024);
     //cf_opts.set_target_file_size_base(2 * 1024 * 1024 * 1024);
     //cf_opts.set_target_file_size_multiplier(2);
-    cf_opts.set_max_compaction_bytes(8 * 1024 * 1024 * 1024);
+    cf_opts.set_max_compaction_bytes(20 * 1024 * 1024 * 1024);
 
     // Bigger L0 flushes
     cf_opts.set_write_buffer_size(512 * 1024 * 1024);
     cf_opts.set_max_write_buffer_number(6);
     cf_opts.set_min_write_buffer_number_to_merge(2);
     // L0 thresholds
-    cf_opts.set_level_zero_file_num_compaction_trigger(8);
-    cf_opts.set_level_zero_slowdown_writes_trigger(30);
+    cf_opts.set_level_zero_file_num_compaction_trigger(20);
+    cf_opts.set_level_zero_slowdown_writes_trigger(40);
     cf_opts.set_level_zero_stop_writes_trigger(100);
     cf_opts.set_max_subcompactions(2);
     //cf_opts.set_periodic_compaction_seconds(0);
 
-    //cf_opts.set_level_compaction_dynamic_level_bytes(true);
+    //cf_opts.set_level_compaction_dynamic_level_bytes(false);
 
     let cf_descriptors: Vec<_> = cf_names
         .iter()
@@ -269,6 +251,19 @@ fn open_transaction_db<'a>(env: Env<'a>, path: String, cf_names: Vec<String>) ->
         }
         Err(e) => Err(to_nif_rdb_err(e)),
     }
+}
+
+#[rustler::nif(schedule = "DirtyCpu")]
+fn close_db(db: ResourceArc<DbResource>) -> NifResult<Atom> {
+    unsafe {
+        let ptr = &db.db as *const TransactionDB<MultiThreaded> as *mut  TransactionDB<MultiThreaded>;
+
+        //(*ptr).cancel_all_background_work(true);
+        let _ = (*ptr).flush_wal(true);
+
+        std::ptr::drop_in_place(ptr);
+    }
+    Ok(atoms::ok())
 }
 
 #[rustler::nif]
