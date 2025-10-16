@@ -334,6 +334,15 @@ defmodule Consensus do
         end
     end
     def apply_entry_1(next_entry, cf, rtx) do
+        # HALT before applying entry 34076433 for inspection
+        #if next_entry.header_unpacked.height == 34076433 do
+        #    IO.puts "\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+        #    IO.puts "HALTING BEFORE APPLYING HEIGHT 34076433"
+        #    IO.puts "Entry hash: #{Base.encode16(next_entry.hash)}"
+        #    IO.puts "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
+        #    :erlang.halt(0)
+        #end
+
         Process.put({RocksDB, :ctx}, %{rtx: rtx, cf: cf})
 
         mapenv = make_mapenv(next_entry)
@@ -366,6 +375,54 @@ defmodule Consensus do
         #TODO: store logs
         #IO.inspect {l ++ m, ConsensusKV.hash_mutations(l ++ m)}, limit: 11111111
         mutations_hash = ConsensusKV.hash_mutations(l ++ m)
+
+        # DEBUG: Print detailed info for height 34076433
+        if next_entry.header_unpacked.height == 34076433 do
+            IO.puts "\n=========================================="
+            IO.puts "DEBUG: APPLY_ENTRY for HEIGHT 34076433"
+            IO.puts "=========================================="
+            IO.puts "ENTRY HASH: #{Base58.encode(next_entry.hash)}"
+            IO.puts "ENTRY HEIGHT: #{next_entry.header_unpacked.height}"
+            IO.puts "ENTRY SLOT: #{next_entry.header_unpacked.slot}"
+            IO.puts "ENTRY SIGNER: #{Base58.encode(next_entry.header_unpacked.signer)}"
+            IO.puts "ENTRY PREV_HASH: #{Base58.encode(next_entry.header_unpacked.prev_hash)}"
+            IO.puts "MUTATIONS HASH: #{Base58.encode(mutations_hash)}"
+            IO.puts "NUMBER OF TXS: #{length(next_entry.txs)}"
+
+            # Save to files
+            File.write!("next_muts", :erlang.term_to_binary(m))
+            File.write!("next_logs", :erlang.term_to_binary(l))
+            File.write!("next_muts_rev", :erlang.term_to_binary(m_rev))
+            IO.puts "\nSaved mutations to next_muts, logs to next_logs, reverse mutations to next_muts_rev"
+
+            IO.puts "\n------------------------------------------"
+            IO.puts "FORWARD MUTATIONS (#{length(m)} total):"
+            IO.puts "------------------------------------------"
+            IO.inspect m, limit: :infinity, printable_limit: :infinity
+            IO.puts "\n------------------------------------------"
+            IO.puts "REVERSE MUTATIONS (#{length(m_rev)} total):"
+            IO.puts "------------------------------------------"
+            IO.inspect m_rev, limit: :infinity, printable_limit: :infinity
+            IO.puts "\n------------------------------------------"
+            IO.puts "LOGS (#{length(l)} total):"
+            IO.puts "------------------------------------------"
+            IO.inspect l, limit: :infinity, printable_limit: :infinity
+            IO.puts "\n------------------------------------------"
+            IO.puts "TRANSACTION DETAILS:"
+            IO.puts "------------------------------------------"
+            Enum.with_index(txus) |> Enum.each(fn {txu, idx} ->
+                IO.puts "TX ##{idx}:"
+                IO.puts "  Hash: #{Base58.encode(txu.hash)}"
+                IO.puts "  Signer: #{Base58.encode(txu.tx.signer)}"
+                IO.puts "  Nonce: #{txu.tx.nonce}"
+                IO.puts "  Actions: #{length(txu.tx.actions)}"
+                IO.inspect txu.tx.actions, label: "  Actions Detail", limit: :infinity
+                IO.puts ""
+            end)
+            IO.puts "=========================================="
+            IO.puts "END DEBUG for HEIGHT 34076433"
+            IO.puts "==========================================\n"
+        end
 
         attestation = Attestation.sign(next_entry.hash, mutations_hash)
         attestation_packed = Attestation.pack(attestation)

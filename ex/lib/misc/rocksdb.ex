@@ -13,7 +13,7 @@ defmodule RocksDB do
             {:ok, nil} -> nil
             {:ok, value} ->
                 cond do
-                    opts[:term] -> :erlang.binary_to_term(value, [:safe])
+                    opts[:term] -> :erlang.binary_to_term(value)
                     opts[:to_integer] -> :erlang.binary_to_integer(value)
                     true -> value
                 end
@@ -39,7 +39,7 @@ defmodule RocksDB do
 
         case seek_res do
             {:ok, <<^prefix::binary, next_key::binary>>, value} ->
-                value = if opts[:term] do :erlang.binary_to_term(value, [:safe]) else value end
+                value = if opts[:term] do :erlang.binary_to_term(value) else value end
                 {next_key, value}
             _ -> {nil, nil}
         end
@@ -64,7 +64,7 @@ defmodule RocksDB do
 
         case seek_res do
             {:ok, <<^prefix::binary, prev_key::binary>>, value} ->
-                value = if opts[:term] do :erlang.binary_to_term(value, [:safe]) else value end
+                value = if opts[:term] do :erlang.binary_to_term(value) else value end
                 {prev_key, value}
             _ -> {nil, nil}
         end
@@ -75,7 +75,7 @@ defmodule RocksDB do
         res = RDB.iterator_move(it, {:seek_for_prev, "#{prefix}#{key}"})
         case res do
             {:ok, <<^prefix::binary, prev_key::binary>>, value} ->
-                value = if opts[:term] do :erlang.binary_to_term(value, [:safe]) else value end
+                value = if opts[:term] do :erlang.binary_to_term(value) else value end
                 {prev_key, value}
             _ -> {nil, nil}
         end
@@ -133,7 +133,7 @@ defmodule RocksDB do
     defp get_prefix_1(prefix, it, res, opts, acc) do
         case res do
             {:ok, <<^prefix::binary, key::binary>>, value} ->
-                value = if opts[:term] do :erlang.binary_to_term(value, [:safe]) else value end
+                value = if opts[:term] do :erlang.binary_to_term(value) else value end
                 value = if opts[:to_integer] do :erlang.binary_to_integer(value) else value end
                 res = RDB.iterator_move(it, :next)
                 get_prefix_1(prefix, it, res, opts, acc ++ [{key, value}])
