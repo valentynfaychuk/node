@@ -55,8 +55,26 @@ defmodule NodeGenSocketGen do
   end
 
   def get_sys_bufs(socket) do
-    {:ok, [{:raw, 1, 7, <<size_snd::32-little>>}]} = :inet.getopts(socket, [{:raw, 1, 7, 4}])
-    {:ok, [{:raw, 1, 8, <<size_rcv::32-little>>}]} = :inet.getopts(socket, [{:raw, 1, 8, 4}])
+    # Try to get raw socket buffer sizes (may not work on all platforms like macOS)
+    case :inet.getopts(socket, [{:raw, 1, 7, 4}]) do
+      {:ok, [{:raw, 1, 7, <<size_snd::32-little>>}]} ->
+        case :inet.getopts(socket, [{:raw, 1, 8, 4}]) do
+          {:ok, [{:raw, 1, 8, <<size_rcv::32-little>>}]} ->
+            {size_snd, size_rcv}
+          _ ->
+            # Fallback: use configured values from socket options
+            get_configured_bufs(socket)
+        end
+      _ ->
+        # Fallback: use configured values from socket options
+        get_configured_bufs(socket)
+    end
+  end
+
+  defp get_configured_bufs(socket) do
+    {:ok, opts} = :inet.getopts(socket, [:sndbuf, :recbuf])
+    size_snd = Keyword.get(opts, :sndbuf, 33554432)
+    size_rcv = Keyword.get(opts, :recbuf, 33554432)
     {size_snd, size_rcv}
   end
 

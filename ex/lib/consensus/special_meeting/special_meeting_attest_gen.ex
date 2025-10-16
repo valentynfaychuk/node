@@ -81,13 +81,19 @@ defmodule SpecialMeetingAttestGen do
       hd_seentime = Fabric.entry_seentime(hd.hash)
       state = Enum.reduce(entries, {state, hd_seentime}, fn(entry, {state, last_seen})->
         seentime = Fabric.entry_seentime(entry.hash)
-        delta = seentime - last_seen
 
-        timings = get_in(state, [:slow, :running, entry.header_unpacked.signer]) || []
-        timings = Enum.take(timings ++ [delta], -10)
-        state = put_in(state, [:slow, :running, entry.header_unpacked.signer], timings)
+        # Skip entries without seentime or if we can't calculate delta
+        if seentime != nil and last_seen != nil do
+          delta = seentime - last_seen
 
-        {state, seentime}
+          timings = get_in(state, [:slow, :running, entry.header_unpacked.signer]) || []
+          timings = Enum.take(timings ++ [delta], -10)
+          state = put_in(state, [:slow, :running, entry.header_unpacked.signer], timings)
+
+          {state, seentime}
+        else
+          {state, seentime || last_seen}
+        end
       end)
       |> elem(0)
       :persistent_term.put({SpecialMeeting, :slow}, state.slow)

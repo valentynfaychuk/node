@@ -1,5 +1,9 @@
 import Config
 
+# Blake3 NEON support for ARM (M1/M2/M3) Macs
+config :blake3, :simd_mode, :neon
+config :blake3, :rayon, true
+
 config :logger, truncate: :infinity
 
 config :iex,

@@ -145,6 +145,7 @@ defmodule Fabric do
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
         RocksDB.get_prefix("#{height}:", %{db: db, cf: cf.entry_by_height})
         |> Enum.map(& Entry.unpack(entry_by_hash(elem(&1,0))))
+        |> Enum.reject(& is_nil(&1))
         |> Enum.reject(& &1.hash in softfork_deny_hash)
     end
 

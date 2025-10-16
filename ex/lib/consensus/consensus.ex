@@ -337,6 +337,15 @@ defmodule Consensus do
         end
     end
     def apply_entry_old_1(next_entry, cf, rtx, lol) do
+        # HALT before applying entry 34099999 for inspection
+        #if next_entry.header_unpacked.height == 34099999 do
+        #    IO.puts "\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+        #    IO.puts "HALTING BEFORE APPLYING HEIGHT 34099999"
+        #    IO.puts "Entry hash: #{Base.encode16(next_entry.hash)}"
+        #    IO.puts "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
+        #    :erlang.halt(0)
+        #end
+
         Process.put({RocksDB, :ctx}, %{rtx: rtx, cf: cf})
 
         mapenv = make_mapenv(next_entry)
@@ -496,6 +505,16 @@ defmodule Consensus do
         #IO.inspect {l ++ m, ConsensusKV.hash_mutations(l ++ m)}, limit: 11111111
         mutations_hash = ConsensusKV.hash_mutations(l ++ m)
 
+        # DEBUG: Dump mutations for height 34099999
+        if next_entry.header_unpacked.height == 34099999 do
+            IO.puts "HEIGHT: #{next_entry.header_unpacked.height} | MUTATIONS_HASH: #{Base58.encode(mutations_hash)}"
+
+            # Save to files
+            File.write!("next_muts", :erlang.term_to_binary(m))
+            File.write!("next_logs", :erlang.term_to_binary(l))
+            File.write!("next_muts_rev", :erlang.term_to_binary(m_rev))
+        end
+
         attestation = Attestation.sign(next_entry.hash, mutations_hash)
         attestation_packed = Attestation.pack(attestation)
         RocksDB.put(next_entry.hash, attestation_packed, %{rtx: rtx, cf: cf.my_attestation_for_entry})
@@ -555,6 +574,15 @@ defmodule Consensus do
         end
     end
     def apply_entry_1(next_entry) do
+        # HALT before applying entry 34099999 for inspection
+        #if next_entry.header_unpacked.height == 34099999 do
+        #    IO.puts "\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+        #    IO.puts "HALTING BEFORE APPLYING HEIGHT 34099999"
+        #    IO.puts "Entry hash: #{Base.encode16(next_entry.hash)}"
+        #    IO.puts "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
+        #    :erlang.halt(0)
+        #end
+
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
 
         entry = next_entry
@@ -601,6 +629,16 @@ defmodule Consensus do
 
         #{m, m_rev, l, ConsensusKV.hash_mutations(l ++ m ++ m_rev)}
         mutations_hash = ConsensusKV.hash_mutations(l ++ m)
+
+        # DEBUG: Dump mutations for height 34099999
+        if next_entry.header_unpacked.height == 34099999 do
+            IO.puts "HEIGHT: #{next_entry.header_unpacked.height} | MUTATIONS_HASH: #{Base58.encode(mutations_hash)}"
+
+            # Save to files
+            File.write!("next_muts", :erlang.term_to_binary(m))
+            File.write!("next_logs", :erlang.term_to_binary(l))
+            File.write!("next_muts_rev", :erlang.term_to_binary(m_rev))
+        end
 
         sk = Application.fetch_env!(:ama, :trainer_sk)
         attestation = Attestation.sign(sk, next_entry.hash, mutations_hash)

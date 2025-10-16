@@ -57,4 +57,15 @@ defmodule Ama.MixProject do
       ],
     ]
   end
+
+  defp rustler_crates do
+    [
+      blake3: [
+        path: "native/blake3",
+        mode: (Mix.env() == :prod && :release) || :debug,
+        features: [:neon],
+        default_features: true
+      ]
+    ]
+  end
 end

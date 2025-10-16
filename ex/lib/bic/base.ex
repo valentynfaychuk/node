@@ -140,7 +140,7 @@ defmodule BIC.Base do
 
                 contract = "Elixir.BIC.#{action.contract}"
                 module = String.to_existing_atom(contract)
-                function = String.to_existing_atom(action.function)
+                function = String.to_atom(action.function)
 
                 :erlang.apply(module, :call, [function, env, action.args])
                 %{error: :ok}
