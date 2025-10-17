@@ -18,7 +18,15 @@ WORKDIR "/root"
 RUN apt-get update && apt-get install -y build-essential autoconf libncurses-dev m4 xsltproc libxml2-utils unixodbc-dev
 #RUN apt-get update && apt-get install -y --no-install-recommends libwxgtk3.0-gtk3-dev
 RUN apt-get install -y libzstd1 zstd
-RUN apt-get install -y clang-19 lld-19
+RUN apt-get install -y pkg-config clang-19 lld-19 llvm-19-dev llvm-19-tools libclang-19-dev
+
+RUN ln -sf /usr/bin/llvm-config-19 /usr/local/bin/llvm-config
+RUN test -e /usr/lib/llvm-19/lib/libclang.so || \
+    ln -s /usr/lib/llvm-19/lib/libclang-19.so /usr/lib/llvm-19/lib/libclang.so
+
+ENV LLVM_CONFIG_PATH=/usr/bin/llvm-config-19
+ENV LIBCLANG_PATH=/usr/lib/llvm-19/lib
+ENV LD_LIBRARY_PATH=/usr/lib/llvm-19/lib:${LD_LIBRARY_PATH}
 
 #for rocksdb_erlang
 RUN apt-get install -y cmake
