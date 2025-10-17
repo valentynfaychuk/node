@@ -12,6 +12,8 @@ crate-type = ["cdylib"]
 rustler = "0.36.1"
 rand = "0.9.1"
 sha2 = "0.10.8"
+blake3 = "1.8.2"
+atoi = "2"
 
 [dependencies.rust-rocksdb]
 git = "https://github.com/vans163/rust-rocksdb"
