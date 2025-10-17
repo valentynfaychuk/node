@@ -1,12 +1,15 @@
+pub mod consensus;
+pub mod atoms;
+
 use rustler::types::{Binary, OwnedBinary};
 use rustler::{
     Encoder, Error, Env, Term, NifResult, ResourceArc, Atom,
     NifTaggedEnum
 };
 
-use rust_rocksdb::{TransactionDB, MultiThreaded, TransactionDBOptions, Options,
-    Transaction, WriteOptions, TransactionOptions, CompactOptions, BottommostLevelCompaction,
-    DBRawIteratorWithThreadMode,
+pub use rust_rocksdb::{TransactionDB, MultiThreaded, TransactionDBOptions, Options,
+    Transaction, TransactionOptions, WriteOptions, CompactOptions, BottommostLevelCompaction,
+    DBRawIteratorWithThreadMode, BoundColumnFamily,
     Cache, LruCacheOptions, BlockBasedOptions, DBCompressionType, BlockBasedIndexType,
     ColumnFamilyDescriptor, AsColumnFamilyRef};
 
@@ -14,10 +17,9 @@ use std::path::Path;
 use std::ptr::NonNull;
 use std::sync::{Mutex};
 
-mod atoms;
 
 pub struct DbResource {
-    db: TransactionDB<MultiThreaded>
+    pub db: TransactionDB<MultiThreaded>
 }
 
 pub struct CfResource {
@@ -99,7 +101,7 @@ impl ItResource {
   pub fn prev(&self)                   { with_it!(self, it => it.prev()); }
   pub fn valid(&self) -> bool          { with_it!(self, it => it.valid()) }
   pub fn key<'a>(&self, env: Env<'a>) -> Option<Binary<'a>> { with_it!(self, it => it.key().map(|k| to_bin(env, k))) }
-  pub fn val<'a>(&self, env: Env<'a>) -> Option<Binary<'a>> { with_it!(self, it => it.key().map(|v| to_bin(env, v))) }
+  pub fn val<'a>(&self, env: Env<'a>) -> Option<Binary<'a>> { with_it!(self, it => it.value().map(|v| to_bin(env, v))) }
   pub fn item<'a>(&self, env: Env<'a>) -> Option<(Binary<'a>, Binary<'a>)> {
     with_it!(self, it => match (it.key(), it.value()) {
         (Some(k), Some(v)) => Some((to_bin(env, k), to_bin(env, v))),
@@ -577,6 +579,45 @@ fn iterator_move<'a>(env: Env<'a>, res: ResourceArc<ItResource>, action: Term<'a
         }
         _ => Ok((atoms::ok(), atoms::nil(), atoms::nil()).encode(env)),
     }
+}
+
+#[inline]
+pub fn bcat(parts: &[&[u8]]) -> Vec<u8> {
+    let total: usize = parts.iter().map(|p| p.len()).sum();
+    let mut v = Vec::with_capacity(total);
+    for p in parts {
+        v.extend_from_slice(p);
+    }
+    v
+}
+
+#[inline]
+pub fn fixed<const N: usize>(t: Term<'_>) -> Result<[u8; N], Error> {
+    let b: Binary = t.decode()?;
+    let s = b.as_slice();
+    if s.len() != N { return Err(Error::BadArg); }
+    let mut a = [0u8; N];
+    a.copy_from_slice(s);
+    Ok(a)
+}
+
+#[rustler::nif(schedule = "DirtyCpu")]
+fn apply_entry<'a>(env: Env<'a>, db: ResourceArc<DbResource>, next_entry_trimmed_map: Term<'a>, pk: Binary, sk: Binary, txs_packed2: Vec<Binary>, txus: Vec<Term<'a>>) -> Result<Term<'a>, Error> {
+    let entry_signer = fixed::<48>(next_entry_trimmed_map.map_get(atoms::entry_signer())?)?;
+    let entry_prev_hash = fixed::<32>(next_entry_trimmed_map.map_get(atoms::entry_prev_hash())?)?;
+    let entry_vr = fixed::<96>(next_entry_trimmed_map.map_get(atoms::entry_vr())?)?;
+    let entry_vr_b3 = fixed::<32>(next_entry_trimmed_map.map_get(atoms::entry_vr_b3())?)?;
+    let entry_dr = fixed::<32>(next_entry_trimmed_map.map_get(atoms::entry_dr())?)?;
+
+    let entry_slot = next_entry_trimmed_map.map_get(atoms::entry_slot())?.decode::<u64>()?;
+    let entry_prev_slot = next_entry_trimmed_map.map_get(atoms::entry_prev_slot())?.decode::<u64>()?;
+    let entry_height = next_entry_trimmed_map.map_get(atoms::entry_height())?.decode::<u64>()?;
+    let entry_epoch = next_entry_trimmed_map.map_get(atoms::entry_epoch())?.decode::<u64>()?;
+
+    let txs_packed = txs_packed2.into_iter().map(|b| b.as_slice().to_vec()).collect();
+    consensus::consensus_apply::apply_entry(&db.db, pk.as_slice(), sk.as_slice(), &entry_signer, &entry_prev_hash, entry_slot, entry_prev_slot, entry_height, entry_epoch, &entry_vr, &entry_vr_b3, &entry_dr,
+        txs_packed, txus);
+    Ok((b"hi").encode(env))
 }
 
 rustler::init!("Elixir.RDB", load = on_load);

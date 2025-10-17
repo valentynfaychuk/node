@@ -416,6 +416,24 @@ defmodule Consensus do
         %{error: :ok, attestation_packed: ap, mutations_hash: mutations_hash, logs: l, muts: m}
     end
 
+    def apply_entry2() do
+      %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+      entry = Consensus.chain_tip_entry()
+      next_entry_trimmed_map = %{
+          entry_signer: entry.header_unpacked.signer,
+          entry_prev_hash: entry.header_unpacked.prev_hash,
+          entry_vr: entry.header_unpacked.vr,
+          entry_vr_b3: Blake3.hash(entry.header_unpacked.vr),
+          entry_dr: entry.header_unpacked.dr,
+          entry_slot: entry.header_unpacked.slot,
+          entry_prev_slot: entry.header_unpacked.prev_slot,
+          entry_height: entry.header_unpacked.height,
+          entry_epoch: div(entry.header_unpacked.height,100_000),
+      }
+      txus = Enum.map(entry.txs, & TX.unpack(&1))
+      RDB.apply_entry(db, next_entry_trimmed_map, Application.fetch_env!(:ama, :trainer_pk), Application.fetch_env!(:ama, :trainer_sk), entry.txs, txus)
+    end
+
     def produce_entry(slot) do
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
 
