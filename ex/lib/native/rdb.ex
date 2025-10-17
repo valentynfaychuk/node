@@ -37,4 +37,6 @@ defmodule RDB do
   def transaction_iterator(_tx), do: :erlang.nif_error(:nif_not_loaded)
   def transaction_iterator_cf(_tx, _cf), do: :erlang.nif_error(:nif_not_loaded)
   def transaction_iterator_move(_it, _action), do: :erlang.nif_error(:nif_not_loaded)
+
+  def apply_entry(_db, _next_entry_trimmed_map, _pk, _sk, _txs_packed, _txus), do: :erlang.nif_error(:nif_not_loaded)
 end
