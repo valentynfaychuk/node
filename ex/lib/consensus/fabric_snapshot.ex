@@ -96,7 +96,7 @@ defmodule FabricSnapshot do
         :ok = File.mkdir_p!("/tmp/000011351825/db/")
         RocksDB.checkpoint(db, "/tmp/000011351825/db/fabric/")
 
-        "https://snapshots.amadeus.bot/000019900088.zip"
+        "https://snapshots.amadeus.bot/000034076355.zip"
 
         height_padded = String.pad_leading("10168922", 12, "0")
         "cd /tmp/000019704697/ && zip -0 -r 000034076355.zip db/ && cd /root"

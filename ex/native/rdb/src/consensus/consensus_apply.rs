@@ -1,6 +1,5 @@
 use crate::{
-    TransactionDB, MultiThreaded, TransactionOptions, WriteOptions,
-    Transaction, BoundColumnFamily,
+    consensus, BoundColumnFamily, MultiThreaded, Transaction, TransactionDB, TransactionOptions, WriteOptions
 };
 
 use crate::consensus::bic::protocol;
@@ -71,7 +70,9 @@ pub fn make_caller_env(
 pub struct ApplyEnv<'db> {
     pub caller_env: CallerEnv,
     pub cf: std::sync::Arc<BoundColumnFamily<'db>>,
-    pub txn: Transaction<'db, TransactionDB<MultiThreaded>>,
+    pub txn: &'db mut Transaction<'db, TransactionDB<MultiThreaded>>,
+    pub muts_final: Vec<consensus_muts::Mutation>,
+    pub muts_final_rev: Vec<consensus_muts::Mutation>,
     pub muts: Vec<consensus_muts::Mutation>,
     pub muts_gas: Vec<consensus_muts::Mutation>,
     pub muts_rev: Vec<consensus_muts::Mutation>,
@@ -79,7 +80,7 @@ pub struct ApplyEnv<'db> {
     pub result_log: Vec<HashMap<&'static str, &'static str>>,
 }
 
-pub fn make_apply_env<'db>(txn: Transaction<'db, TransactionDB<MultiThreaded>>, cf: std::sync::Arc<BoundColumnFamily<'db>>,
+pub fn make_apply_env<'db>(txn: &'db mut Transaction<'db, TransactionDB<MultiThreaded>>, cf: std::sync::Arc<BoundColumnFamily<'db>>,
     entry_signer: &[u8; 48], entry_prev_hash: &[u8; 32],
     entry_slot: u64, entry_prev_slot: u64, entry_height: u64, entry_epoch: u64,
     entry_vr: &[u8; 96], entry_vr_b3: &[u8; 32], entry_dr: &[u8; 32],
@@ -88,6 +89,8 @@ pub fn make_apply_env<'db>(txn: Transaction<'db, TransactionDB<MultiThreaded>>, 
         caller_env: make_caller_env(entry_signer, entry_prev_hash, entry_slot, entry_prev_slot, entry_height, entry_epoch, entry_vr, entry_vr_b3, entry_dr),
         cf: cf,
         txn: txn,
+        muts_final: Vec::new(),
+        muts_final_rev: Vec::new(),
         muts: Vec::new(),
         muts_gas: Vec::new(),
         muts_rev: Vec::new(),
@@ -103,15 +106,12 @@ pub fn set_apply_env_tx<'db>(env: &mut ApplyEnv<'db>, tx_hash: &[u8; 32], tx_sig
     env.caller_env.account_origin = tx_signer.to_vec();
 }
 
-pub fn apply_entry<'a>(db: &TransactionDB<MultiThreaded>, pk: &[u8], sk: &[u8],
+pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk: &[u8],
     entry_signer: &[u8; 48], entry_prev_hash: &[u8; 32],
     entry_slot: u64, entry_prev_slot: u64, entry_height: u64, entry_epoch: u64,
     entry_vr: &[u8; 96], entry_vr_b3: &[u8; 32], entry_dr: &[u8; 32],
-    txs_packed: Vec<Vec<u8>>, txus: Vec<rustler::Term<'a>>,
-) {
-    let txn_opts = TransactionOptions::default();
-    let write_opts = WriteOptions::default();
-    let txn = db.transaction_opt(&write_opts, &txn_opts);
+    txs_packed: Vec<Vec<u8>>, txus: Vec<rustler::Term<'a>>, txn: &'db mut Transaction<'db, TransactionDB>
+) -> (Vec<consensus_muts::Mutation>, Vec<consensus_muts::Mutation>, Vec<HashMap<&'static str, &'static str>>) {
     let cf_h = db.cf_handle("contractstate").unwrap();
 
     let mut applyenv = make_apply_env(txn, cf_h, entry_signer, entry_prev_hash, entry_slot, entry_prev_slot, entry_height, entry_epoch, entry_vr, entry_vr_b3, entry_dr);
@@ -119,7 +119,6 @@ pub fn apply_entry<'a>(db: &TransactionDB<MultiThreaded>, pk: &[u8], sk: &[u8],
     call_txs_pre_upfront_cost(&mut applyenv, &txus);
 
     for (i, txu) in txus.into_iter().enumerate() {
-
         let tx_hash = crate::fixed::<32>(txu.map_get(crate::atoms::hash()).unwrap()).unwrap();
         let tx = txu.map_get(crate::atoms::tx()).unwrap();
         let tx_signer = crate::fixed::<48>(tx.map_get(crate::atoms::signer()).unwrap()).unwrap();
@@ -140,41 +139,80 @@ pub fn apply_entry<'a>(db: &TransactionDB<MultiThreaded>, pk: &[u8], sk: &[u8],
                 applyenv.result_log.push(m);
             },
             Some(action) => {
-                let op = action.map_get(crate::atoms::op()).unwrap().decode::<rustler::Binary>().unwrap().as_slice();
+                //let op = action.map_get(crate::atoms::op()).unwrap().decode::<rustler::Binary>().unwrap().as_slice();
                 let contract = action.map_get(crate::atoms::contract()).unwrap().decode::<rustler::Binary>().unwrap().to_vec();
-                let function = action.map_get(crate::atoms::function()).unwrap().decode::<rustler::Binary>().unwrap().as_slice();
+                let function = action.map_get(crate::atoms::function()).unwrap().decode::<rustler::Binary>().unwrap().to_vec();
                 let args = action.map_get(crate::atoms::args()).unwrap().decode::<Vec<Vec<u8>>>().unwrap().to_vec();
                 let attached_symbol = action.map_get(crate::atoms::attached_symbol()).ok().and_then(|t| t.decode::<Option<Vec<u8>>>().unwrap());
                 let attached_amount = action.map_get(crate::atoms::attached_amount()).ok().and_then(|t| t.decode::<Option<Vec<u8>>>().unwrap());
 
-                //applyenv.caller_env.account_current = contract;
-                println!("{:?} {:?} {:?} {:?} {:?}", op, contract, function, attached_amount, attached_symbol);
+                applyenv.caller_env.account_current = contract.to_vec();
+                applyenv.muts = Vec::new();
+                applyenv.muts_rev = Vec::new();
+                applyenv.muts_gas = Vec::new();
+                applyenv.muts_rev_gas = Vec::new();
+
+                //println!("{:?} {:?} {:?} {:?} {:?}", op, contract, function, attached_amount, attached_symbol);
+                let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    match consensus::bls12_381::validate_public_key(contract.as_slice()) {
+                        false => call_bic(&mut applyenv, contract, function, args, attached_symbol, attached_amount),
+                        true => call_wasmvm(&mut applyenv, contract, function, args, attached_symbol, attached_amount)
+                    }
+                }));
+                match res {
+                    Ok(_) => {
+                        let mut m: HashMap<&'static str, &'static str> = HashMap::new();
+                        m.insert("error", "ok");
+                        applyenv.muts_final.append(&mut applyenv.muts);
+                        applyenv.muts_final.append(&mut applyenv.muts_gas);
+                        applyenv.muts_final_rev.append(&mut applyenv.muts_rev);
+                        applyenv.muts_final_rev.append(&mut applyenv.muts_rev_gas);
+                    }
+                    Err(payload) => {
+                        applyenv.muts_final.append(&mut applyenv.muts_gas);
+                        applyenv.muts_final_rev.append(&mut applyenv.muts_rev_gas);
+
+                        consensus_kv::revert(&mut applyenv);
+
+                        if let Some(&s) = payload.downcast_ref::<&'static str>() {
+                            let mut m: HashMap<&'static str, &'static str> = HashMap::new();
+                            m.insert("error", s);
+                            applyenv.result_log.push(m);
+                        } else {
+                            let mut m: HashMap<&'static str, &'static str> = HashMap::new();
+                            m.insert("error", "unknown");
+                            applyenv.result_log.push(m);
+                        }
+                    }
+                }
             }
         }
     }
 
+    call_exit(&mut applyenv);
 
-/*
-    {m, m_rev, l} = Enum.reduce(Enum.with_index(txus), {m_pre, m_rev_pre, []}, fn({txu, tx_idx}, {m, m_rev, l})->
-        #ts_m = :os.system_time(1000)
+    (applyenv.muts, applyenv.muts_rev, applyenv.result_log)
+}
 
-        {m3, m_rev3, m3_gas, m3_gas_rev, result} = BIC.Base.call_tx_actions(mapenv, txu)
-        #IO.inspect {:call_tx, :os.system_time(1000) - ts_m}
-        if result[:error] == :ok do
-            m = m ++ m3 ++ m3_gas
-            m_rev = m_rev ++ m_rev3 ++ m3_gas_rev
-            {m, m_rev, l ++ [result]}
-        else
-            ConsensusKV.revert(m_rev3)
-            {m ++ m3_gas, m_rev ++ m3_gas_rev, l ++ [result]}
-        end
-    end)
-*/
+fn call_exit(env: &mut ApplyEnv) {
+    env.muts = Vec::new();
+    env.muts_rev = Vec::new();
 
+    if env.caller_env.entry_height % 1000 == 0 {
+        let digest = blake3::hash(&env.caller_env.entry_vr);
+        consensus_kv::kv_put(env, b"bic:epoch:segment_vr_hash", digest.as_bytes());
+    }
+    if env.caller_env.entry_height % 100_000 == 99_999 {
+        consensus::bic::epoch::next(env);
+    }
 
+    env.muts_final.append(&mut env.muts);
+    env.muts_final_rev.append(&mut env.muts_rev);
 }
 
 fn call_txs_pre_upfront_cost<'a>(env: &mut ApplyEnv, txus: &[rustler::Term<'a>]) {
+    env.muts = Vec::new();
+    env.muts_rev = Vec::new();
     for txu in txus {
         let tx_encoded = txu.map_get(crate::atoms::tx_encoded()).unwrap().decode::<rustler::Binary>().unwrap().as_slice();
         let tx_hash = crate::fixed::<32>(txu.map_get(crate::atoms::hash()).unwrap()).unwrap();
@@ -190,4 +228,43 @@ fn call_txs_pre_upfront_cost<'a>(env: &mut ApplyEnv, txus: &[rustler::Term<'a>])
         let tx_cost = protocol::tx_cost_per_byte(env.caller_env.entry_epoch, tx_encoded.len());
         protocol::pay_cost(env, tx_cost);
     }
+    env.muts_final.append(&mut env.muts);
+    env.muts_final_rev.append(&mut env.muts_rev);
+}
+
+pub fn valid_bic_action(contract: Vec<u8>, function: Vec<u8>) -> bool {
+    let c = contract.as_slice();
+    let f = function.as_slice();
+
+    (c == b"Epoch" || c == b"Coin" || c == b"Contract")
+        && (f == b"submit_sol"
+            || f == b"transfer"
+            || f == b"set_emission_address"
+            || f == b"slash_trainer"
+            || f == b"deploy"
+            || f == b"create_and_mint"
+            || f == b"mint"
+            || f == b"pause")
+}
+
+fn call_bic(env: &mut ApplyEnv, contract: Vec<u8>, function: Vec<u8>, args: Vec<Vec<u8>>, attached_symbol: Option<Vec<u8>>, attached_amount: Option<Vec<u8>>) {
+    match valid_bic_action(contract.to_vec(), function.to_vec()) {
+        false => {
+            let mut m: HashMap<&'static str, &'static str> = HashMap::new();
+            m.insert("error", "invalid_bic_action");
+            env.result_log.push(m);
+        }
+        true => {
+            match (contract.as_slice(), function.as_slice()) {
+                (b"Coin", b"transfer") => consensus::bic::coin::call_transfer(env, args),
+                (b"Coin", b"create_and_mint") => consensus::bic::coin::call_create_and_mint(env, args),
+                (b"Coin", b"mint") => consensus::bic::coin::call_mint(env, args),
+                (b"Coin", b"pause") => consensus::bic::coin::call_pause(env, args),
+                _ => ()
+            }
+        }
+    }
+}
+
+fn call_wasmvm(env: &mut ApplyEnv, contract: Vec<u8>, function: Vec<u8>, args: Vec<Vec<u8>>, attached_symbol: Option<Vec<u8>>, attached_amount: Option<Vec<u8>>) {
 }
