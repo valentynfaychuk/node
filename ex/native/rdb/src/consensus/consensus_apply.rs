@@ -70,7 +70,7 @@ pub fn make_caller_env(
 pub struct ApplyEnv<'db> {
     pub caller_env: CallerEnv,
     pub cf: std::sync::Arc<BoundColumnFamily<'db>>,
-    pub txn: &'db mut Transaction<'db, TransactionDB<MultiThreaded>>,
+    pub txn: Transaction<'db, TransactionDB<MultiThreaded>>,
     pub muts_final: Vec<consensus_muts::Mutation>,
     pub muts_final_rev: Vec<consensus_muts::Mutation>,
     pub muts: Vec<consensus_muts::Mutation>,
@@ -80,7 +80,20 @@ pub struct ApplyEnv<'db> {
     pub result_log: Vec<HashMap<&'static str, &'static str>>,
 }
 
-pub fn make_apply_env<'db>(txn: &'db mut Transaction<'db, TransactionDB<MultiThreaded>>, cf: std::sync::Arc<BoundColumnFamily<'db>>,
+impl<'db> ApplyEnv<'db> {
+    fn into_parts(
+        self,
+    ) -> (
+        Transaction<'db, TransactionDB<MultiThreaded>>,
+        Vec<consensus_muts::Mutation>,
+        Vec<consensus_muts::Mutation>,
+        Vec<HashMap<&'static str, &'static str>>,
+    ) {
+        (self.txn, self.muts, self.muts_rev, self.result_log)
+    }
+}
+
+pub fn make_apply_env<'db>(txn: Transaction<'db, TransactionDB<MultiThreaded>>, cf: std::sync::Arc<BoundColumnFamily<'db>>,
     entry_signer: &[u8; 48], entry_prev_hash: &[u8; 32],
     entry_slot: u64, entry_prev_slot: u64, entry_height: u64, entry_epoch: u64,
     entry_vr: &[u8; 96], entry_vr_b3: &[u8; 32], entry_dr: &[u8; 32],
@@ -110,8 +123,8 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
     entry_signer: &[u8; 48], entry_prev_hash: &[u8; 32],
     entry_slot: u64, entry_prev_slot: u64, entry_height: u64, entry_epoch: u64,
     entry_vr: &[u8; 96], entry_vr_b3: &[u8; 32], entry_dr: &[u8; 32],
-    txs_packed: Vec<Vec<u8>>, txus: Vec<rustler::Term<'a>>, txn: &'db mut Transaction<'db, TransactionDB>
-) -> (Vec<consensus_muts::Mutation>, Vec<consensus_muts::Mutation>, Vec<HashMap<&'static str, &'static str>>) {
+    txs_packed: Vec<Vec<u8>>, txus: Vec<rustler::Term<'a>>, txn: Transaction<'db, TransactionDB<MultiThreaded>>
+) -> (Transaction<'db, TransactionDB<MultiThreaded>>, Vec<consensus_muts::Mutation>, Vec<consensus_muts::Mutation>, Vec<HashMap<&'static str, &'static str>>) {
     let cf_h = db.cf_handle("contractstate").unwrap();
 
     let mut applyenv = make_apply_env(txn, cf_h, entry_signer, entry_prev_hash, entry_slot, entry_prev_slot, entry_height, entry_epoch, entry_vr, entry_vr_b3, entry_dr);
@@ -191,7 +204,8 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
 
     call_exit(&mut applyenv);
 
-    (applyenv.muts, applyenv.muts_rev, applyenv.result_log)
+    applyenv.into_parts()
+    //(applyenv.muts, applyenv.muts_rev, applyenv.result_log)
 }
 
 fn call_exit(env: &mut ApplyEnv) {

@@ -17,6 +17,8 @@ use std::path::Path;
 use std::ptr::NonNull;
 use std::sync::{Mutex};
 
+use crate::consensus::consensus_muts;
+
 
 pub struct DbResource {
     pub db: TransactionDB<MultiThreaded>
@@ -618,21 +620,19 @@ fn apply_entry<'a>(env: Env<'a>, db: ResourceArc<DbResource>, next_entry_trimmed
 
     let txn_opts = TransactionOptions::default();
     let write_opts = WriteOptions::default();
-    let mut txn = db.db.transaction_opt(&write_opts, &txn_opts);
+    let txn = db.db.transaction_opt(&write_opts, &txn_opts);
 
-    let (muts, muts_rev, result_log) = {
+    let (txn, muts, muts_rev, result_log) =
         consensus::consensus_apply::apply_entry(&db.db, pk.as_slice(), sk.as_slice(), &entry_signer, &entry_prev_hash,
-            entry_slot, entry_prev_slot, entry_height, entry_epoch, &entry_vr, &entry_vr_b3, &entry_dr, txs_packed, txus, &mut txn)
-    };
-    Ok((b"hi").encode(env))
-/*
+            entry_slot, entry_prev_slot, entry_height, entry_epoch, &entry_vr, &entry_vr_b3, &entry_dr, txs_packed, txus, txn);
+
     let tx_static: Tx<'static> = unsafe { std::mem::transmute::<Tx<'_>, Tx<'static>>(txn) };
     let term_txn = (atoms::ok(), ResourceArc::new(TxResource {
         db: db,
         tx: Mutex::new(Some(tx_static)),
     })).encode(env);
 
-    Ok((term_txn).encode(env))*/
+    Ok((term_txn, consensus_muts::mutations_to_map(muts), consensus_muts::mutations_to_map(muts_rev), result_log).encode(env))
 }
 
 rustler::init!("Elixir.RDB", load = on_load);
