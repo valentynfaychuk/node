@@ -97,8 +97,6 @@ defmodule NodeState do
   end
 
   def handle(:event_attestation, istate, term) do
-    #c = Consensus.unpack(term.consensus_packed)
-    #send(FabricCoordinatorGen, {:validate_consensus, c})
     %{error: :ok, attestation: a} = Attestation.unpack_and_validate(term.attestation_packed)
     send(FabricCoordinatorGen, {:add_attestation, a})
   end

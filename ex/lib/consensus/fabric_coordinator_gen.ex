@@ -37,19 +37,6 @@ defmodule FabricCoordinatorGen do
     {:noreply, state}
   end
 
-  def handle_info({:validate_consensus, consensus}, state) do
-    calc_syncing(true)
-    :erlang.spawn(fn()->
-      case Consensus.validate_vs_chain(consensus) do
-        %{error: :ok, consensus: consensus} ->
-          send(FabricCoordinatorGen, {:insert_consensus, consensus})
-        _ -> nil
-      end
-    end)
-    calc_syncing(false)
-    {:noreply, state}
-  end
-
   def handle_info({:insert_consensus, consensus}, state) do
     calc_syncing(true)
     Fabric.insert_consensus(consensus)

@@ -23,13 +23,18 @@ defmodule FabricGen do
   def init(state) do
     :persistent_term.put(FabricSyncing, :atomics.new(1, []))
     :erlang.send_after(2000, self(), :tick)
-    {:ok, state}
+    {:ok, %{next_restart: :os.system_time(1000) + 3*60*60_000}}
   end
 
   def handle_info(:tick, state) do
     state = if true do tick(state) else state end
     :erlang.send_after(100, self(), :tick)
-    {:noreply, state}
+
+    if :os.system_time(1000) > state.next_restart do
+      {:stop, :shutdown, state}
+    else
+      {:noreply, state}
+    end
   end
 
   def tick(state) do

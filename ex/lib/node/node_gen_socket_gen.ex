@@ -30,7 +30,8 @@ defmodule NodeGenSocketGen do
     ip = Tuple.to_list(ip_tuple) |> Enum.join(".")
     state = %{
       idx: idx,
-      ip: ip, ip_tuple: ip_tuple, port: port, socket: lsocket
+      ip: ip, ip_tuple: ip_tuple, port: port, socket: lsocket,
+      next_restart: :os.system_time(1000) + 3*60*60_000
     }
     {:ok, state}
   end
@@ -142,8 +143,12 @@ defmodule NodeGenSocketGen do
           IO.inspect {:decrement_buckets_took, state.idx, took}
         end
         :erlang.send_after(3000, self(), :netguard_decrement_buckets)
-
     end
-    {:noreply, state}
+
+    if :os.system_time(1000) > state.next_restart do
+      {:stop, :shutdown, state}
+    else
+      {:noreply, state}
+    end
   end
 end
