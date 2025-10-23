@@ -6,10 +6,11 @@ use crate::consensus::bic::protocol;
 use crate::consensus::consensus_kv;
 use crate::consensus::consensus_muts;
 use std::collections::HashMap;
+use std::panic::panic_any;
 
 pub struct CallerEnv {
     pub readonly: bool,
-    pub seed: Option<Vec<u8>>,
+    pub seed: Vec<u8>,
     pub seedf64: f64,
     pub entry_signer: [u8; 48],
     pub entry_prev_hash: [u8; 32],
@@ -27,8 +28,8 @@ pub struct CallerEnv {
     pub account_origin: Vec<u8>,
     pub account_caller: Vec<u8>,
     pub account_current: Vec<u8>,
-    pub attached_symbol: String,
-    pub attached_amount: String,
+    pub attached_symbol: Vec<u8>,
+    pub attached_amount: Vec<u8>,
     pub call_counter: u32,
     pub call_exec_points: u64,
     pub call_exec_points_remaining: u64,
@@ -41,7 +42,7 @@ pub fn make_caller_env(
 ) -> CallerEnv {
     CallerEnv {
         readonly: false,
-        seed: None,
+        seed: Vec::new(),
         seedf64: 1.0,
         entry_signer: *entry_signer,
         entry_prev_hash: *entry_prev_hash,
@@ -59,8 +60,8 @@ pub fn make_caller_env(
         account_origin: Vec::new(),
         account_caller: Vec::new(),
         account_current: Vec::new(),
-        attached_symbol: String::new(),
-        attached_amount: String::new(),
+        attached_symbol: Vec::new(),
+        attached_amount: Vec::new(),
         call_counter: 0,
         call_exec_points: 10_000_000,
         call_exec_points_remaining: 10_000_000,
@@ -177,7 +178,7 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
                 applyenv.muts_gas = Vec::new();
                 applyenv.muts_rev_gas = Vec::new();
 
-                //panic::set_hook(Box::new(|_| {}));
+                std::panic::set_hook(Box::new(|_| {}));
                 let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     match consensus::bls12_381::validate_public_key(contract.as_slice()) {
                         false => {
@@ -225,7 +226,6 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
     //call_exit(&mut applyenv);
 
     applyenv.into_parts()
-    //(applyenv.muts, applyenv.muts_rev, applyenv.result_log)
 }
 
 fn call_txs_pre_upfront_cost<'a>(env: &mut ApplyEnv, txus: &[rustler::Term<'a>]) {
@@ -282,27 +282,44 @@ pub fn valid_bic_action(contract: Vec<u8>, function: Vec<u8>) -> bool {
 }
 
 fn call_bic(env: &mut ApplyEnv, contract: Vec<u8>, function: Vec<u8>, args: Vec<Vec<u8>>, attached_symbol: Option<Vec<u8>>, attached_amount: Option<Vec<u8>>) {
-    match valid_bic_action(contract.to_vec(), function.to_vec()) {
-        false => {
-            let mut m: HashMap<&'static str, &'static str> = HashMap::new();
-            m.insert("error", "invalid_bic_action");
-            env.result_log.push(m);
-        }
-        true => {
-            match (contract.as_slice(), function.as_slice()) {
-                (b"Coin", b"transfer") => consensus::bic::coin::call_transfer(env, args),
-                (b"Coin", b"create_and_mint") => consensus::bic::coin::call_create_and_mint(env, args),
-                (b"Coin", b"mint") => consensus::bic::coin::call_mint(env, args),
-                (b"Coin", b"pause") => consensus::bic::coin::call_pause(env, args),
-                (b"Epoch", b"set_emission_address") => consensus::bic::epoch::call_set_emission_address(env, args),
-                (b"Epoch", b"submit_sol") => consensus::bic::epoch::call_submit_sol(env, args),
-                (b"Epoch", b"slash_trainer") => consensus::bic::epoch::call_slash_trainer(env, args),
-                //(b"Contract", b"depoy") => consensus::bic::epoch::call_slash_trainer(env, args),
-                _ => std::panic::panic_any("invalid_bic_action")
-            }
-        }
+    match (contract.as_slice(), function.as_slice()) {
+        (b"Coin", b"transfer") => consensus::bic::coin::call_transfer(env, args),
+        (b"Coin", b"create_and_mint") => consensus::bic::coin::call_create_and_mint(env, args),
+        (b"Coin", b"mint") => consensus::bic::coin::call_mint(env, args),
+        (b"Coin", b"pause") => consensus::bic::coin::call_pause(env, args),
+        (b"Epoch", b"set_emission_address") => consensus::bic::epoch::call_set_emission_address(env, args),
+        (b"Epoch", b"submit_sol") => consensus::bic::epoch::call_submit_sol(env, args),
+        (b"Epoch", b"slash_trainer") => consensus::bic::epoch::call_slash_trainer(env, args),
+        (b"Contract", b"deploy") => consensus::bic::contract::call_deploy(env, args),
+        _ => std::panic::panic_any("invalid_bic_action")
     }
 }
 
 fn call_wasmvm(env: &mut ApplyEnv, contract: Vec<u8>, function: Vec<u8>, args: Vec<Vec<u8>>, attached_symbol: Option<Vec<u8>>, attached_amount: Option<Vec<u8>>) {
+    env.caller_env.attached_symbol = Vec::new();
+    env.caller_env.attached_amount = Vec::new();
+    //TODO: wrap this into a neat entry func prepare_wasm_call(env..)
+
+    let bytecode = consensus::bic::contract::bytecode(env, contract.as_slice());
+    if bytecode.is_none() { panic_any("account_has_no_bytecode") }
+
+    match (attached_symbol, attached_amount) {
+        (Some(attached_symbol), Some(attached_amount)) => {
+            let amount = std::str::from_utf8(&attached_amount).ok().and_then(|s| s.parse::<i128>().ok()).unwrap_or_else(|| panic_any("invalid_attached_amount"));
+            if amount <= 0 { panic_any("invalid_attached_amount") }
+            if amount > consensus::bic::coin::balance(env, &env.caller_env.account_caller, &attached_symbol) { panic_any("attached_amount_insufficient_funds") }
+
+            consensus_kv::kv_increment(env, &crate::bcat(&[b"bic:coin:balance:", &contract, &attached_symbol]), amount);
+            consensus_kv::kv_increment(env, &crate::bcat(&[b"bic:coin:balance:", &env.caller_env.account_caller, &attached_symbol]), -amount);
+
+            env.caller_env.attached_symbol = attached_symbol;
+            env.caller_env.attached_amount = attached_amount;
+        },
+        _ => ()
+    }
+
+    //let result = ();
+
+    //exec used
+    //muts
 }

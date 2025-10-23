@@ -323,20 +323,20 @@ defmodule Consensus do
         }
     end
 
-    def apply_entry(next_entry) do
+    def apply_entry_old(next_entry) do
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
 
-        {m, m_rev, l, mhash} = try do apply_entry3(next_entry) catch _,_ -> {nil,nil,nil,nil} end
+        {m, m_rev, l, mhash} = try do apply_entry(next_entry) catch _,_ -> {nil,nil,nil,nil} end
 
         rtx = RocksDB.transaction(db)
         height = RocksDB.get("temporal_height", %{rtx: rtx, cf: cf.sysconf, term: true})
         if !height or (height + 1) == Entry.height(next_entry) do
-            apply_entry_1(next_entry, cf, rtx, {m, m_rev, l, mhash})
+            apply_entry_old_1(next_entry, cf, rtx, {m, m_rev, l, mhash})
         else
             %{error: :invalid_height}
         end
     end
-    def apply_entry_1(next_entry, cf, rtx, lol) do
+    def apply_entry_old_1(next_entry, cf, rtx, lol) do
         Process.put({RocksDB, :ctx}, %{rtx: rtx, cf: cf})
 
         mapenv = make_mapenv(next_entry)
@@ -545,16 +545,16 @@ defmodule Consensus do
         %{error: :ok, attestation_packed: ap, mutations_hash: mutations_hash, logs: l, muts: m}
     end
 
-    def apply_entry3(next_entry) do
+    def apply_entry(next_entry) do
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
         height = RocksDB.get("temporal_height", %{db: db, cf: cf.sysconf, term: true})
         if !height or (height + 1) == Entry.height(next_entry) do
-            apply_entry_3_1(next_entry)
+            apply_entry_1(next_entry)
         else
             %{error: :invalid_height}
         end
     end
-    def apply_entry_3_1(next_entry) do
+    def apply_entry_1(next_entry) do
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
 
         entry = next_entry
@@ -585,7 +585,7 @@ defmodule Consensus do
         end
         rebuild_l_fn = fn(m)->
           Enum.map(m, fn(inner)->
-            %{error: :"#{inner["error"]}"}
+            %{error: :"#{IO.iodata_to_binary(inner["error"])}"}
           end)
         end
         m = rebuild_m_fn.(m)
@@ -599,11 +599,56 @@ defmodule Consensus do
         m = m ++ m_exit
         m_rev = m_rev ++ m_exit_rev
 
-        RDB.transaction_rollback(rtx)
-        #IO.inspect {:fake, next_entry.header_unpacked.height, m, m_rev, l, Base58.encode(ConsensusKV.hash_mutations(l ++ m))}
-        #File.write! "/tmp/fake", inspect({:fake, next_entry.header_unpacked.height, m, m_rev, l, Base58.encode(ConsensusKV.hash_mutations(l ++ m))}, pretty: true, limit: 11111111, printable_limit: 111111111) <> "\n", [:append]
-        #IO.inspect {:fake, next_entry.header_unpacked.height, Base58.encode(ConsensusKV.hash_mutations(l ++ m))}
-        {m, m_rev, l, ConsensusKV.hash_mutations(l ++ m ++ m_rev)}
+        #{m, m_rev, l, ConsensusKV.hash_mutations(l ++ m ++ m_rev)}
+        mutations_hash = ConsensusKV.hash_mutations(l ++ m)
+
+        attestation = Attestation.sign(next_entry.hash, mutations_hash)
+        attestation_packed = Attestation.pack(attestation)
+        RocksDB.put(next_entry.hash, attestation_packed, %{rtx: rtx, cf: cf.my_attestation_for_entry})
+
+        pk = Application.fetch_env!(:ama, :trainer_pk)
+        trainers = trainers_for_height(Entry.height(next_entry), %{rtx: rtx, cf: cf})
+        is_trainer = pk in trainers
+
+        seen_time = :os.system_time(1000)
+        RocksDB.put(next_entry.hash, seen_time, %{rtx: rtx, cf: cf.my_seen_time_for_entry, term: true})
+
+        RocksDB.put("temporal_tip", next_entry.hash, %{rtx: rtx, cf: cf.sysconf})
+        RocksDB.put("temporal_height", next_entry.header_unpacked.height, %{rtx: rtx, cf: cf.sysconf, term: true})
+        #:ok = :rocksdb.transaction_put(rtx, cf.my_mutations_hash_for_entry, next_entry.hash, mutations_hash)
+        RocksDB.put(next_entry.hash, m_rev, %{rtx: rtx, cf: cf.muts_rev, term: true})
+
+        entry_packed = RocksDB.get(next_entry.hash, %{rtx: rtx, cf: cf.entry})
+        Enum.each(Enum.zip(next_entry.txs, l), fn({tx_packed, result})->
+            txu = TX.unpack(tx_packed)
+            case :binary.match(entry_packed, tx_packed) do
+              {index_start, index_size} ->
+                value = %{entry_hash: next_entry.hash, result: result, index_start: index_start, index_size: index_size}
+                value = :erlang.term_to_binary(value, [:deterministic])
+                RocksDB.put(txu.hash, value, %{rtx: rtx, cf: cf.tx})
+
+                nonce_padded = String.pad_leading("#{txu.tx.nonce}", 20, "0")
+                RocksDB.put("#{txu.tx.signer}:#{nonce_padded}", txu.hash, %{rtx: rtx, cf: cf.tx_account_nonce})
+                TX.known_receivers(txu)
+                |> Enum.each(fn(receiver)->
+                    RocksDB.put("#{receiver}:#{nonce_padded}", txu.hash, %{rtx: rtx, cf: cf.tx_receiver_nonce})
+                end)
+            end
+        end)
+
+        if Application.fetch_env!(:ama, :archival_node) do
+            RocksDB.put(next_entry.hash, m, %{rtx: rtx, cf: cf.muts, term: true})
+        end
+
+        :ok = RocksDB.transaction_commit(rtx)
+
+        ap = if is_trainer do
+            #TODO: not ideal in super tight latency constrains but its 1 line and it works
+            send(FabricCoordinatorGen, {:add_attestation, attestation})
+            attestation_packed
+        end
+
+        %{error: :ok, attestation_packed: ap, mutations_hash: mutations_hash, logs: l, muts: m}
     end
 
     def produce_entry(slot) do
