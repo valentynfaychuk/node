@@ -325,15 +325,18 @@ defmodule Consensus do
 
     def apply_entry(next_entry) do
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+
+        {m, m_rev, l, mhash} = try do apply_entry3(next_entry) catch _,_ -> {nil,nil,nil,nil} end
+
         rtx = RocksDB.transaction(db)
         height = RocksDB.get("temporal_height", %{rtx: rtx, cf: cf.sysconf, term: true})
         if !height or (height + 1) == Entry.height(next_entry) do
-            apply_entry_1(next_entry, cf, rtx)
+            apply_entry_1(next_entry, cf, rtx, {m, m_rev, l, mhash})
         else
             %{error: :invalid_height}
         end
     end
-    def apply_entry_1(next_entry, cf, rtx) do
+    def apply_entry_1(next_entry, cf, rtx, lol) do
         Process.put({RocksDB, :ctx}, %{rtx: rtx, cf: cf})
 
         mapenv = make_mapenv(next_entry)
@@ -365,7 +368,19 @@ defmodule Consensus do
 
         #TODO: store logs
         #IO.inspect {l ++ m, ConsensusKV.hash_mutations(l ++ m)}, limit: 11111111
-        IO.inspect {:real, m, l, Base58.encode(ConsensusKV.hash_mutations(l ++ m))}
+        #IO.inspect {:real, next_entry.header_unpacked.height, m_rev, l, Base58.encode(ConsensusKV.hash_mutations(l ++ m))}
+        #File.write! "/tmp/real", inspect({:real, next_entry.header_unpacked.height, m, m_rev, l, Base58.encode(ConsensusKV.hash_mutations(l ++ m))}, pretty: true, limit: 11111111, printable_limit: 111111111) <> "\n", [:append]
+        #IO.inspect {:real, next_entry.header_unpacked.height, Base58.encode(ConsensusKV.hash_mutations(l ++ m))}
+
+        {m2, m_rev2, l2, mhash2} = lol
+        doit = ConsensusKV.hash_mutations(l ++ m ++ m_rev)
+        if doit != mhash2 do
+          File.write! "/tmp/real", inspect({:real, next_entry.header_unpacked.height, m, m_rev, l, Base58.encode(ConsensusKV.hash_mutations(l ++ m))}, pretty: true, limit: 11111111, printable_limit: 111111111) <> "\n", [:append]
+          if mhash2 != nil do
+            File.write! "/tmp/fake", inspect({:fake, next_entry.header_unpacked.height, m2, m_rev2, l2, Base58.encode(ConsensusKV.hash_mutations(l2 ++ m2))}, pretty: true, limit: 11111111, printable_limit: 111111111) <> "\n", [:append]
+          end
+        end
+
         mutations_hash = ConsensusKV.hash_mutations(l ++ m)
 
         attestation = Attestation.sign(next_entry.hash, mutations_hash)
@@ -417,24 +432,6 @@ defmodule Consensus do
         %{error: :ok, attestation_packed: ap, mutations_hash: mutations_hash, logs: l, muts: m}
     end
 
-    def apply_entry2() do
-      %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
-      entry = Consensus.chain_tip_entry()
-      next_entry_trimmed_map = %{
-          entry_signer: entry.header_unpacked.signer,
-          entry_prev_hash: entry.header_unpacked.prev_hash,
-          entry_vr: entry.header_unpacked.vr,
-          entry_vr_b3: Blake3.hash(entry.header_unpacked.vr),
-          entry_dr: entry.header_unpacked.dr,
-          entry_slot: entry.header_unpacked.slot,
-          entry_prev_slot: entry.header_unpacked.prev_slot,
-          entry_height: entry.header_unpacked.height,
-          entry_epoch: div(entry.header_unpacked.height,100_000),
-      }
-      txus = Enum.map(entry.txs, & TX.unpack(&1))
-      RDB.apply_entry(db, next_entry_trimmed_map, Application.fetch_env!(:ama, :trainer_pk), Application.fetch_env!(:ama, :trainer_sk), entry.txs, txus)
-    end
-
     def apply_entry2(next_entry) do
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
         height = RocksDB.get("temporal_height", %{db: db, cf: cf.sysconf, term: true})
@@ -447,7 +444,7 @@ defmodule Consensus do
     def apply_entry_2_1(next_entry) do
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
 
-        entry = Consensus.chain_tip_entry()
+        entry = next_entry
         next_entry_trimmed_map = %{
             entry_signer: entry.header_unpacked.signer,
             entry_prev_hash: entry.header_unpacked.prev_hash,
@@ -460,12 +457,40 @@ defmodule Consensus do
             entry_epoch: div(entry.header_unpacked.height,100_000),
         }
         txus = Enum.map(entry.txs, & TX.unpack(&1))
-        {rtx, m, m_rev, l} = RDB.apply_entry(db, next_entry_trimmed_map, Application.fetch_env!(:ama, :trainer_pk), Application.fetch_env!(:ama, :trainer_sk), entry.txs, txus)
-        RDB.transaction_rollback(rtx)
-        IO.inspect {:fake, m, l, Base58.encode(ConsensusKV.hash_mutations(l ++ m))}
-        1/0
 
+        {rtx, m, m_rev, l} = RDB.apply_entry(db, next_entry_trimmed_map, Application.fetch_env!(:ama, :trainer_pk), Application.fetch_env!(:ama, :trainer_sk), entry.txs, txus)
+        rebuild_m_fn = fn(m)->
+          Enum.map(m, fn(inner)->
+            op = :'#{IO.iodata_to_binary(inner[~c"op"])}'
+            case op do
+              :set_bit -> %{op: op, key: IO.iodata_to_binary(inner[~c"key"]), value: :erlang.binary_to_integer("#{inner[~c"value"]}"), bloomsize: :erlang.binary_to_integer("#{inner[~c"bloomsize"]}")}
+              :clear_bit -> %{op: op, key: IO.iodata_to_binary(inner[~c"key"]), value: :erlang.binary_to_integer("#{inner[~c"value"]}")}
+              :delete -> %{op: op, key: IO.iodata_to_binary(inner[~c"key"])}
+              :put -> %{op: op, key: IO.iodata_to_binary(inner[~c"key"]), value: IO.iodata_to_binary(inner[~c"value"])}
+            end
+          end)
+        end
+        rebuild_l_fn = fn(m)->
+          Enum.map(m, fn(inner)->
+            %{error: :"#{inner["error"]}"}
+          end)
+        end
+        m = rebuild_m_fn.(m)
+        m_rev = rebuild_m_fn.(m_rev)
+        l = rebuild_l_fn.(l)
+
+        #call the exit
         Process.put({RocksDB, :ctx}, %{rtx: rtx, cf: cf})
+        mapenv = make_mapenv(next_entry)
+        {m_exit, m_exit_rev} = BIC.Base.call_exit(mapenv)
+        m = m ++ m_exit
+        m_rev = m_rev ++ m_exit_rev
+
+        RDB.transaction_rollback(rtx)
+        #IO.inspect {:fake, next_entry.header_unpacked.height, m, m_rev, l, Base58.encode(ConsensusKV.hash_mutations(l ++ m))}
+        File.write! "/tmp/fake", inspect({:fake, next_entry.header_unpacked.height, m, m_rev, l, Base58.encode(ConsensusKV.hash_mutations(l ++ m))}, pretty: true, limit: 11111111, printable_limit: 111111111) <> "\n", [:append]
+        IO.inspect {:fake, next_entry.header_unpacked.height, Base58.encode(ConsensusKV.hash_mutations(l ++ m))}
+        1/0
 
         #TODO: store logs
         #IO.inspect {l ++ m, ConsensusKV.hash_mutations(l ++ m)}, limit: 11111111
@@ -518,6 +543,67 @@ defmodule Consensus do
         end
 
         %{error: :ok, attestation_packed: ap, mutations_hash: mutations_hash, logs: l, muts: m}
+    end
+
+    def apply_entry3(next_entry) do
+        %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+        height = RocksDB.get("temporal_height", %{db: db, cf: cf.sysconf, term: true})
+        if !height or (height + 1) == Entry.height(next_entry) do
+            apply_entry_3_1(next_entry)
+        else
+            %{error: :invalid_height}
+        end
+    end
+    def apply_entry_3_1(next_entry) do
+        %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+
+        entry = next_entry
+        next_entry_trimmed_map = %{
+            entry_signer: entry.header_unpacked.signer,
+            entry_prev_hash: entry.header_unpacked.prev_hash,
+            entry_vr: entry.header_unpacked.vr,
+            entry_vr_b3: Blake3.hash(entry.header_unpacked.vr),
+            entry_dr: entry.header_unpacked.dr,
+            entry_slot: entry.header_unpacked.slot,
+            entry_prev_slot: entry.header_unpacked.prev_slot,
+            entry_height: entry.header_unpacked.height,
+            entry_epoch: div(entry.header_unpacked.height,100_000),
+        }
+        txus = Enum.map(entry.txs, & TX.unpack(&1))
+
+        {rtx, m, m_rev, l} = RDB.apply_entry(db, next_entry_trimmed_map, Application.fetch_env!(:ama, :trainer_pk), Application.fetch_env!(:ama, :trainer_sk), entry.txs, txus)
+        rebuild_m_fn = fn(m)->
+          Enum.map(m, fn(inner)->
+            op = :'#{IO.iodata_to_binary(inner[~c"op"])}'
+            case op do
+              :set_bit -> %{op: op, key: IO.iodata_to_binary(inner[~c"key"]), value: :erlang.binary_to_integer("#{inner[~c"value"]}"), bloomsize: :erlang.binary_to_integer("#{inner[~c"bloomsize"]}")}
+              :clear_bit -> %{op: op, key: IO.iodata_to_binary(inner[~c"key"]), value: :erlang.binary_to_integer("#{inner[~c"value"]}")}
+              :delete -> %{op: op, key: IO.iodata_to_binary(inner[~c"key"])}
+              :put -> %{op: op, key: IO.iodata_to_binary(inner[~c"key"]), value: IO.iodata_to_binary(inner[~c"value"])}
+            end
+          end)
+        end
+        rebuild_l_fn = fn(m)->
+          Enum.map(m, fn(inner)->
+            %{error: :"#{inner["error"]}"}
+          end)
+        end
+        m = rebuild_m_fn.(m)
+        m_rev = rebuild_m_fn.(m_rev)
+        l = rebuild_l_fn.(l)
+
+        #call the exit
+        Process.put({RocksDB, :ctx}, %{rtx: rtx, cf: cf})
+        mapenv = make_mapenv(next_entry)
+        {m_exit, m_exit_rev} = BIC.Base.call_exit(mapenv)
+        m = m ++ m_exit
+        m_rev = m_rev ++ m_exit_rev
+
+        RDB.transaction_rollback(rtx)
+        #IO.inspect {:fake, next_entry.header_unpacked.height, m, m_rev, l, Base58.encode(ConsensusKV.hash_mutations(l ++ m))}
+        #File.write! "/tmp/fake", inspect({:fake, next_entry.header_unpacked.height, m, m_rev, l, Base58.encode(ConsensusKV.hash_mutations(l ++ m))}, pretty: true, limit: 11111111, printable_limit: 111111111) <> "\n", [:append]
+        #IO.inspect {:fake, next_entry.header_unpacked.height, Base58.encode(ConsensusKV.hash_mutations(l ++ m))}
+        {m, m_rev, l, ConsensusKV.hash_mutations(l ++ m ++ m_rev)}
     end
 
     def produce_entry(slot) do

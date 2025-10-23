@@ -1,6 +1,7 @@
 pub mod consensus;
 pub mod atoms;
 
+
 use rustler::types::{Binary, OwnedBinary};
 use rustler::{
     Encoder, Error, Env, Term, NifResult, ResourceArc, Atom,
@@ -44,7 +45,16 @@ pub struct TxResource {
 }
 unsafe impl Send for TxResource {}
 unsafe impl Sync for TxResource {}
-
+impl Drop for TxResource {
+    fn drop(&mut self) {
+        // Best effort: if still open, rollback to release locks
+        if let Ok(mut guard) = self.tx.lock() {
+            if let Some(txn) = guard.take() {
+                let _ = txn.rollback(); // ignore error; we're cleaning up
+            }
+        }
+    }
+}
 
 type DbIter<'a> = DBRawIteratorWithThreadMode<'a, TransactionDB<MultiThreaded>>;
 type TxIter<'a> = DBRawIteratorWithThreadMode<'a, Tx<'a>>;
@@ -627,10 +637,10 @@ fn apply_entry<'a>(env: Env<'a>, db: ResourceArc<DbResource>, next_entry_trimmed
             entry_slot, entry_prev_slot, entry_height, entry_epoch, &entry_vr, &entry_vr_b3, &entry_dr, txs_packed, txus, txn);
 
     let tx_static: Tx<'static> = unsafe { std::mem::transmute::<Tx<'_>, Tx<'static>>(txn) };
-    let term_txn = (atoms::ok(), ResourceArc::new(TxResource {
+    let term_txn = ResourceArc::new(TxResource {
         db: db,
         tx: Mutex::new(Some(tx_static)),
-    })).encode(env);
+    }).encode(env);
 
     Ok((term_txn, consensus_muts::mutations_to_map(muts), consensus_muts::mutations_to_map(muts_rev), result_log).encode(env))
 }

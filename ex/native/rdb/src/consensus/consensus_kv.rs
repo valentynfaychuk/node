@@ -61,8 +61,8 @@ pub fn kv_set_bit(env: &mut ApplyEnv, key: &[u8], bit_idx: u64) -> bool {
     } else {
         env.muts.push(Mutation::SetBit { op: b"set_bit".to_vec(), key: key.to_vec(), value: bit_idx, bloomsize: crate::consensus::bic::sol_bloom::PAGE_SIZE});
         match exists {
-            true => env.muts.push(Mutation::ClearBit { op: b"clear_bit".to_vec(), key: key.to_vec(), value: bit_idx}),
-            false => env.muts.push(Mutation::Delete { op: b"delete".to_vec(), key: key.to_vec()})
+            true => env.muts_rev.push(Mutation::ClearBit { op: b"clear_bit".to_vec(), key: key.to_vec(), value: bit_idx}),
+            false => env.muts_rev.push(Mutation::Delete { op: b"delete".to_vec(), key: key.to_vec()})
         };
         old[byte_idx] |= mask;
         env.txn.put_cf(&env.cf, key, &old).unwrap();

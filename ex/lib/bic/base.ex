@@ -3,12 +3,7 @@ defmodule BIC.Base do
 
     def exec_cost(epoch, txu) do
         bytes = byte_size(txu.tx_encoded) + 32 + 96
-        #10-12x lower fee, 1 cent AMA base per tx
-        if epoch >= 295 do
-          BIC.Coin.to_cents( 1 + div(bytes, 1024) * 1 )
-        else
-          BIC.Coin.to_cents( 3 + div(bytes, 256) * 3 )
-        end
+        BIC.Coin.to_cents( 1 + div(bytes, 1024) * 1 )
 
         #for future update
         #BIC.Coin.to_tenthousandth( 18 + div(bytes, 256) * 3 )
@@ -30,14 +25,10 @@ defmodule BIC.Base do
             exec_cost = exec_cost(env.entry_epoch, txu)
             kv_increment("bic:coin:balance:#{txu.tx.signer}:AMA", -exec_cost)
 
-            if env.entry_epoch >= 295 do
-              #burn 50% to prevent MEV/FreeChainGrowth attack
-              half_exec_cost = div(exec_cost, 2)
-              kv_increment("bic:coin:balance:#{env.entry_signer}:AMA", half_exec_cost)
-              kv_increment("bic:coin:balance:#{BIC.Coin.burn_address()}:AMA", half_exec_cost)
-            else
-              kv_increment("bic:coin:balance:#{env.entry_signer}:AMA", exec_cost)
-            end
+            #burn 50% to prevent MEV/FreeChainGrowth attack
+            half_exec_cost = div(exec_cost, 2)
+            kv_increment("bic:coin:balance:#{env.entry_signer}:AMA", half_exec_cost)
+            kv_increment("bic:coin:balance:#{BIC.Coin.burn_address()}:AMA", half_exec_cost)
         end)
 
         #parallel verify sols
@@ -128,14 +119,10 @@ defmodule BIC.Base do
                     exec_used = (result[:exec_used] || 0) * 100
                     kv_increment("bic:coin:balance:#{env.tx_signer}:AMA", -exec_used)
 
-                    if env.entry_epoch >= 295 do
-                      #burn 50% to prevent MEV/FreeChainGrowth attack
-                      half_exec_cost = div(exec_used, 2)
-                      kv_increment("bic:coin:balance:#{env.entry_signer}:AMA", half_exec_cost)
-                      kv_increment("bic:coin:balance:#{BIC.Coin.burn_address()}:AMA", half_exec_cost)
-                    else
-                      kv_increment("bic:coin:balance:#{env.entry_signer}:AMA", exec_used)
-                    end
+                    #burn 50% to prevent MEV/FreeChainGrowth attack
+                    half_exec_cost = div(exec_used, 2)
+                    kv_increment("bic:coin:balance:#{env.entry_signer}:AMA", half_exec_cost)
+                    kv_increment("bic:coin:balance:#{BIC.Coin.burn_address()}:AMA", half_exec_cost)
 
                     Process.put(:mutations_gas, Process.get(:mutations, []))
                     Process.put(:mutations_gas_reverse, Process.get(:mutations_reverse, []))
