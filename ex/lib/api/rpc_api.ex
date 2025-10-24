@@ -12,6 +12,19 @@ defmodule RPC.API do
       RPC.API.get("/api/tx/submit/#{Base58.encode(tx_packed)}")
     end
 
+    def transfer_bulk(seed64, receiver_amount_list) do
+      Enum.map(receiver_amount_list, fn
+        {receiver, amount_float} ->
+          IO.inspect {"sending #{amount_float} AMA to ", receiver}
+          tx_packed = API.Wallet.transfer(seed64, receiver, amount_float, "AMA", false)
+          RPC.API.get("/api/tx/submit/#{Base58.encode(tx_packed)}")
+        {receiver, amount_float, symbol} ->
+          IO.inspect {"sending #{amount_float} #{symbol} to ", receiver}
+          tx_packed = API.Wallet.transfer(seed64, receiver, amount_float, symbol, false)
+          RPC.API.get("/api/tx/submit/#{Base58.encode(tx_packed)}")
+      end)
+    end
+
     def balance(pk, symbol \\ "AMA") do
       RPC.API.get("/api/wallet/balance/#{pk}/#{symbol}")
     end
