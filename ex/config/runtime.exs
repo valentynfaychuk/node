@@ -55,8 +55,6 @@ config :ama, :archival_node, System.get_env("ARCHIVALNODE") in ["true", "y", "ye
 config :ama, :autoupdate, System.get_env("AUTOUPDATE") in ["true", "y", "yes"]
 config :ama, :computor_type, (case System.get_env("COMPUTOR") do nil -> nil; "trainer" -> :trainer; _ -> :default end)
 
-pub_ipv4 = (System.get_env("PUBLIC_UDP_IPV4") || STUN.get_current_ip4(udp_ipv4_iface))
-config :ama, :public_udp_ipv4, pub_ipv4
 config :ama, :max_peers, (System.get_env("MAX_PEERS") || "300") |> :erlang.binary_to_integer()
 config :ama, :buy_peer_sol, System.get_env("BUY_PEER_SOL") in ["true", "y", "yes"]
 
@@ -66,8 +64,8 @@ config :ama, :check_routed_peer, !not_check_routed_peer
 anr_name = System.get_env("ANR_NAME")
 anr_desc = System.get_env("ANR_DESC")
 
-config :ama, :anr, NodeANR.build(sk, pk, pop, pub_ipv4, version, anr_name, anr_desc)
-config :ama, :anr_next_refresh, :os.system_time(1000) + 60_000*60
+config :ama, :anr, nil
+config :ama, :anr_next_refresh, 0
 config :ama, :anr_name, anr_name
 config :ama, :anr_desc, anr_desc
 
