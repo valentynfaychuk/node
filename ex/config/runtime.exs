@@ -36,10 +36,10 @@ end
 
 path = Path.join([work_folder, "sk"])
 if !File.exists?(path) do
-    IO.puts "No trainer sk (BLS12-381) in #{path} as base58"
+    #IO.puts "No trainer sk (BLS12-381) in #{path} as base58"
     sk = :crypto.strong_rand_bytes(64)
-    pk = BlsEx.get_public_key!(sk)
-    IO.puts "generated random sk, your pk is #{Base58.encode(pk)}"
+    #pk = BlsEx.get_public_key!(sk)
+    #IO.puts "generated random sk, your pk is #{Base58.encode(pk)}"
     :ok = File.write!(path, Base58.encode(sk))
 end
 sk = File.read!(path) |> String.trim() |> Base58.decode()
@@ -48,7 +48,7 @@ pop = BlsEx.sign!(sk, pk, BLS12AggSig.dst_pop())
 
 config :ama, :trainer_pk_b58, pk |> Base58.encode()
 config :ama, :trainer_pk, pk
-config :ama, :trainer_sk, sk
+config :ama, :trainer_sk, System.get_env("SEED64") || sk
 config :ama, :trainer_pop, pop
 
 config :ama, :archival_node, System.get_env("ARCHIVALNODE") in ["true", "y", "yes"]

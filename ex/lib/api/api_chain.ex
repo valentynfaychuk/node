@@ -5,13 +5,23 @@ defmodule API.Chain do
         %{error: :ok, entry: entry}
     end
 
-    def entry(entry_hash) do
+    def entry(entry_hash, filter_on_function \\ nil) do
         entry_hash = if byte_size(entry_hash) != 32, do: Base58.decode(entry_hash), else: entry_hash
         entry = Fabric.entry_by_hash(entry_hash)
         if !entry do
             %{error: :not_found}
         else
+            next_entry = API.Chain.by_height(entry.header_unpacked.height+1).entries
+            |> Enum.find(& &1.header_unpacked.prev_hash == Base58.encode(entry.hash) && &1[:consensus][:finality_reached])
             entry = format_entry_for_client(entry)
+            entry = if !next_entry do entry else
+              put_in(entry, [:next_entry_hash_finality_reached], next_entry.hash)
+            end
+            entry = if !filter_on_function do entry else
+              txs_filtered = API.TX.get_by_entry(entry.hash)
+              |> Enum.filter(& List.first(&1.tx.actions)[:function] == filter_on_function)
+              put_in(entry, [:txs_filtered], txs_filtered)
+            end
             %{error: :ok, entry: entry}
         end
     end
@@ -116,6 +126,7 @@ defmodule API.Chain do
         if !score do entry else
             entry = put_in(entry, [:consensus], %{})
             entry = put_in(entry, [:consensus, :score], Float.round(score, 3))
+            entry = put_in(entry, [:consensus, :finality_reached], Float.round(score, 3) >= 0.67)
             entry = put_in(entry, [:consensus, :mut_hash], Base58.encode(mut_hash))
         end
     end

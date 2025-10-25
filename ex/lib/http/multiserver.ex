@@ -101,6 +101,14 @@ defmodule Ama.MultiServer do
             r.method == "GET" and String.starts_with?(r.path, "/api/chain/tip") ->
                 result = API.Chain.entry_tip()
                 quick_reply(state, result)
+
+            r.method == "GET" and String.starts_with?(r.path, "/api/chain/hash/") ->
+                hash = String.replace(r.path, "/api/chain/hash/", "")
+                query = r.query && Photon.HTTP.parse_query(r.query)
+                filter_on_function = query[:filter_on_function]
+                result = API.Chain.entry(hash, filter_on_function)
+                quick_reply(state, result)
+
             r.method == "GET" and String.starts_with?(r.path, "/api/chain/height/") ->
                 height = String.replace(r.path, "/api/chain/height/", "")
                 |> :erlang.binary_to_integer()

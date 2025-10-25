@@ -8,20 +8,35 @@ defmodule RPC.API do
 
   defmodule Wallet do
     def transfer(seed64, receiver, amount_float, symbol \\ "AMA") do
-      tx_packed = API.Wallet.transfer(seed64, receiver, amount_float, symbol, false)
-      RPC.API.get("/api/tx/submit/#{Base58.encode(tx_packed)}")
+      if !BlsEx.validate_public_key(receiver) and receiver != @burn_address do
+        IO.inspect {"sending #{amount_float} AMA to invalid public key", receiver}
+        %{error: :invalid_public_key, pk: receiver}
+      else
+        tx_packed = API.Wallet.transfer(seed64, receiver, amount_float, symbol, false)
+        RPC.API.get("/api/tx/submit/#{Base58.encode(tx_packed)}")
+      end
     end
 
     def transfer_bulk(seed64, receiver_amount_list) do
       Enum.map(receiver_amount_list, fn
         {receiver, amount_float} ->
-          IO.inspect {"sending #{amount_float} AMA to ", receiver}
-          tx_packed = API.Wallet.transfer(seed64, receiver, amount_float, "AMA", false)
-          RPC.API.get("/api/tx/submit/#{Base58.encode(tx_packed)}")
+          if !BlsEx.validate_public_key(receiver) and receiver != @burn_address do
+            IO.inspect {"sending #{amount_float} AMA to invalid public key", receiver}
+            %{error: :invalid_public_key, pk: receiver}
+          else
+            IO.inspect {"sending #{amount_float} AMA to ", receiver}
+            tx_packed = API.Wallet.transfer(seed64, receiver, amount_float, "AMA", false)
+            RPC.API.get("/api/tx/submit/#{Base58.encode(tx_packed)}")
+          end
         {receiver, amount_float, symbol} ->
-          IO.inspect {"sending #{amount_float} #{symbol} to ", receiver}
-          tx_packed = API.Wallet.transfer(seed64, receiver, amount_float, symbol, false)
-          RPC.API.get("/api/tx/submit/#{Base58.encode(tx_packed)}")
+          if !BlsEx.validate_public_key(receiver) and receiver != @burn_address do
+            IO.inspect {"sending #{amount_float} AMA to invalid public key", receiver}
+            %{error: :invalid_public_key, pk: receiver}
+          else
+            IO.inspect {"sending #{amount_float} #{symbol} to ", receiver}
+            tx_packed = API.Wallet.transfer(seed64, receiver, amount_float, symbol, false)
+            RPC.API.get("/api/tx/submit/#{Base58.encode(tx_packed)}")
+          end
       end)
     end
 

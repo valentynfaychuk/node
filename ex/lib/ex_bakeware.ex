@@ -6,12 +6,15 @@ defmodule Ama.Bakeware do
     def main(args) do
         arg0 = List.first(args)
         cond do
-          arg0 == "buildtx" ->
-            Process.sleep(500)
-            IO.puts ""
+          arg0 == "generate_wallet" ->
+            seed64 = :crypto.strong_rand_bytes(64)
+            pk = BlsEx.get_public_key!(seed64)
+            IO.puts "#{Base58.encode(pk)} #{Base58.encode(seed64)}"
+            :erlang.halt()
 
+          arg0 == "buildtx" ->
             ["buildtx", contract, func, args | rest] = args
-            contract = if Base58.likely(contract) do Base58.decode(contract) else contract end
+            contract = if byte_size(contract) > 48 do Base58.decode(contract) else contract end
             sk = Application.fetch_env!(:ama, :trainer_sk)
             {args, []} = Code.eval_string(args)
             [attach_symbol, attach_amount] = if length(rest) != 2 do [nil,nil] else
@@ -21,10 +24,23 @@ defmodule Ama.Bakeware do
             IO.puts Base58.encode(packed_tx)
             :erlang.halt()
 
-          arg0 == "deploytx" ->
-            Process.sleep(500)
-            IO.puts ""
+          arg0 == "build_and_broadcasttx" ->
+            ["build_and_broadcasttx", contract, func, args | rest] = args
+            contract = if byte_size(contract) > 48 do Base58.decode(contract) else contract end
+            sk = Application.fetch_env!(:ama, :trainer_sk)
+            {args, []} = Code.eval_string(args)
+            [attach_symbol, attach_amount] = if length(rest) != 2 do [nil,nil] else
+              [attach_symbol, attach_amount] = rest
+            end
+            packed_tx = TX.build(sk, contract, func, args, nil, attach_symbol, attach_amount)
+            result = RPC.API.get("/api/tx/submit/#{Base58.encode(packed_tx)}")
+            #IO.puts Base58.encode(packed_tx)
+            if result[:error] == "ok" do
+              IO.puts(result.hash)
+            end
+            :erlang.halt()
 
+          arg0 == "deploytx" ->
             ["deploytx", wasmpath] = args
             sk = Application.fetch_env!(:ama, :trainer_sk)
             wasmbytes = File.read!(wasmpath)
@@ -38,9 +54,6 @@ defmodule Ama.Bakeware do
             :erlang.halt()
 
           arg0 == "getpk" ->
-            Process.sleep(500)
-            IO.puts ""
-
             ["getpk", path] = args
             sk = File.read!(path) |> String.trim()
             pk = BlsEx.get_public_key!(Base58.decode(sk))
