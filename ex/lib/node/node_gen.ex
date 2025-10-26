@@ -84,7 +84,7 @@ defmodule NodeGen do
     testnet = Application.fetch_env!(:ama, :testnet)
     state = case msg do
       #NOOP for testnet
-      testnet -> state
+      testnet when testnet == nil -> state
 
       :tick ->
         :erlang.send_after(1000, self(), :tick)

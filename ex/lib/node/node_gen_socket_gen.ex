@@ -27,6 +27,7 @@ defmodule NodeGenSocketGen do
       end
       lsocket
     end
+
     :erlang.send_after(3000, self(), :netguard_decrement_buckets)
 
     ip = Tuple.to_list(ip_tuple) |> Enum.join(".")
@@ -111,7 +112,7 @@ defmodule NodeGenSocketGen do
     testnet = Application.fetch_env!(:ama, :testnet)
     case msg do
       #NOOP for testnet
-      testnet -> state
+      testnet when testnet == nil -> state
 
       {:udp, _socket, {ipa,ipb,ipc,ipd}, _inportno, data} ->
         #IO.puts IO.ANSI.red() <> inspect({:relay_from, ip, msg.op}) <> IO.ANSI.reset()
