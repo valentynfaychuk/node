@@ -112,7 +112,7 @@ defmodule NodeGenSocketGen do
     testnet = Application.fetch_env!(:ama, :testnet)
     case msg do
       #NOOP for testnet
-      testnet when testnet == nil -> state
+      _ when testnet != nil -> state
 
       {:udp, _socket, {ipa,ipb,ipc,ipd}, _inportno, data} ->
         #IO.puts IO.ANSI.red() <> inspect({:relay_from, ip, msg.op}) <> IO.ANSI.reset()
