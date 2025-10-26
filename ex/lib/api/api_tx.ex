@@ -132,6 +132,44 @@ defmodule API.TX do
         end
     end
 
+    def submit_and_wait(tx_packed, broadcast \\ true) do
+      result = TX.validate(tx_packed)
+      if result[:error] == :ok do
+          txu = TX.unpack(tx_packed)
+          if tx_packed =~ "deploy" do
+              action = hd(txu.tx.actions)
+              if action.contract == "Contract" and action.function == "deploy" do
+                  case BIC.Contract.validate(List.first(action.args)) do
+                      %{error: :ok} ->
+                          if broadcast do TXPool.insert_and_broadcast(tx_packed) else TXPool.insert(tx_packed) end
+                          txres = submit_and_wait_1(result.txu.hash)
+                          %{error: :ok, hash: Base58.encode(result.txu.hash), entry_hash: txres.metadata.entry_hash, result: txres[:result]}
+                      error -> error
+                  end
+              else
+                  if broadcast do TXPool.insert_and_broadcast(tx_packed) else TXPool.insert(tx_packed) end
+                  txres = submit_and_wait_1(result.txu.hash)
+                  %{error: :ok, hash: Base58.encode(result.txu.hash), entry_hash: txres.metadata.entry_hash, result: txres[:result]}
+              end
+          else
+              if broadcast do TXPool.insert_and_broadcast(tx_packed) else TXPool.insert(tx_packed) end
+              txres = submit_and_wait_1(result.txu.hash)
+              %{error: :ok, hash: Base58.encode(result.txu.hash), entry_hash: txres.metadata.entry_hash, result: txres[:result]}
+          end
+      else
+          %{error: result.error}
+      end
+    end
+
+    def submit_and_wait_1(hash, 30) do nil end
+    def submit_and_wait_1(hash, tries \\ 0) do
+      tx = get(hash)
+      if tx do tx else
+        Process.sleep(100)
+        submit_and_wait_1(hash, tries + 1)
+      end
+    end
+
     def format_tx_for_client(nil) do nil end
     def format_tx_for_client(tx) do
         tx = Map.drop(tx, [:tx_encoded])

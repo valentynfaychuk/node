@@ -11,6 +11,19 @@ podman build --tag erlang_builder -f build.Dockerfile
 ./build.sh
 ```
 
+### Testnet
+```
+#run local testnet with RPC api
+
+TESTNET=true WORKFOLDER=/tmp/testnet HTTP_IPV4=127.0.0.1 HTTP_PORT=8080  ./amadeusd
+
+# inside REPL submit a transfer to self
+
+pk = Application.fetch_env!(:ama, :trainer_pk)
+sk = Application.fetch_env!(:ama, :trainer_sk)
+Testnet.call(sk, "Coin", "transfer", [pk,"1","AMA"])
+```
+
 ### AutoUpdates + Running as a systemd service
 
 ```
