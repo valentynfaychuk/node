@@ -122,7 +122,7 @@ defmodule EntryGenesis do
           },
           txs: [],
         }
-        entry_signed = Entry.sign(entry)
+        entry_signed = Entry.sign(sk, entry)
 
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
         rtx = RocksDB.transaction(db)
@@ -130,12 +130,76 @@ defmodule EntryGenesis do
         {mutations, _} = BIC.Base.call_exit(%{entry: entry})
 
         mutations_hash = ConsensusKV.hash_mutations(mutations)
-        attestation = Attestation.sign(entry_signed.hash, mutations_hash)
+        attestation = Attestation.sign(sk, entry_signed.hash, mutations_hash)
 
         pop = BlsEx.sign!(sk, pk, BLS12AggSig.dst_pop())
         entry_signed = Entry.pack(entry_signed) |> Entry.unpack()
 
         IO.inspect {entry_signed, attestation, pop}, limit: :infinity
         :ok
+    end
+
+    def generate_testnet() do
+      %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+      if !RocksDB.get("temporal_height", %{db: db, cf: cf.sysconf}) do
+        IO.puts "making testnet.."
+
+        pk = Application.fetch_env!(:ama, :trainer_pk)
+        sk = Application.fetch_env!(:ama, :trainer_sk)
+
+        if length(Application.fetch_env!(:ama, :keys)) < 10 do
+          new_keys = Enum.map(0..9, fn(_)-> :crypto.strong_rand_bytes(64) |> Base58.encode() end)
+          |> Enum.join("\n")
+          workdir = Application.fetch_env!(:ama, :work_folder)
+          File.write!(Path.join([workdir, "seeds"]), new_keys)
+          IO.puts "seeded testnet please restart node"
+          :erlang.halt()
+        end
+
+        entropy_seed = :crypto.strong_rand_bytes(512)
+        dr = Blake3.hash(entropy_seed)
+        vr = BlsEx.sign!(sk, dr<>dr<>dr, BLS12AggSig.dst_vrf())
+
+        entry = %{
+          header_unpacked: %{
+            slot: 0,
+            height: 0,
+            prev_slot: -1,
+            prev_hash: <<>>,
+            dr: dr,
+            vr: vr,
+            signer: pk,
+          },
+          txs: [],
+        }
+        entry_signed = Entry.sign(sk, entry)
+
+
+        rtx = RocksDB.transaction(db)
+        Process.put({RocksDB, :ctx}, %{rtx: rtx, cf: cf})
+
+        mutations_hash = ConsensusKV.hash_mutations([])
+        attestation = Attestation.sign(sk, entry_signed.hash, mutations_hash)
+
+        pop = BlsEx.sign!(sk, pk, BLS12AggSig.dst_pop())
+        entry_signed = Entry.pack(entry_signed) |> Entry.unpack()
+
+        RocksDB.put(entry_signed.hash, Entry.pack(entry_signed), %{rtx: rtx, cf: cf.entry})
+        RocksDB.put(entry_signed.hash, :os.system_time(1000), %{rtx: rtx, cf: cf.my_seen_time_for_entry, term: true})
+        RocksDB.put("temporal_tip", entry_signed.hash, %{rtx: rtx, cf: cf.sysconf})
+        RocksDB.put("temporal_height", 0, %{rtx: rtx, cf: cf.sysconf, term: true})
+        RocksDB.put("rooted_tip", entry_signed.hash, %{rtx: rtx, cf: cf.sysconf})
+
+        validator_pks = Application.fetch_env!(:ama, :keys) |> Enum.map(& &1.pk)
+        RocksDB.put("bic:epoch:trainers:height:#{String.pad_leading("0", 12, "0")}",
+          :erlang.term_to_binary(validator_pks), %{rtx: rtx, cf: cf.contractstate})
+        Enum.each(Application.fetch_env!(:ama, :keys), fn(key)->
+          RocksDB.put("bic:coin:balance:#{key.pk}:AMA", "1001000000000", %{rtx: rtx, cf: cf.contractstate})
+          RocksDB.put("bic:epoch:pop:#{key.pk}", key.pop, %{rtx: rtx, cf: cf.contractstate})
+        end)
+        rtx = RocksDB.transaction_commit(rtx)
+
+        #Fabric.aggregate_attestation(attestation |> Attestation.pack())
+      end
     end
 end

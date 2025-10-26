@@ -6,25 +6,27 @@ defmodule NodeGenSocketGen do
   end
 
   def init([ip_tuple, port, idx]) do
-    lsocket = listen(port, [{:ifaddr, ip_tuple}])
-    {snd, rcv} = get_sys_bufs(lsocket)
-    snd_mb = (snd/1024)/1024
-    rcv_mb = (rcv/1024)/1024
+    lsocket = if Application.fetch_env!(:ama, :testnet) do nil else
+      lsocket = listen(port, [{:ifaddr, ip_tuple}])
+      {snd, rcv} = get_sys_bufs(lsocket)
+      snd_mb = (snd/1024)/1024
+      rcv_mb = (rcv/1024)/1024
 
-    IO.puts "sndbuf: #{snd_mb}MB | recbuf: #{rcv_mb}MB"
-    if snd_mb < 64 do
-      IO.puts "🔴WARNING: sndbuf way too low, please edit /etc/sysctl.conf"
-      IO.puts "🔴WARNING: set values to ATLEAST and reboot or `sysctl --system`"
-      IO.puts "net.core.wmem_max = 268435456"
+      IO.puts "sndbuf: #{snd_mb}MB | recbuf: #{rcv_mb}MB"
+      if snd_mb < 64 do
+        IO.puts "🔴WARNING: sndbuf way too low, please edit /etc/sysctl.conf"
+        IO.puts "🔴WARNING: set values to ATLEAST and reboot or `sysctl --system`"
+        IO.puts "net.core.wmem_max = 268435456"
+      end
+      if rcv_mb < 64 do
+        IO.puts "🔴WARNING: recbuf way too low, please edit /etc/sysctl.conf"
+        IO.puts "🔴WARNING: set values to ATLEAST and reboot or `sysctl --system`"
+        IO.puts "net.core.rmem_max = 268435456"
+        IO.puts "net.core.optmem_max = 524288"
+        IO.puts "net.core.netdev_max_backlog = 300000"
+      end
+      lsocket
     end
-    if rcv_mb < 64 do
-      IO.puts "🔴WARNING: recbuf way too low, please edit /etc/sysctl.conf"
-      IO.puts "🔴WARNING: set values to ATLEAST and reboot or `sysctl --system`"
-      IO.puts "net.core.rmem_max = 268435456"
-      IO.puts "net.core.optmem_max = 524288"
-      IO.puts "net.core.netdev_max_backlog = 300000"
-    end
-
     :erlang.send_after(3000, self(), :netguard_decrement_buckets)
 
     ip = Tuple.to_list(ip_tuple) |> Enum.join(".")
@@ -106,7 +108,11 @@ defmodule NodeGenSocketGen do
   end
 
   def handle_info(msg, state) do
+    testnet = Application.fetch_env!(:ama, :testnet)
     case msg do
+      #NOOP for testnet
+      testnet -> state
+
       {:udp, _socket, {ipa,ipb,ipc,ipd}, _inportno, data} ->
         #IO.puts IO.ANSI.red() <> inspect({:relay_from, ip, msg.op}) <> IO.ANSI.reset()
         :erlang.spawn(fn()->

@@ -6,6 +6,14 @@ defmodule Attestation do
         signer: <>,
         signature: <entry_hash,mutations_hash>,
     }
+
+    ssz
+    <<
+      signature::96,
+      signer::48,
+      entry_hash::32,
+      mutations_hash::32
+    >>
     """
     def unpack(attestation_packed) when is_binary(attestation_packed) do
         a = :erlang.binary_to_term(attestation_packed, [:safe])
@@ -24,9 +32,8 @@ defmodule Attestation do
         |> :erlang.term_to_binary([:deterministic])
     end
 
-    def sign(entry_hash, mutations_hash) do
-        pk = Application.fetch_env!(:ama, :trainer_pk)
-        sk = Application.fetch_env!(:ama, :trainer_sk)
+    def sign(sk, entry_hash, mutations_hash) do
+        pk = BlsEx.get_public_key!(sk)
         signature = BlsEx.sign!(sk, <<entry_hash::binary, mutations_hash::binary>>, BLS12AggSig.dst_att())
         %{
             entry_hash: entry_hash,

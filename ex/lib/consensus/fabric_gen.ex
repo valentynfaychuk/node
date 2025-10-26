@@ -50,6 +50,8 @@ defmodule FabricGen do
 
   def tick_slot(state) do
     #IO.inspect "tick_slot"
+    Application.fetch_env!(:ama, :testnet) && Process.sleep(500)
+
     if proc_if_my_slot() do
       proc_entries()
       #proc_compact()
@@ -200,7 +202,7 @@ defmodule FabricGen do
         #IO.inspect {:took, entry.header_unpacked.height, :os.system_time(1000) - ts_s}
 
         task = Task.async(fn -> Consensus.apply_entry(entry) end)
-        %{error: :ok, attestation_packed: attestation_packed,
+        %{error: :ok, hash: hash, validator_seeds: vseeds,
           mutations_hash: m_hash, logs: l, muts: m
         } = case Task.await(task, :infinity) do
           result = %{error: :ok} -> result
@@ -208,15 +210,19 @@ defmodule FabricGen do
 
         FabricEventGen.event_applied(entry, m_hash, m, l)
 
-        if !!attestation_packed and FabricSyncAttestGen.isQuorumSyncedOffByX(6) do
-          msg = NodeProto.event_attestation(attestation_packed)
-          NodeGen.broadcast(msg)
+        Enum.each(vseeds, fn(seed)->
+          attestation = Attestation.sign(seed.seed, hash, m_hash)
+          send(FabricCoordinatorGen, {:add_attestation, attestation})
+          if FabricSyncAttestGen.isQuorumSyncedOffByX(6) do
+            msg = NodeProto.event_attestation(Attestation.pack(attestation))
+            NodeGen.broadcast(msg)
 
-          #Ensure RPC nodes are as up-to-date as possible
-          #TODO: fix this in a better way later
-          peers = Application.fetch_env!(:ama, :seedanrs_as_peers)
-          send(NodeGen.get_socket_gen(), {:send_to, peers, msg})
-        end
+            #Ensure RPC nodes are as up-to-date as possible
+            #TODO: fix this in a better way later
+            peers = Application.fetch_env!(:ama, :seedanrs_as_peers)
+            send(NodeGen.get_socket_gen(), {:send_to, peers, msg})
+          end
+        end)
 
         TXPool.delete_packed(entry.txs)
 
@@ -225,7 +231,6 @@ defmodule FabricGen do
   end
 
   def proc_if_my_slot() do
-    pk = Application.fetch_env!(:ama, :trainer_pk)
     entry = Consensus.chain_tip_entry()
     next_slot = entry.header_unpacked.slot + 1
     next_height = entry.header_unpacked.height + 1
@@ -239,13 +244,15 @@ defmodule FabricGen do
     |> Enum.filter(& &1.header_unpacked.prev_hash == rooted_tip)
     emptyHeight = emptyHeight == []
 
+    am_i_next = Enum.find(Application.fetch_env!(:ama, :keys), & &1.pk == slot_trainer)
+
     cond do
       !FabricSyncAttestGen.isQuorumSynced() -> nil
 
       lastSlot == next_slot -> nil
       !emptyHeight -> nil
 
-      pk == slot_trainer ->
+      am_i_next ->
         :persistent_term.put(:last_made_entry_slot, next_slot)
 
         if :persistent_term.get(:snapshot_before_my_slot, nil) do
@@ -254,17 +261,17 @@ defmodule FabricGen do
           FabricSnapshot.snapshot_tmp()
         end
 
-        IO.puts "🔧 im in slot #{next_slot}, working.. *Click Clak*"
+        !Application.fetch_env!(:ama, :testnet) && IO.puts("🔧 im in slot #{next_slot}, working.. *Click Clak*")
 
-        proc_if_my_slot_1(next_slot)
+        proc_if_my_slot_1(am_i_next.seed, next_slot)
 
       true ->
         nil
     end
   end
 
-  def proc_if_my_slot_1(next_slot) do
-    next_entry = Consensus.produce_entry(next_slot)
+  def proc_if_my_slot_1(seed, next_slot) do
+    next_entry = Consensus.produce_entry(seed, next_slot)
     Fabric.insert_entry(next_entry, :os.system_time(1000))
 
     msg = NodeProto.event_entry(Entry.pack(next_entry))

@@ -19,6 +19,7 @@ config :ama, :snapshot_height, (System.get_env("SNAPSHOT_HEIGHT") || "34076355")
 
 #Bind Interaces
 config :ama, :offline, (!!System.get_env("OFFLINE") || nil)
+config :ama, :testnet, (!!System.get_env("TESTNET") || nil)
 
 config :ama, :http_ipv4, ((System.get_env("HTTP_IPV4") || "0.0.0.0") |> :unicode.characters_to_list() |> :inet.parse_ipv4_address() |> (case do {:ok, addr}-> addr end))
 config :ama, :http_port, (System.get_env("HTTP_PORT") || "80") |> :erlang.binary_to_integer()
@@ -35,21 +36,33 @@ if !Util.verify_time_sync() do
 end
 
 path = Path.join([work_folder, "sk"])
-if !File.exists?(path) do
-    #IO.puts "No trainer sk (BLS12-381) in #{path} as base58"
+path_seeds = Path.join([work_folder, "seeds"])
+if File.exists?(path) do
+  !File.exists?(path_seeds) && File.copy!(path, path_seeds)
+end
+if !File.exists?(path_seeds) do
     sk = :crypto.strong_rand_bytes(64)
-    #pk = BlsEx.get_public_key!(sk)
-    #IO.puts "generated random sk, your pk is #{Base58.encode(pk)}"
     :ok = File.write!(path, Base58.encode(sk))
 end
-sk = File.read!(path) |> String.trim() |> Base58.decode()
-pk = BlsEx.get_public_key!(sk)
-pop = BlsEx.sign!(sk, pk, BLS12AggSig.dst_pop())
+keys = File.read!(path) |> String.split("\n") |> Enum.filter(& &1 != "") |> Enum.map(& String.trim(&1) |> Base58.decode()) |> Enum.map(fn(seed)->
+  pk = BlsEx.get_public_key!(seed)
+  pop = BlsEx.sign!(seed, pk, BLS12AggSig.dst_pop())
+  %{pk: pk, seed: seed, pop: pop}
+end)
+keys_by_pk = Enum.into(keys, %{}, fn(key)->
+  {key.pk, %{pop: key.pop, seed: key.seed}}
+end)
+config :ama, :keys, keys
+config :ama, :keys_by_pk, keys_by_pk
 
-config :ama, :trainer_pk_b58, pk |> Base58.encode()
-config :ama, :trainer_pk, pk
-config :ama, :trainer_sk, System.get_env("SEED64") || sk
-config :ama, :trainer_pop, pop
+first_key = hd(keys)
+config :ama, :trainer_pk, first_key.pk
+config :ama, :trainer_sk, first_key.seed
+config :ama, :trainer_pop, first_key.pop
+
+#for local API - ease of use
+config :ama, :seed64, (case System.get_env("SEED64") do nil -> nil; seed64 -> Base58.decode(seed64) end)
+
 
 config :ama, :archival_node, System.get_env("ARCHIVALNODE") in ["true", "y", "yes"]
 config :ama, :autoupdate, System.get_env("AUTOUPDATE") in ["true", "y", "yes"]
@@ -68,6 +81,10 @@ config :ama, :anr, nil
 config :ama, :anr_next_refresh, 0
 config :ama, :anr_name, anr_name
 config :ama, :anr_desc, anr_desc
+
+#TESTNET = true
+#TESTNET_TICK=true
+#write 10 validators to file
 
 Path.join(work_folder, "ex/")
 |> Path.join("**/*.ex")

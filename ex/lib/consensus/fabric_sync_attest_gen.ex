@@ -54,6 +54,7 @@ defmodule FabricSyncAttestGen do
 
   def isQuorumSynced() do
     cond do
+      Application.fetch_env!(:ama, :testnet) -> true
       !hasQuorum() -> false
       isSynced() != :full -> false
       Fabric.rooted_tip_height() < Consensus.chain_height() -> false

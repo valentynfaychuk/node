@@ -36,9 +36,7 @@ defmodule Entry do
         |> :erlang.term_to_binary([:deterministic])
     end
 
-    def sign(entry_unpacked) do
-        sk = Application.fetch_env!(:ama, :trainer_sk)
-
+    def sign(sk, entry_unpacked) do
         txs_hash = Blake3.hash(Enum.join(entry_unpacked.txs))
         entry_unpacked = put_in(entry_unpacked, [:header_unpacked, :txs_hash], txs_hash)
         h = :erlang.term_to_binary(entry_unpacked.header_unpacked, [:deterministic])
@@ -175,9 +173,8 @@ defmodule Entry do
         end
     end
 
-    def build_next(cur_entry, slot) do
-        pk = Application.fetch_env!(:ama, :trainer_pk)
-        sk = Application.fetch_env!(:ama, :trainer_sk)
+    def build_next(sk, cur_entry, slot) do
+        pk = BlsEx.get_public_key!(sk)
 
         dr = Blake3.hash(cur_entry.header_unpacked.dr)
         vr = BlsEx.sign!(sk, cur_entry.header_unpacked.vr, BLS12AggSig.dst_vrf())

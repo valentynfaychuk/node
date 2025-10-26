@@ -81,7 +81,11 @@ defmodule NodeGen do
   end
 
   def handle_info(msg, state) do
+    testnet = Application.fetch_env!(:ama, :testnet)
     state = case msg do
+      #NOOP for testnet
+      testnet -> state
+
       :tick ->
         :erlang.send_after(1000, self(), :tick)
         tick()
@@ -122,7 +126,6 @@ defmodule NodeGen do
         end)
         :erlang.send_after(6000, self(), :tick_purge_txpool)
         state
-
 
       {:handle_sync, op, innerstate, args} ->
         #TODO: ns dropped

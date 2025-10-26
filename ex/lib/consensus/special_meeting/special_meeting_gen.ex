@@ -160,6 +160,7 @@ defmodule SpecialMeetingGen do
 
   def build_slash_entry(st) do
     my_pk = Application.fetch_env!(:ama, :trainer_pk)
+    sk = Application.fetch_env!(:ama, :trainer_sk)
     packed_tx = build_slash_tx(st)
 
     true = FabricSyncAttestGen.isQuorumSynced()
@@ -167,10 +168,10 @@ defmodule SpecialMeetingGen do
     cur_height = cur_entry.header_unpacked.height
     cur_slot = cur_entry.header_unpacked.slot
 
-    next_entry = Entry.build_next(cur_entry, cur_slot + 1)
+    next_entry = Entry.build_next(sk, cur_entry, cur_slot + 1)
     txs = [packed_tx]
     next_entry = Map.put(next_entry, :txs, txs)
-    next_entry = Entry.sign(next_entry)
+    next_entry = Entry.sign(sk, next_entry)
 
     trainers = Consensus.trainers_for_height(next_entry.header_unpacked.height + 1)
     mask = <<0::size(length(trainers))>>

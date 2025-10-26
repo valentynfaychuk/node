@@ -29,7 +29,7 @@ defmodule Ama do
     IO.puts "Initing TXPool.."
     TXPool.init()
 
-    if !Application.fetch_env!(:ama, :offline) do
+    if !Application.fetch_env!(:ama, :offline) and !Application.fetch_env!(:ama, :testnet) do
       rooted_tip_height = Fabric.rooted_tip_height()
       if rooted_tip_height == nil or rooted_tip_height < Application.fetch_env!(:ama, :snapshot_height) do
         IO.inspect {"tip - snapshot_height", rooted_tip_height, Application.fetch_env!(:ama, :snapshot_height)}
@@ -41,13 +41,17 @@ defmodule Ama do
       end
     else
       if !Consensus.chain_tip() do
-        %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
-        RocksDB.put("bic:epoch:trainers:height:#{String.pad_leading("0", 12, "0")}",
-          :erlang.term_to_binary([EntryGenesis.signer()]), %{db: db, cf: cf.contractstate})
+        if Application.fetch_env!(:ama, :testnet) do
+          EntryGenesis.generate_testnet()
+        else
+          %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+          RocksDB.put("bic:epoch:trainers:height:#{String.pad_leading("0", 12, "0")}",
+            :erlang.term_to_binary([EntryGenesis.signer()]), %{db: db, cf: cf.contractstate})
 
-        entry = EntryGenesis.get()
-        Fabric.insert_entry(entry, :os.system_time(1000))
-        Consensus.apply_entry(entry)
+          entry = EntryGenesis.get()
+          Fabric.insert_entry(entry, :os.system_time(1000))
+          Consensus.apply_entry(entry)
+        end
       end
     end
 
@@ -65,22 +69,22 @@ defmodule Ama do
     :ets.new(NODEANRHOT, [:ordered_set, :named_table, :public,
       {:write_concurrency, true}, {:read_concurrency, true}, {:decentralized_counters, false}])
 
-    {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: PG, start: {:pg, :start_link, []}})
-    {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: PGWSPanel, start: {:pg, :start_link, [PGWSPanel]}})
+    MnesiaKV.load(
+      %{
+        NODEANR => %{index: [:handshaked, :ip4, :placeholder]},
+      },
+      %{path: Path.join([Application.fetch_env!(:ama, :work_folder), "local_kv/"])}
+    )
 
     if !Application.fetch_env!(:ama, :offline) do
-      MnesiaKV.load(
-        %{
-          NODEANR => %{index: [:handshaked, :ip4, :placeholder]},
-        },
-        %{path: Path.join([Application.fetch_env!(:ama, :work_folder), "local_kv/"])}
-      )
+      if !Application.fetch_env!(:ama, :testnet) do
+        {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: FabricSyncAttestGen, start: {FabricSyncAttestGen, :start_link, []}})
+        {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: FabricSyncGen, start: {FabricSyncGen, :start_link, []}})
+      end
 
       #{:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: ComputorGen, start: {ComputorGen, :start_link, []}})
       {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: LoggerGen, start: {LoggerGen, :start_link, []}})
       {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: FabricGen, start: {FabricGen, :start_link, []}})
-      {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: FabricSyncAttestGen, start: {FabricSyncAttestGen, :start_link, []}})
-      {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: FabricSyncGen, start: {FabricSyncGen, :start_link, []}})
       {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: FabricCoordinatorGen, start: {FabricCoordinatorGen, :start_link, []}})
       {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: FabricEventGen, start: {FabricEventGen, :start_link, []}})
       {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: SpecialMeetingAttestGen, start: {SpecialMeetingAttestGen, :start_link, []}})
@@ -108,6 +112,9 @@ defmodule Ama do
       #web panel
       ipv4 = {a,b,c,d} = Application.fetch_env!(:ama, :http_ipv4)
       if ipv4 != {0,0,0,0} do
+        {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: PG, start: {:pg, :start_link, []}})
+        {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: PGWSPanel, start: {:pg, :start_link, [PGWSPanel]}})
+
         ipv4_string = "#{a}.#{b}.#{c}.#{d}"
         port = Application.fetch_env!(:ama, :http_port)
         IO.puts "started http-api on #{ipv4_string}:#{port}"

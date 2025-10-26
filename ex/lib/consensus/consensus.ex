@@ -602,13 +602,13 @@ defmodule Consensus do
         #{m, m_rev, l, ConsensusKV.hash_mutations(l ++ m ++ m_rev)}
         mutations_hash = ConsensusKV.hash_mutations(l ++ m)
 
-        attestation = Attestation.sign(next_entry.hash, mutations_hash)
+        sk = Application.fetch_env!(:ama, :trainer_sk)
+        attestation = Attestation.sign(sk, next_entry.hash, mutations_hash)
         attestation_packed = Attestation.pack(attestation)
         RocksDB.put(next_entry.hash, attestation_packed, %{rtx: rtx, cf: cf.my_attestation_for_entry})
 
-        pk = Application.fetch_env!(:ama, :trainer_pk)
         trainers = trainers_for_height(Entry.height(next_entry), %{rtx: rtx, cf: cf})
-        is_trainer = pk in trainers
+        validator_seeds = Application.fetch_env!(:ama, :keys) |> Enum.filter(& &1.pk in trainers)
 
         seen_time = :os.system_time(1000)
         RocksDB.put(next_entry.hash, seen_time, %{rtx: rtx, cf: cf.my_seen_time_for_entry, term: true})
@@ -642,29 +642,17 @@ defmodule Consensus do
 
         :ok = RocksDB.transaction_commit(rtx)
 
-        ap = if is_trainer do
-            #TODO: not ideal in super tight latency constrains but its 1 line and it works
-            send(FabricCoordinatorGen, {:add_attestation, attestation})
-            attestation_packed
-        end
-
-        %{error: :ok, attestation_packed: ap, mutations_hash: mutations_hash, logs: l, muts: m}
+        %{error: :ok, hash: next_entry.hash, validator_seeds: validator_seeds, mutations_hash: mutations_hash, logs: l, muts: m}
     end
 
-    def produce_entry(slot) do
-        %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
-
+    def produce_entry(sk, slot) do
         cur_entry = chain_tip_entry()
-        next_entry = Entry.build_next(cur_entry, slot)
+        next_entry = Entry.build_next(sk, cur_entry, slot)
 
-        #TODO: todo add >1 tx
-        #ts_m = :os.system_time(1000)
-        #txs = TXPool.grab_next_valids(next_entry)
+        #TODO: embed aggsig of previous vote
         txs = TXPool.grab_next_valid(100)
-        #IO.inspect {:tx, :os.system_time(1000) - ts_m}
-
         next_entry = Map.put(next_entry, :txs, txs)
-        next_entry = Entry.sign(next_entry)
+        next_entry = Entry.sign(sk, next_entry)
 
         next_entry
     end

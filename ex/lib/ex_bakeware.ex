@@ -15,7 +15,7 @@ defmodule Ama.Bakeware do
           arg0 == "buildtx" ->
             ["buildtx", contract, func, args | rest] = args
             contract = if byte_size(contract) > 48 do Base58.decode(contract) else contract end
-            sk = Application.fetch_env!(:ama, :trainer_sk)
+            sk = Application.fetch_env!(:ama, :seed64)
             {args, []} = Code.eval_string(args)
             [attach_symbol, attach_amount] = if length(rest) != 2 do [nil,nil] else
               [attach_symbol, attach_amount] = rest
@@ -27,7 +27,7 @@ defmodule Ama.Bakeware do
           arg0 == "build_and_broadcasttx" ->
             ["build_and_broadcasttx", contract, func, args | rest] = args
             contract = if byte_size(contract) > 48 do Base58.decode(contract) else contract end
-            sk = Application.fetch_env!(:ama, :trainer_sk)
+            sk = Application.fetch_env!(:ama, :seed64)
             {args, []} = Code.eval_string(args)
             [attach_symbol, attach_amount] = if length(rest) != 2 do [nil,nil] else
               [attach_symbol, attach_amount] = rest
@@ -42,7 +42,7 @@ defmodule Ama.Bakeware do
 
           arg0 == "deploytx" ->
             ["deploytx", wasmpath] = args
-            sk = Application.fetch_env!(:ama, :trainer_sk)
+            sk = Application.fetch_env!(:ama, :seed64)
             wasmbytes = File.read!(wasmpath)
             error = BIC.Contract.validate(wasmbytes)
             if error[:error] != :ok do
