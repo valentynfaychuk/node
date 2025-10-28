@@ -70,6 +70,10 @@ defmodule Ama.MultiServer do
                 :ok = :gen_tcp.send(state.socket, Photon.HTTP.Response.build_cors(state.request, 200, %{}, ""))
                 state
 
+            r.method == "GET" and r.path == "/ws/rpc/test" -> quick_reply(state, HTTP.WS.RPC.html_test())
+            r.headers["upgrade"] == "websocket" and String.starts_with?(r.path, "/ws/rpc") ->
+                HTTP.WS.RPC.init(state)
+
             #r.headers["upgrade"] == "websocket" and String.starts_with?(r.path, "/ws/panel") ->
             #    Shep.WSPanel.init(state)
             r.method == "GET" and r.path == "/favicon.ico" ->

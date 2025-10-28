@@ -42,4 +42,6 @@ defmodule RDB do
 
   def vecpak_encode(_map), do: :erlang.nif_error(:nif_not_loaded)
   def vecpak_decode(_bin), do: :erlang.nif_error(:nif_not_loaded)
+
+  def freivalds(_tensor, _vr), do: :erlang.nif_error(:nif_not_loaded)
 end

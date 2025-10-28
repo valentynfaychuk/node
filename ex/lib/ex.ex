@@ -111,7 +111,7 @@ defmodule Ama do
       ipv4 = {a,b,c,d} = Application.fetch_env!(:ama, :http_ipv4)
       if ipv4 != {0,0,0,0} do
         {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: PG, start: {:pg, :start_link, []}})
-        {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: PGWSPanel, start: {:pg, :start_link, [PGWSPanel]}})
+        {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: PGWSPanel, start: {:pg, :start_link, [PGWSRPC]}})
 
         ipv4_string = "#{a}.#{b}.#{c}.#{d}"
         port = Application.fetch_env!(:ama, :http_port)

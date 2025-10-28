@@ -9,6 +9,11 @@ defmodule FabricEventGen do
     send(FabricEventGen, {:entry, entry, mut_hash, m, l})
   end
 
+  def broadcast(update) do
+      pids = :pg.get_members(PGWSRPC)
+      Enum.each(pids, & send(&1, update))
+  end
+
   def start_link() do
     GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
   end
@@ -34,6 +39,14 @@ defmodule FabricEventGen do
     if logs != [] do
       #IO.inspect {height, logs, muts}
     end
+
+    #IO.inspect API.Chain.format_entry_for_client(entry), limit: 11111
+    entry_b58 = API.Chain.format_entry_for_client(entry)
+    txs = Enum.map(entry.txs, fn(tx)->
+      API.TX.format_tx_for_client(tx)
+    end)
+    broadcast({:update_stats_entry_tx, API.Chain.stats(), entry_b58, txs})
+
     {:noreply, state}
   end
 
