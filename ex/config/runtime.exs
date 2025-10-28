@@ -82,10 +82,6 @@ config :ama, :anr_next_refresh, 0
 config :ama, :anr_name, anr_name
 config :ama, :anr_desc, anr_desc
 
-#TESTNET = true
-#TESTNET_TICK=true
-#write 10 validators to file
-
 Path.join(work_folder, "ex/")
 |> Path.join("**/*.ex")
 |> Path.wildcard()

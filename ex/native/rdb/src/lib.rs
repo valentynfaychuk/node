@@ -662,4 +662,9 @@ fn vecpak_decode<'a>(env: Env<'a>, bin: Binary) -> Result<Term<'a>, Error> {
     Ok(term.encode(env))
 }
 
+#[rustler::nif]
+fn freivalds(tensor: Binary, vr_b3: Binary) -> bool {
+    crate::consensus::bic::sol_freivalds::freivalds(tensor.as_slice(), vr_b3.as_slice())
+}
+
 rustler::init!("Elixir.RDB", load = on_load);
