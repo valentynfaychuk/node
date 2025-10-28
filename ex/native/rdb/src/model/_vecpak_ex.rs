@@ -91,7 +91,7 @@ pub fn encode_term(env: Env, buf: &mut Vec<u8>, term: Term) -> Result<(), Error>
     if let Ok(mut it) = term.into_list_iterator() {
         // Peek first element to decide if it's a proplist
         let mut tmp_pairs: Vec<(Term, Term)> = Vec::new();
-        let mut is_proplist = true;
+        let mut is_proplist = term.list_length()? > 0;
 
         while let Some(elem) = it.next() {
             if let Ok((k, v)) = elem.decode::<(Term, Term)>() {
@@ -197,6 +197,7 @@ fn read_exact<'a>(buf: &'a [u8], i: &mut usize, n: usize) -> Result<&'a [u8], Er
     Ok(s)
 }
 
+//RDB.vecpak_decode(<<7, 1, 3, 5, 1, 2, 122, 97, 3, 1, 4, 5, 1, 3, 97, 102, 97, 5, 1, 4, 116, 101, 115, 116, 5, 1, 3, 98, 122, 122, 5, 1, 4, 98, 101, 115, 116>>)
 pub fn decode_term<'a>(env: Env<'a>, buf: &[u8], i: &mut usize) -> Result<Term<'a>, Error> {
     let tag = read_u8(buf, i)?;
     match tag {
@@ -243,8 +244,13 @@ pub fn decode_term<'a>(env: Env<'a>, buf: &[u8], i: &mut usize) -> Result<Term<'
 
                 let v = decode_term(env, buf, i)?;
 
+                //Put keys as atom if they exist in atom table
                 if let Ok(bin) = Binary::from_term(k) {
-                    map = map.map_put(Atom::from_bytes(env, bin.as_slice())?, v)?;
+                    if let Ok(Some(atom)) = Atom::try_from_bytes(env, bin.as_slice()) {
+                        map = map.map_put(atom, v)?;
+                    } else {
+                        map = map.map_put(k, v)?;
+                    }
                 } else {
                     map = map.map_put(k, v)?;
                 }
