@@ -191,6 +191,8 @@ defmodule EntryGenesis do
         RocksDB.put("rooted_tip", entry_signed.hash, %{rtx: rtx, cf: cf.sysconf})
 
         validator_pks = Application.fetch_env!(:ama, :keys) |> Enum.map(& &1.pk)
+        RocksDB.put("bic:epoch:trainers:0",
+          :erlang.term_to_binary(validator_pks), %{rtx: rtx, cf: cf.contractstate})
         RocksDB.put("bic:epoch:trainers:height:#{String.pad_leading("0", 12, "0")}",
           :erlang.term_to_binary(validator_pks), %{rtx: rtx, cf: cf.contractstate})
         Enum.each(Application.fetch_env!(:ama, :keys), fn(key)->

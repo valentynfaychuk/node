@@ -79,7 +79,8 @@ defmodule FabricGen do
     rooted_tip = Fabric.rooted_tip()
     next_entries = height
     |> Fabric.entries_by_height()
-    |> Enum.filter(& &1.header_unpacked.prev_hash == rooted_tip)
+    #TODO: fix this via a secondary index on is_in_main_chain
+    #|> Enum.filter(& &1.header_unpacked.prev_hash == rooted_tip)
     |> Enum.map(fn(entry)->
         trainers = Consensus.trainers_for_height(Entry.height(entry))
         {mut_hash, score, _consensus} = Fabric.best_consensus_by_entryhash(trainers, entry.hash)

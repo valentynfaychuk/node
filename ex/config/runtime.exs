@@ -42,7 +42,7 @@ if File.exists?(path) do
 end
 if !File.exists?(path_seeds) do
     sk = :crypto.strong_rand_bytes(64)
-    :ok = File.write!(path, Base58.encode(sk))
+    :ok = File.write!(path_seeds, Base58.encode(sk))
 end
 keys = File.read!(path_seeds) |> String.split("\n") |> Enum.filter(& &1 != "") |> Enum.map(& String.trim(&1) |> Base58.decode()) |> Enum.map(fn(seed)->
   pk = BlsEx.get_public_key!(seed)
