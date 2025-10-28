@@ -4,12 +4,17 @@ version = "0.1.0"
 authors = []
 edition = "2021"
 
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+
 [lib]
 name = "rdb"
 crate-type = ["cdylib"]
 
 [dependencies]
-rustler = "0.36.1"
+rustler = { version = "0.36.1", features = ["big_integer"] }
 rand = "0.9.1"
 sha2 = "0.10.8"
 atoi = "2"
@@ -20,6 +25,7 @@ blst = "0.3.16"
 thiserror = "2.0.17"
 group = "0.13.0"
 eetf = "0.11.0"
+serde = { version = "1.0", features = ["derive"] }
 
 [dependencies.rust-rocksdb]
 git = "https://github.com/vans163/rust-rocksdb"

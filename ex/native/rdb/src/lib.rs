@@ -1,6 +1,8 @@
 pub mod consensus;
 pub mod atoms;
-
+pub mod vecpak;
+pub mod vecpak2;
+pub mod model;
 
 use rustler::types::{Binary, OwnedBinary};
 use rustler::{
@@ -643,6 +645,62 @@ fn apply_entry<'a>(env: Env<'a>, db: ResourceArc<DbResource>, next_entry_trimmed
     }).encode(env);
 
     Ok((term_txn, consensus_muts::mutations_to_map(muts), consensus_muts::mutations_to_map(muts_rev), result_log).encode(env))
+}
+
+use serde::{Serialize, Deserialize};
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+// Optional: collect unknown fields here for forward-compat
+pub struct Vault {
+    pub lockup_tier: Vec<u8>,   // bytes => (tag=5)
+    pub lockup_expire: u64,     // int varint (must fit i128)
+    pub lockup_amount: u128,    // int varint (must fit i128)
+    #[serde(default)]           // new field? will default if absent in old blobs
+    pub memo: Option<String>,   // None => SKIPPED (not serialized), Some => bytes
+    //#[serde(default)]
+    //pub extras: std::collections::BTreeMap<String, serde_bytes::ByteBuf>,
+}
+
+#[rustler::nif]
+fn vecpak_encode<'a>(env: Env<'a>, map: Term<'a>) -> Result<Term<'a>, Error> {
+    let v = Vault {
+        lockup_tier: b"gold".to_vec(),
+        lockup_expire: 123456789,
+        lockup_amount: 1_000_000_000_000_000_000u128,
+        memo: None,
+    };
+    let mut v2 = Vec::new();
+    v2.push(Vault {
+        lockup_tier: b"gold".to_vec(),
+        lockup_expire: 123456789,
+        lockup_amount: 1_000_000_000_000_000_000u128,
+        memo: None,
+    });
+    v2.push(Vault {
+        lockup_tier: b"gold1".to_vec(),
+        lockup_expire: 123456789,
+        lockup_amount: 1_000_000_000_000_000_000u128,
+        memo: None,
+    });
+    v2.push(Vault {
+        lockup_tier: b"gold2".to_vec(),
+        lockup_expire: 123456789,
+        lockup_amount: 1_000_000_000_000_000_000u128,
+        memo: None,
+    });
+    v2.push(Vault {
+        lockup_tier: b"gold3".to_vec(),
+        lockup_expire: 123456789,
+        lockup_amount: 1_000_000_000_000_000_000u128,
+        memo: None,
+    });
+    let wire = vecpak::encode(&v).unwrap();
+    let back: Vault = vecpak::decode(&wire).unwrap();
+
+    let mut ob = OwnedBinary::new(wire.len()).ok_or_else(|| Error::Term(Box::new("alloc failed")))?;
+    ob.as_mut_slice().copy_from_slice(&wire);
+
+    Ok((Binary::from_owned(ob, env), map).encode(env))
 }
 
 rustler::init!("Elixir.RDB", load = on_load);

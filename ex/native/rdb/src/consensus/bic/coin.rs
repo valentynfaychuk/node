@@ -53,6 +53,13 @@ pub fn paused(env: &crate::consensus::consensus_apply::ApplyEnv, symbol: &[u8]) 
     }
 }
 
+pub fn soulbound(env: &crate::consensus::consensus_apply::ApplyEnv, symbol: &[u8]) -> bool {
+    match kv_get(env, &bcat(&[b"bic:coin:soulbound:", symbol])).as_deref() {
+        Some(b"true") => true,
+        _ => false
+    }
+}
+
 pub fn total_supply(env: &crate::consensus::consensus_apply::ApplyEnv, symbol: &[u8]) -> i128 {
     match kv_get(env, &bcat(&[b"bic:coin:totalSupply:", symbol])) {
         Some(amount) => std::str::from_utf8(&amount).unwrap().parse::<i128>().unwrap_or_else(|_| panic_any("invalid_total_supply")),
@@ -96,30 +103,42 @@ pub fn call_transfer(env: &mut crate::consensus::consensus_apply::ApplyEnv, args
     if amount > balance(env, env.caller_env.account_caller.as_slice(), &symbol) { panic_any("insufficient_funds") }
 
     if paused(env, symbol) { panic_any("paused") }
+    if soulbound(env, symbol) { panic_any("soulbound") }
 
     kv_increment(env, &bcat(&[b"bic:coin:balance:", env.caller_env.account_caller.as_slice(), b":", symbol]), -amount);
     kv_increment(env, &bcat(&[b"bic:coin:balance:", receiver, b":", symbol]), amount);
+
+    //Account burnt coins
+    if symbol != b"AMA" && receiver == &BURN_ADDRESS {
+        kv_increment(env, &bcat(&[b"bic:coin:totalSupply:", symbol]), -amount);
+    }
 }
 
 pub fn call_create_and_mint(env: &mut crate::consensus::consensus_apply::ApplyEnv, args: Vec<Vec<u8>>) {
-    if args.len() != 4 { panic_any("invalid_args") }
+    if args.len() < 2 { panic_any("invalid_args") }
     let symbol_original = args[0].as_slice();
     let amount = args[1].as_slice();
-    let mintable = args[2].as_slice();
-    let pausable = args[3].as_slice();
+    let decimals = args.get(2).and_then(|v| if v.is_empty() { None } else { Some(v.as_slice()) }).unwrap_or(b"9");
+    let mintable = args.get(3).and_then(|v| if v.is_empty() { None } else { Some(v.as_slice()) }).unwrap_or(b"false");
+    let pausable = args.get(4).and_then(|v| if v.is_empty() { None } else { Some(v.as_slice()) }).unwrap_or(b"false");
+    let soulbound = args.get(5).and_then(|v| if v.is_empty() { None } else { Some(v.as_slice()) }).unwrap_or(b"false");
 
     let symbol: Vec<u8> = symbol_original.iter().copied().filter(u8::is_ascii_alphanumeric).collect();
     if symbol_original != symbol.as_slice() { panic_any("invalid_symbol") }
     if symbol.len() < 1 { panic_any("symbol_too_short") }
     if symbol.len() > 32 { panic_any("symbol_too_long") }
 
-    let amount = std::str::from_utf8(&amount).ok().and_then(|s| s.parse::<i128>().ok()).unwrap_or_else(|| panic_any("invalid_amount"));
-    if amount <= 0 { panic_any("invalid_amount") }
-
     if !consensus::bic::coin_symbol_reserved::is_free(&symbol, &env.caller_env.account_caller) { panic_any("symbol_reserved") }
     if exists(env, &symbol) { panic_any("symbol_exists") }
 
-    kv_increment(env, &bcat(&[b"bic:coin:balance:", env.caller_env.account_caller.as_slice(), b":", &symbol]), amount);
+    let amount = std::str::from_utf8(&amount).ok().and_then(|s| s.parse::<i128>().ok()).unwrap_or_else(|| panic_any("invalid_amount"));
+    if amount <= 0 { panic_any("invalid_amount") }
+
+    let decimals = std::str::from_utf8(&decimals).ok().and_then(|s| s.parse::<u64>().ok()).unwrap_or_else(|| panic_any("invalid_decimals"));
+    //if decimals < 0 { panic_any("invalid_decimals") }
+    if decimals >= 10 { panic_any("invalid_decimals") }
+
+    kv_increment(env, &bcat(&[b"bic:coin:balance:", &env.caller_env.account_caller, b":", &symbol]), amount);
     kv_increment(env, &bcat(&[b"bic:coin:totalSupply:", &symbol]), amount);
 
     let mut admin = Vec::new();
@@ -129,22 +148,31 @@ pub fn call_create_and_mint(env: &mut crate::consensus::consensus_apply::ApplyEn
 
     if mintable == b"true" { kv_put(env, &bcat(&[b"bic:coin:mintable:", &symbol]), b"true") }
     if pausable == b"true" { kv_put(env, &bcat(&[b"bic:coin:pausable:", &symbol]), b"true") }
+    if soulbound == b"true" { kv_put(env, &bcat(&[b"bic:coin:soulbound:", &symbol]), b"true") }
 }
 
 pub fn call_mint(env: &mut crate::consensus::consensus_apply::ApplyEnv, args: Vec<Vec<u8>>) {
-    if args.len() != 2 { panic_any("invalid_args") }
+    if args.len() != 3 { panic_any("invalid_args") }
     let symbol = args[0].as_slice();
     let amount = args[1].as_slice();
+    let amount = std::str::from_utf8(&amount).ok().and_then(|s| s.parse::<i128>().ok()).unwrap_or_else(|| panic_any("invalid_amount"));
+    let receiver = args[2].as_slice();
+    if receiver.len() != 48 { panic_any("invalid_receiver_pk") }
 
-    let amount = std::str::from_utf8(&amount).unwrap().parse::<i128>().unwrap_or_else(|_| panic_any("invalid_amount"));
+    if !has_permission(env, &symbol, env.caller_env.account_caller.as_slice()) { panic_any("no_permissions") }
+
+    mint(env, symbol, amount, receiver);
+}
+
+pub fn mint(env: &mut crate::consensus::consensus_apply::ApplyEnv, symbol: &[u8], amount: i128, receiver: &[u8]) {
+    if !(consensus::bls12_381::validate_public_key(receiver)) { panic_any("invalid_receiver_pk") }
     if amount <= 0 { panic_any("invalid_amount") }
 
     if !exists(env, &symbol) { panic_any("symbol_doesnt_exist") }
-    if !has_permission(env, &symbol, env.caller_env.account_caller.as_slice()) { panic_any("no_permissions") }
     if !mintable(env, &symbol) { panic_any("not_mintable") }
     if paused(env, &symbol) { panic_any("paused") }
 
-    kv_increment(env, &bcat(&[b"bic:coin:balance:", env.caller_env.account_caller.as_slice(), b":", symbol]), amount);
+    kv_increment(env, &bcat(&[b"bic:coin:balance:", receiver, b":", symbol]), amount);
     kv_increment(env, &bcat(&[b"bic:coin:totalSupply:", symbol]), amount);
 }
 

@@ -10,14 +10,16 @@ pub const DST_ANR: &[u8] = b"AMADEUS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_ANR_";
 pub const DST_ANR_CHALLENGE: &[u8] = b"AMADEUS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_ANRCHALLENGE_";
 
 #[inline(always)]
-fn get_bit(mask: &[u8], i: usize) -> bool {
-    (mask[i >> 3] >> (i & 7)) & 1 == 1
+fn get_bit_be(mask: &[u8], i: usize) -> bool {
+    let byte = i >> 3;
+    let bit  = 7 - (i & 7);
+    ((mask[byte] >> bit) & 1) != 0
 }
 
 pub fn unmask_trainers<'a>(trainers: &'a [Vec<u8>], mask: &[u8], mask_size: usize) -> Vec<&'a [u8]> {
     let mut out = Vec::with_capacity(mask_size);
     for i in 0..mask_size {
-        if get_bit(mask, i) { out.push(trainers[i].as_slice()) }
+        if get_bit_be(mask, i) { out.push(trainers[i].as_slice()) }
     }
     out
 }

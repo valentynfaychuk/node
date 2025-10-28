@@ -284,13 +284,17 @@ pub fn valid_bic_action(contract: Vec<u8>, function: Vec<u8>) -> bool {
 fn call_bic(env: &mut ApplyEnv, contract: Vec<u8>, function: Vec<u8>, args: Vec<Vec<u8>>, attached_symbol: Option<Vec<u8>>, attached_amount: Option<Vec<u8>>) {
     match (contract.as_slice(), function.as_slice()) {
         (b"Coin", b"transfer") => consensus::bic::coin::call_transfer(env, args),
-        (b"Coin", b"create_and_mint") => consensus::bic::coin::call_create_and_mint(env, args),
-        (b"Coin", b"mint") => consensus::bic::coin::call_mint(env, args),
-        (b"Coin", b"pause") => consensus::bic::coin::call_pause(env, args),
+        //(b"Coin", b"create_and_mint") => consensus::bic::coin::call_create_and_mint(env, args),
+        //(b"Coin", b"mint") => consensus::bic::coin::call_mint(env, args),
+        //(b"Coin", b"pause") => consensus::bic::coin::call_pause(env, args),
         (b"Epoch", b"set_emission_address") => consensus::bic::epoch::call_set_emission_address(env, args),
         (b"Epoch", b"submit_sol") => consensus::bic::epoch::call_submit_sol(env, args),
         (b"Epoch", b"slash_trainer") => consensus::bic::epoch::call_slash_trainer(env, args),
         (b"Contract", b"deploy") => consensus::bic::contract::call_deploy(env, args),
+        //(b"Lockup", b"unlock") => consensus::bic::lockup::call_unlock(env, args),
+        //(b"LockupPrime", b"lock") => consensus::bic::lockup_prime::call_lock(env, args),
+        //(b"LockupPrime", b"unlock") => consensus::bic::lockup_prime::call_unlock(env, args),
+        //(b"LockupPrime", b"daily_checkin") => consensus::bic::lockup_prime::call_daily_checkin(env, args),
         _ => std::panic::panic_any("invalid_bic_action")
     }
 }
@@ -318,6 +322,7 @@ fn call_wasmvm(env: &mut ApplyEnv, contract: Vec<u8>, function: Vec<u8>, args: V
         _ => ()
     }
 
+    std::panic::panic_any("wasm_noop")
     //let result = ();
 
     //exec used

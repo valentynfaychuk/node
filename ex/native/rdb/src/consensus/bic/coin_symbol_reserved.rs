@@ -35,7 +35,7 @@ fn is_reserved_symbol(upper: &[u8]) -> bool {
         b"ZK" | b"LPT" | b"KAITO" | b"STHYPE" | b"ANKR" | b"SYRUP" | b"CSPR" | b"CHEX" | b"AGENTFUN" | b"SC" | b"YFI" |
         b"ONE" | b"PRIME" | b"EUTBL" | b"GAMA" | b"UXLINK" | b"ELF" | b"DEUSD" | b"XYO" | b"DRIFT" | b"T" | b"GIGA" |
         b"ZANO" | b"HOT" | b"AIC" | b"RVN" | b"IOTX" | b"LVLUSD" | b"PNUT" | b"TETH" | b"HMSTR" | b"$RCGE" | b"POLYX" |
-        b"CET" | b"XEM" | b"ETHW" | b"TOSHI" | b"SFRXETH" | b"ETH" | b"XCH" | b"VANA" | b"SOS" | b"ORCA" | b"KOGE" |
+        b"CET" | b"XEM" | b"ETHW" | b"TOSHI" | b"SFRXETH" | b"XCH" | b"VANA" | b"SOS" | b"ORCA" | b"KOGE" |
         b"DGB" | b"FLUID" | b"QUBIC" | b"GOMINING" | b"CRVUSD" | b"MPLX" | b"WEMIX" | b"ORDI" | b"OSMO" | b"GMT" |
         b"KAU" | b"USDO" | b"EUL" | b"DLC" | b"TRIBE" | b"PUNDIX" | b"ALCH" | b"AIXBT" | b"EURS" | b"ZBCN" | b"SQD" |
         b"ME" | b"RLB" | b"CUSDO" | b"WBETH" | b"SWFTC" | b"MAG7.SSI" | b"WOO" | b"KULA" | b"DAG" | b"ILV" | b"ENJ" |
@@ -43,7 +43,7 @@ fn is_reserved_symbol(upper: &[u8]) -> bool {
         b"GOHOME" | b"AMAPT" | b"CETUS" | b"STEAKUSDC" | b"ZKJ" | b"ACH" | b"STRAX" | b"NPC" | b"ETHFI" | b"KAG" |
         b"MEOW" | b"FAI" | b"SXP" | b"ASBNB" | b"SKL" | b"PWR" | b"STPT" | b"STS" | b"USDZ" | b"BAND" | b"XNO" |
         b"SUSHI" | b"SDEUSD" | b"PAAL" | b"LRC" | b"OPT" | b"B3" | b"ZIG" | b"COW" | b"LUNA" | b"HIVE" | b"ETH+" |
-        b"OZO" | b"MYTH" | b"IO" | b"APFC" | b"NXM" | b"NKYC" | b"BDCA" | b"ARDR" | b"HONEY" | b"VVV" | b"GAL" |
+        b"OZO" | b"MYTH" | b"IO" | b"APFC" | b"NXM" | b"NKYC" | b"BDCA" | b"ARDR" | b"VVV" | b"GAL" |
         b"WAVES" | b"MASK" | b"DAKU" | b"BICO" | b"FLUX" | b"BIO" | b"VCNT" | b"VVS" | b"BORA" | b"INIT" | b"G" |
         b"REUSD" | b"ICX" | b"PROM" | b"ANIME" | b"CPOOL" | b"WFRAGSOL" | b"ABT" | b"AGI" | b"FBTC" | b"NTGL" |
         b"RED" | b"SIGN" | b"ZEUS" | b"QUSDT" | b"STBTC" | b"USDL" | b"USUAL" | b"XPR" | b"BOME" | b"PEAQ" | b"UMA" |
@@ -70,7 +70,7 @@ fn is_reserved_symbol(upper: &[u8]) -> bool {
         b"RARE" | b"CORGIAI" | b"WILD" | b"NMT" | b"HSK" | b"FUN" | b"JNFTC" | b"AXGT" | b"BB" | b"AGETH" | b"USD+" |
         b"USDM" | b"FIUSD" | b"ANT" | b"MEMEFI" | b"PARTI" | b"TRU" | b"HT" | b"TNSR" | b"SHELL" | b"EURCV" |
         b"SAVUSD" | b"SUNDOG" | b"CUDOS" | b"METFI" | b"WFCA" | b"TAI" | b"DBR" | b"CHILLGUY" | b"BANANAS31" |
-        b"APEX" | b"SN" | b"WEETH" | b"MERL" | b"TOKEN" | b"CYBER" | b"KTA" | b"ZEREBRO" | b"AVL" | b"FWOG" | b"KEEP" |
+        b"APEX" | b"SN" | b"MERL" | b"TOKEN" | b"CYBER" | b"KTA" | b"ZEREBRO" | b"AVL" | b"FWOG" | b"KEEP" |
         b"USD3" | b"OLAS" | b"METAL" | b"ZEDXION" | b"LADYS" | b"MBL" | b"WZRD" | b"LUSD" | b"RAIL" | b"RIF" |
         b"MOBILE" | b"SSV" | b"GNS" | b"SDEX" | b"STONKS" | b"REKT" | b"RSS3" | b"SILO" | b"CAT" | b"BAN" | b"BFC" |
         b"PRO" | b"ICE" | b"INF" | b"KUJI" | b"AUX" | b"STRIKE" | b"FORT" | b"AUKI" | b"QANX" | b"SFUND" | b"STORJ" |

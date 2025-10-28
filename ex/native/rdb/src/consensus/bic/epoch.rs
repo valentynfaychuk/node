@@ -7,6 +7,8 @@ use crate::consensus::consensus_kv::{kv_get, kv_put, kv_exists, kv_set_bit, kv_i
 pub const EPOCH_EMISSION_BASE: i128 = 1_000_000_000_000_000;
 pub const EPOCH_INTERVAL: i128 = 100_000;
 
+pub const TREASURY_DONATION_ADDRESS: &[u8; 48] = &[140, 71, 6, 83, 31, 185, 171, 240, 47, 5, 14, 246, 98, 23, 105, 24, 183, 118, 193, 92, 66, 82, 64, 5, 239, 255, 254, 87, 139, 252, 148, 176, 113, 6, 207, 153, 51, 25, 202, 45, 48, 153, 223, 248, 219, 210, 80, 254];
+
 pub fn epoch_emission(epoch: u64) -> i128 {
     epoch_emission_1(epoch, EPOCH_EMISSION_BASE)
 }
