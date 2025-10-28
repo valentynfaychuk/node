@@ -15,6 +15,8 @@ defmodule Fabric do
           "entry",
           "entry_by_height|height->entryhash",
           "entry_by_slot|slot->entryhash",
+
+          #TODO: reversed columns by accident, fix it
           "my_seen_time_entry|entryhash->ts_sec",
           "my_attestation_for_entry|entryhash->attestation",
 
@@ -39,7 +41,7 @@ defmodule Fabric do
               my_seen_time_for_entry_cf, my_attestation_for_entry_cf,
               consensus_cf, consensus_by_entryhash_cf,
               contractstate_cf, muts_cf, muts_rev_cf,
-              sysconf_cf
+              sysconf_cf,
           ] = cf_ref_list
           cf = %{
               default: default_cf, entry: entry_cf, entry_by_height: entry_height_cf, entry_by_slot: entry_slot_cf,
@@ -48,7 +50,7 @@ defmodule Fabric do
               #my_mutations_hash_for_entry: my_mutations_hash_for_entry_cf,
               consensus: consensus_cf, consensus_by_entryhash: consensus_by_entryhash_cf,
               contractstate: contractstate_cf, muts: muts_cf, muts_rev: muts_rev_cf,
-              sysconf: sysconf_cf
+              sysconf: sysconf_cf,
           }
           :persistent_term.put({:rocksdb, Fabric}, %{db: db_ref, cf_list: cf_ref_list, cf: cf, path: path})
         catch

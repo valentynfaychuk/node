@@ -39,6 +39,12 @@ defmodule VanillaSer do
                 end)
         end
     end
+    def encode_varint(0, acc) do acc <> <<0>> end
+    def encode_varint(int, acc) do
+        sign = if int >= 0 do 0 else 1 end
+        bin = :binary.encode_unsigned(abs(int))
+        acc <> <<sign::1, byte_size(bin)::7>> <> bin
+    end
 
     def decode!(binary) do
         {term, ""} = decode(binary)
@@ -73,14 +79,6 @@ defmodule VanillaSer do
                 end
         end
     end
-
-    def encode_varint(0, acc) do acc <> <<0>> end
-    def encode_varint(int, acc) do
-        sign = if int >= 0 do 0 else 1 end
-        bin = :binary.encode_unsigned(abs(int))
-        acc <> <<sign::1, byte_size(bin)::7>> <> bin
-    end
-
     def decode_varint(<<sign::1, len::7, payload::size(len*8), rest::binary>>) do
         if sign == 0 do
             {payload, rest}
