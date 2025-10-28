@@ -35,7 +35,7 @@ defmodule Ama.MixProject do
       {:mnesia_kv, git: "https://github.com/xenomorphtech/mnesia_kv.git"},
 
       {:rustler, ">= 0.36.1", optional: true},
-      {:blake3, git: "https://github.com/vans163/blake3", branch: "finalize_xof"},
+      {:blake3_ex, git: "https://github.com/vans163/blake3", branch: "finalize_xof"},
       {:bls_ex, git: "https://github.com/amadeus-robot/bls_ex"},
       {:reedsolomon_ex, git: "https://github.com/amadeus-robot/reedsolomon_ex"},
       {:wasmer_ex, git: "https://github.com/amadeus-robot/wasmer_ex"},
