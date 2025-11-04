@@ -1,15 +1,14 @@
-defmodule NodeProto do
-
+defmodule NodeProto2 do
   def new_phone_who_dis() do
     %{op: :new_phone_who_dis}
   end
   def new_phone_who_dis_reply() do
-    anr = NodeANR.build()
+    anr = NodeANR2.build()
     %{op: :new_phone_who_dis_reply, anr: anr}
   end
 
   def get_peer_anrs() do
-    existing_peers = NodeANR.b3_f4()
+    existing_peers = NodeANR2.b3_f4()
     %{op: :get_peer_anrs, hasPeersb3f4: existing_peers}
   end
   def get_peer_anrs_reply(missing_anrs) do
@@ -58,31 +57,14 @@ defmodule NodeProto do
     %{op: :special_business_reply, business: business}
   end
 
-    def deflate_compress(data) do
-      z = :zlib.open()
-      :zlib.deflateInit(z, 6, :deflated, -15, 8, :default)
-      compressed = :zlib.deflate(z, data, :finish)
-      :zlib.deflateEnd(z)
-      :zlib.close(z)
-      :erlang.list_to_binary(compressed)
-    end
-
-    def deflate_decompress(compressed_data) do
-      z = :zlib.open()
-      :zlib.inflateInit(z, -15)
-      decompressed = :zlib.inflate(z, compressed_data)
-      :zlib.inflateEnd(z)
-      :zlib.close(z)
-      :erlang.list_to_binary(decompressed)
-    end
-
-  def compress(msg) do
-    msg
-    |> :erlang.term_to_binary([:deterministic])
-    |> deflate_compress()
+  def decompress_and_unpack(compressed_data) do
+    compressed_data
+    |> :zstd.decompress()
+    |> IO.iodata_to_binary()
+    |> RDB.vecpak_decode()
   end
 
-  def compress2(msg) do
+  def compress(msg) do
     msg
     |> RDB.vecpak_encode()
     |> :zstd.compress()
@@ -117,7 +99,7 @@ defmodule NodeProto do
       if pk == Application.fetch_env!(:ama, :trainer_pk), do: throw(%{error: :msg_to_self})
 
       version = "#{va}.#{vb}.#{vc}"
-      if version < "1.1.7", do: throw(%{error: :old_version})
+      if version < "1.2.3", do: throw(%{error: :old_version})
 
       if s_total >= 10_000, do: throw(%{error: :too_large_shard})
       if original_size >= 1024_0_000, do: throw(%{error: :too_large_size})

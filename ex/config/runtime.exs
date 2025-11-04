@@ -17,6 +17,8 @@ config :ama, :work_folder, work_folder
 #Envvar.load(Path.join([work_folder, ".env"]))
 config :ama, :snapshot_height, (System.get_env("SNAPSHOT_HEIGHT") || "34076355") |> :erlang.binary_to_integer()
 
+
+
 #Bind Interaces
 config :ama, :offline, (!!System.get_env("OFFLINE") || nil)
 config :ama, :testnet, (!!System.get_env("TESTNET") || nil)
@@ -54,6 +56,7 @@ keys_by_pk = Enum.into(keys, %{}, fn(key)->
 end)
 config :ama, :keys, keys
 config :ama, :keys_by_pk, keys_by_pk
+config :ama, :keys_all_pks, Enum.map(keys, & &1.pk)
 
 first_key = hd(keys)
 config :ama, :trainer_pk, first_key.pk

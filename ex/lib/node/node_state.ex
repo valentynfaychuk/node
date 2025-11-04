@@ -90,7 +90,7 @@ defmodule NodeState do
   def handle(:event_entry, istate, term) do
     seen_time = :os.system_time(1000)
     %{error: :ok, entry: entry} = Entry.unpack_and_validate(term.entry_packed)
-    if Entry.height(entry) >= Fabric.rooted_tip_height() do
+    if Entry.height(entry) >= DB.Chain.rooted_height() do
       Fabric.insert_entry(entry, seen_time)
       NodeANR.set_tips(istate.peer.pk, nil, Map.merge(entry, %{sig_error: :ok}))
     end
@@ -109,7 +109,7 @@ defmodule NodeState do
       needAttest = opts[:a] || false
       needConsensus = opts[:c] || false
       trie = %{height: height}
-      trie = if !needEntry do trie else Map.put(trie, :entries, Fabric.entries_by_height(height) |> Enum.filter(& &1.hash not in hasHashes) |> Enum.map(& Entry.pack(&1))) end
+      trie = if !needEntry do trie else Map.put(trie, :entries, DB.Chain.entries_by_height(height) |> Enum.filter(& &1.hash not in hasHashes) |> Enum.map(& Entry.pack(&1))) end
       trie = if !needAttest do trie else Map.put(trie, :attestations, [Fabric.my_attestation_by_height(height) |> Attestation.pack()]) end
       trie = if !needConsensus do trie else Map.put(trie, :consensuses, Fabric.consensuses_by_height(height) |> Enum.map(& Consensus.pack(&1))) end
       trie
@@ -119,7 +119,7 @@ defmodule NodeState do
   def handle(:catchup_reply, istate, term) do
     #IO.inspect {:catchup_reply_from, istate.peer.ip4, Enum.map(term.tries, & &1.height)}
     Enum.each(term.tries, fn(trie)->
-      rooted_tip = Fabric.rooted_tip_height()
+      rooted_tip = DB.Chain.rooted_height()
 
       Enum.each(trie[:entries]||[], fn(entry_packed)->
         seen_time = :os.system_time(1000)

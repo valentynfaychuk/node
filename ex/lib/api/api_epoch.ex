@@ -26,18 +26,18 @@ defmodule API.Epoch do
     end
 
     def get_diff_bits(epoch \\ nil) do
-      epoch = if epoch do epoch else Consensus.chain_epoch() end
+      epoch = if epoch do epoch else DB.Chain.epoch() end
       API.Contract.get("bic:epoch:diff_bits:#{epoch}", :to_integer) || 24
     end
 
     def get_total_sols(epoch \\ nil) do
-      epoch = if epoch do epoch else Consensus.chain_epoch() end
+      epoch = if epoch do epoch else DB.Chain.epoch() end
       API.Contract.get("bic:epoch:total_sols:#{epoch}", :to_integer) || 0
     end
 
     def get_pop(pk) do
       pk = if byte_size(pk) != 48, do: Base58.decode(pk), else: pk
-      Consensus.chain_pop(pk)
+      DB.Chain.pop(pk)
       |> case do
         nil -> nil
         addr -> Base58.encode(addr)

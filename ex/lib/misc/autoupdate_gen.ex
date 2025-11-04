@@ -44,13 +44,13 @@ defmodule AutoUpdateGen do
 
             cond do
               is_boot -> :erlang.halt()
-              Consensus.is_trainer() ->
+              DB.Chain.is_validator() ->
                 FabricGen.exitAfterMySlot()
 
                 #incase
-                now_height = Consensus.chain_height()
+                now_height = DB.Chain.height()
                 Process.sleep(30*1000)
-                delta = Consensus.chain_height() - now_height
+                delta = DB.Chain.height() - now_height
                 if delta <= 3 do
                   :erlang.halt()
                 end

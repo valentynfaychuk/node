@@ -28,9 +28,9 @@ defmodule Ama do
     TXPool.init()
 
     if !Application.fetch_env!(:ama, :offline) and !Application.fetch_env!(:ama, :testnet) do
-      rooted_tip_height = Fabric.rooted_tip_height()
-      if rooted_tip_height == nil or rooted_tip_height < Application.fetch_env!(:ama, :snapshot_height) do
-        IO.inspect {"tip - snapshot_height", rooted_tip_height, Application.fetch_env!(:ama, :snapshot_height)}
+      rooted_height = DB.Chain.rooted_height()
+      if rooted_height == nil or rooted_height < Application.fetch_env!(:ama, :snapshot_height) do
+        IO.inspect {"tip - snapshot_height", rooted_height, Application.fetch_env!(:ama, :snapshot_height)}
         padded_height = String.pad_leading("#{Application.fetch_env!(:ama, :snapshot_height)}", 12, "0")
         IO.inspect {"or download manually | aria2c -x 4 https://snapshots.amadeus.bot/#{padded_height}.zip"}
         Fabric.close()
@@ -38,7 +38,7 @@ defmodule Ama do
         Fabric.init()
       end
     else
-      if !Consensus.chain_tip() do
+      if !DB.Chain.tip() do
         if Application.fetch_env!(:ama, :testnet) do
           EntryGenesis.generate_testnet()
         else

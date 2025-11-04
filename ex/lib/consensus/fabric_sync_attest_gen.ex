@@ -57,7 +57,7 @@ defmodule FabricSyncAttestGen do
       Application.fetch_env!(:ama, :testnet) -> true
       !hasQuorum() -> false
       isSynced() != :full -> false
-      Fabric.rooted_tip_height() < Consensus.chain_height() -> false
+      DB.Chain.rooted_height() < DB.Chain.height() -> false
       true -> true
     end
   end
@@ -66,7 +66,7 @@ defmodule FabricSyncAttestGen do
     cond do
       !hasQuorum() -> false
       isSynced() in [:full, :off_by_1] -> true
-      Fabric.rooted_tip_height() < (Consensus.chain_height() - 1) -> false
+      DB.Chain.rooted_height() < (DB.Chain.height() - 1) -> false
       isSynced() not in [:full, :off_by_1] -> false
       true -> true
     end
@@ -76,7 +76,7 @@ defmodule FabricSyncAttestGen do
     cond do
       !hasQuorum() -> false
       isSynced() in [:full, :off_by_1] -> true
-      Fabric.rooted_tip_height() < (Consensus.chain_height() - cnt) -> false
+      DB.Chain.rooted_height() < (DB.Chain.height() - cnt) -> false
       isSynced() not in [:full, :off_by_1] -> false
       true -> true
     end
@@ -127,9 +127,9 @@ defmodule FabricSyncAttestGen do
   end
 
   def tick_synced() do
-    temporal = Consensus.chain_tip_entry()
+    temporal = DB.Chain.tip_entry()
     temporal_height = temporal.header_unpacked.height
-    rooted = Fabric.rooted_tip_entry()
+    rooted = DB.Chain.rooted_tip_entry()
     rooted_height = rooted.header_unpacked.height
 
     {height_rooted_abs, height_abs, height_bft} = NodeANR.highest_validator_height()

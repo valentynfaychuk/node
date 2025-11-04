@@ -111,7 +111,7 @@ defmodule NodeANR do
   end
 
   def insert(anr) do
-    anr = Map.put(anr, :hasChainPop, !!Consensus.chain_pop(anr.pk))
+    anr = Map.put(anr, :hasChainPop, !!DB.Chain.pop(anr.pk))
     old_anr = MnesiaKV.get(NODEANR, anr.pk)
     routed = if !Application.fetch_env!(:ama, :check_routed_peer) do true else CymruRouting.globally_routed?(anr.ip4) end
     cond do
@@ -180,8 +180,8 @@ defmodule NodeANR do
     ts_m = :os.system_time(1000)
     cutoff = ts_m - 30_000
 
-    cur_validator = Consensus.trainer_for_slot_current()
-    validators = Consensus.trainers_for_height(Consensus.chain_height()+1)
+    cur_validator = DB.Chain.validator_for_height_current()
+    validators = DB.Chain.validators_for_height(DB.Chain.height()+1)
     {left, rest} = Enum.split_while(validators, &(&1 != cur_validator))
     validators = rest ++ left
 
@@ -200,7 +200,7 @@ defmodule NodeANR do
   end
 
   def all_validators() do
-    validators = Consensus.trainers_for_height(Consensus.chain_height()+1)
+    validators = DB.Chain.validators_for_height(DB.Chain.height()+1)
     match_spec = Enum.map(validators, fn(pk)-> {{pk, :_}, [], [{:element, 2, :"$_"}]} end)
     :ets.select(NODEANR, match_spec)
   end

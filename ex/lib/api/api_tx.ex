@@ -1,13 +1,13 @@
 defmodule API.TX do
     def get(tx_id) do
         tx_id = if byte_size(tx_id) != 32, do: Base58.decode(tx_id), else: tx_id
-        Consensus.chain_tx(tx_id)
+        DB.Chain.tx(tx_id)
         |> format_tx_for_client()
     end
 
     def get_by_entry(entry_hash) do
         entry_hash = if byte_size(entry_hash) != 32, do: Base58.decode(entry_hash), else: entry_hash
-        case Fabric.entry_by_hash(entry_hash) do
+        case DB.Chain.entry(entry_hash) do
             nil -> nil
             %{hash: entry_hash, header_unpacked: %{slot: slot}, txs: txs} ->
                 Enum.map(txs, fn(tx_packed)->

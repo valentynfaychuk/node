@@ -21,7 +21,6 @@ defmodule HTTP.WS.RPC do
             {:tcp_closed, socket} -> :closed
 
             {:update_stats_entry_tx, stats, entry, txs} ->
-                #TODO: later get the stats once and broadcast to all group
                 :ok = :gen_tcp.send(s.socket, Photon.WS.encode(:text, JSX.encode!(%{op: :event_stats, stats: stats})))
                 :ok = :gen_tcp.send(s.socket, Photon.WS.encode(:text, JSX.encode!(%{op: :event_entry, entry: entry})))
                 if length(txs) > 0 do

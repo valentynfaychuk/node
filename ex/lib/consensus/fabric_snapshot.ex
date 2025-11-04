@@ -10,10 +10,10 @@ defmodule FabricSnapshot do
     end
 
     def walk(end_hash, start_hash, opts) do
-        entry = Fabric.entry_by_hash(start_hash)
+        entry = DB.Chain.entry(start_hash)
         height = Entry.height(entry)
         IO.inspect {:walk, height}
-        entries = Fabric.entries_by_height(height)
+        entries = DB.Chain.entries_by_height(height)
         entries = entries -- [entry]
 
         RocksDB.delete(entry.hash, %{db: opts.db, cf: opts.cf.my_attestation_for_entry})
@@ -52,7 +52,7 @@ defmodule FabricSnapshot do
         opts = %{db: db, cf: cf}
         Enum.reverse(list)
         |> Enum.each(fn(hash)->
-            entry = Fabric.entry_by_hash(hash)
+            entry = DB.Chain.entry(hash)
             in_chain = Consensus.is_in_chain(hash)
             if in_chain do
                 true = Consensus.chain_rewind(hash)
@@ -82,7 +82,7 @@ defmodule FabricSnapshot do
     end
 
     def snapshot_tmp() do
-        height = Fabric.rooted_tip_height()
+        height = DB.Chain.rooted_height()
         height_padded = String.pad_leading("#{height}", 12, "0")
 
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})

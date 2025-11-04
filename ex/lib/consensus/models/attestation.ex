@@ -9,10 +9,10 @@ defmodule Attestation do
 
     ssz
     <<
+      entry_hash::32,
+      mutations_hash::32,
       signature::96,
       signer::48,
-      entry_hash::32,
-      mutations_hash::32
     >>
     """
     def unpack(attestation_packed) when is_binary(attestation_packed) do
@@ -82,10 +82,10 @@ defmodule Attestation do
     end
 
     def validate_vs_chain(a) do
-        entry = Fabric.entry_by_hash(a.entry_hash)
-        chain_height = Consensus.chain_height()
-        if !!entry and entry.header_unpacked.height <= Consensus.chain_height() do
-            trainers = Consensus.trainers_for_height(Entry.height(entry))
+        entry = DB.Chain.entry(a.entry_hash)
+        chain_height = DB.Chain.height()
+        if !!entry and entry.header_unpacked.height <= DB.Chain.height() do
+            trainers = DB.Chain.validators_for_height(Entry.height(entry))
             if !!trainers and a.signer in trainers do
                 true
             end

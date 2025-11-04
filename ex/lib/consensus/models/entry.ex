@@ -85,7 +85,7 @@ defmodule Entry do
         if mask do
             header_unpacked = :erlang.binary_to_term(header, [:safe])
 
-            trainers = Consensus.trainers_for_height(header_unpacked.height)
+            trainers = DB.Chain.validators_for_height(header_unpacked.height)
             trainers_signed = BLS12AggSig.unmask_trainers(trainers, mask)
             if nil in trainers_signed, do: throw(%{error: :wrong_epoch})
 
@@ -153,9 +153,9 @@ defmodule Entry do
         if !BlsEx.verify?(neh.signer, neh.vr, ceh.vr, BLS12AggSig.dst_vrf()), do: throw(%{error: :invalid_vr})
 
         txus = Enum.map(next_entry.txs, & TX.unpack(&1))
-        chain_epoch = Consensus.chain_epoch()
-        segment_vr_hash = Consensus.chain_segment_vr_hash()
-        diff_bits = Consensus.chain_diff_bits()
+        chain_epoch = DB.Chain.epoch()
+        segment_vr_hash = DB.Chain.segment_vr_hash()
+        diff_bits = DB.Chain.diff_bits()
         Enum.reduce(txus, %{}, fn(txu, batch_state)->
             case TXPool.validate_tx(txu, %{epoch: chain_epoch, segment_vr_hash: segment_vr_hash, diff_bits: diff_bits, batch_state: batch_state}) do
                %{error: :ok, batch_state: batch_state} -> batch_state

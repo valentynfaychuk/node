@@ -1,13 +1,13 @@
 defmodule API.Chain do
     def entry_tip() do
-        entry = Consensus.chain_tip_entry()
+        entry = DB.Chain.tip_entry()
         entry = format_entry_for_client(entry)
         %{error: :ok, entry: entry}
     end
 
     def entry(entry_hash, filter_on_function \\ nil) do
         entry_hash = if byte_size(entry_hash) != 32, do: Base58.decode(entry_hash), else: entry_hash
-        entry = Fabric.entry_by_hash(entry_hash)
+        entry = DB.Chain.entry(entry_hash)
         if !entry do
             %{error: :not_found}
         else
@@ -27,13 +27,13 @@ defmodule API.Chain do
     end
 
     def by_height(height) do
-        entries = Fabric.entries_by_height(height)
+        entries = DB.Chain.entries_by_height(height)
         |> Enum.map(& format_entry_for_client(&1))
         %{error: :ok, entries: entries}
     end
 
     def by_height_with_txs(height) do
-        entries = Fabric.entries_by_height(height)
+        entries = DB.Chain.entries_by_height(height)
         |> Enum.map(fn(entry)->
             txs = API.TX.get_by_entry(entry.hash)
             entry = format_entry_for_client(entry)
@@ -47,7 +47,7 @@ defmodule API.Chain do
         if !consensuses do
             {nil, nil}
         else
-            trainers = Consensus.trainers_for_height(height)
+            trainers = DB.Chain.validators_for_height(height)
             {mut_hash, score, consensus} = Consensus.best_by_weight(trainers, consensuses)
             {score, mut_hash}
         end
@@ -59,7 +59,7 @@ defmodule API.Chain do
             c = put_in(c, [:mutations_hash], Base58.encode(c.mutations_hash))
             c = put_in(c, [:entry_hash], Base58.encode(c.entry_hash))
             c = put_in(c, [:aggsig], Base58.encode(c.aggsig))
-            signers = BLS12AggSig.unmask_trainers(Consensus.trainers_for_height(height), c.mask)
+            signers = BLS12AggSig.unmask_trainers(DB.Chain.validators_for_height(height), c.mask)
             |> Enum.map(& Base58.encode(&1))
             c = put_in(c, [:signers], signers)
             c = put_in(c, [:score], length(c.signers) / bit_size(c.mask))
@@ -69,7 +69,7 @@ defmodule API.Chain do
 
     def pflops() do
       #A*B=C M=16 K=50240 N=16 u8xi8=i32
-      height_in_epoch = rem(Consensus.chain_height(), 100_000)
+      height_in_epoch = rem(DB.Chain.height(), 100_000)
       total_score = API.Epoch.score() |> Enum.map(& Enum.at(&1,1))|> Enum.sum()
       diff_multiplier = Bitwise.bsl(1, API.Epoch.get_diff_bits())
       total_calcs = total_score * diff_multiplier
@@ -82,14 +82,14 @@ defmodule API.Chain do
 
     def stats() do
       %{
-        height: Consensus.chain_height(),
-        tip_hash: Consensus.chain_tip() |> Base58.encode(),
-        tip: format_entry_for_client(Consensus.chain_tip_entry()),
+        height: DB.Chain.height(),
+        tip_hash: DB.Chain.tip() |> Base58.encode(),
+        tip: format_entry_for_client(DB.Chain.tip_entry()),
         tx_pool_size: TXPool.size(),
-        cur_validator: Consensus.trainer_for_slot_current() |> Base58.encode(),
-        next_validator: Consensus.trainer_for_slot_next() |> Base58.encode(),
-        emission_for_epoch: BIC.Coin.from_flat(BIC.Epoch.epoch_emission(Consensus.chain_epoch())),
-        circulating: BIC.Coin.from_flat(BIC.Epoch.circulating_without_burn(Consensus.chain_epoch())),
+        cur_validator: DB.Chain.validator_for_height_current() |> Base58.encode(),
+        next_validator: DB.Chain.validator_for_height_next() |> Base58.encode(),
+        emission_for_epoch: BIC.Coin.from_flat(BIC.Epoch.epoch_emission(DB.Chain.epoch())),
+        circulating: BIC.Coin.from_flat(BIC.Epoch.circulating_without_burn(DB.Chain.epoch())),
         total_supply_y3: BIC.Coin.from_flat(BIC.Epoch.circulating_without_burn(500*3)),
         total_supply_y30: BIC.Coin.from_flat(BIC.Epoch.circulating_without_burn(500*30)),
         pflops: pflops(),
@@ -99,9 +99,9 @@ defmodule API.Chain do
     end
 
     def stat_txs_sec() do
-      height = Fabric.rooted_tip_height()
+      height = DB.Chain.rooted_height()
       last_100 = Enum.sum_by((height-100)..height, fn(height)->
-        length(Fabric.entries_by_height(height) |> List.first() |> Map.get(:txs))
+        length(DB.Chain.entries_by_height(height) |> List.first() |> Map.get(:txs))
       end)
       last_100/50
     end

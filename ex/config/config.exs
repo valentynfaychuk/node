@@ -3,7 +3,7 @@ import Config
 config :logger, truncate: :infinity
 
 config :iex,
-  inspect: [width: 120, limit: 480, pretty: true, custom_options: [sort_maps: true]]
+  inspect: [width: 120, limit: 320, pretty: true, custom_options: [sort_maps: true]]
 
 config :ama, :version, Mix.Project.config[:version]
 

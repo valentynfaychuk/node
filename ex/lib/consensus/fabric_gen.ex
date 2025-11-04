@@ -76,13 +76,13 @@ defmodule FabricGen do
   end
 
   def best_entry_for_height(height) do
-    rooted_tip = Fabric.rooted_tip()
+    rooted_tip = DB.Chain.rooted_tip()
     next_entries = height
-    |> Fabric.entries_by_height()
+    |> DB.Chain.entries_by_height()
     #TODO: fix this via a secondary index on is_in_main_chain
     #|> Enum.filter(& &1.header_unpacked.prev_hash == rooted_tip)
     |> Enum.map(fn(entry)->
-        trainers = Consensus.trainers_for_height(Entry.height(entry))
+        trainers = DB.Chain.validators_for_height(Entry.height(entry))
         {mut_hash, score, _consensus} = Fabric.best_consensus_by_entryhash(trainers, entry.hash)
         {entry, mut_hash, score}
     end)
@@ -91,12 +91,12 @@ defmodule FabricGen do
   end
 
   def best_entry_for_height_no_score(height) do
-    rooted_tip = Fabric.rooted_tip()
+    rooted_tip = DB.Chain.rooted_tip()
     next_entries = height
-    |> Fabric.entries_by_height()
+    |> DB.Chain.entries_by_height()
     |> Enum.filter(& &1.header_unpacked.prev_hash == rooted_tip)
     |> Enum.map(fn(entry)->
-        trainers = Consensus.trainers_for_height(Entry.height(entry))
+        trainers = DB.Chain.validators_for_height(Entry.height(entry))
         {mut_hash, score, _consensus} = Fabric.best_consensus_by_entryhash(trainers, entry.hash)
         {entry, mut_hash, score}
     end)
@@ -105,13 +105,13 @@ defmodule FabricGen do
   end
 
   def proc_consensus() do
-    entry_root = Fabric.rooted_tip_entry()
-    entry_temp = Consensus.chain_tip_entry()
+    entry_root = DB.Chain.rooted_tip_entry()
+    entry_temp = DB.Chain.tip_entry()
     height_root = entry_root.header_unpacked.height
     height_temp = entry_temp.header_unpacked.height
     if height_root < height_temp do
       proc_consensus_1(height_root+1)
-      if Fabric.rooted_tip() != entry_root.hash do
+      if DB.Chain.rooted_tip() != entry_root.hash do
         #  event_consensus
         #  NodeGen.broadcast_tip()
       end
@@ -133,7 +133,7 @@ defmodule FabricGen do
                   {entry, mut_hash, score} = List.first(best_entry_for_height(next_height - 1))
                   entry.hash
                 catch
-                  _,_ -> Consensus.chain_tip()
+                  _,_ -> DB.Chain.tip()
                 end
                 true = Consensus.chain_rewind(hash)
                 proc_consensus()
@@ -161,20 +161,20 @@ defmodule FabricGen do
     softfork_hash = :persistent_term.get(SoftforkHash, [])
     softfork_deny_hash = :persistent_term.get(SoftforkDenyHash, [])
 
-    cur_entry = Consensus.chain_tip_entry()
+    cur_entry = DB.Chain.tip_entry()
     cur_slot = cur_entry.header_unpacked.slot
     height = cur_entry.header_unpacked.height
     next_height = height + 1
     next_entries = next_height
-    |> Fabric.entries_by_height()
+    |> DB.Chain.entries_by_height()
     |> Enum.filter(fn(next_entry)->
       #in slot
       next_slot = next_entry.header_unpacked.slot
-      trainer_for_slot = Consensus.trainer_for_slot(Entry.height(next_entry), next_slot)
+      trainer_for_slot = DB.Chain.validator_for_height(Entry.height(next_entry))
       in_slot = cond do
         next_entry.header_unpacked.signer == trainer_for_slot -> true
         !!next_entry[:mask] ->
-            trainers = Consensus.trainers_for_height(Entry.height(next_entry))
+            trainers = DB.Chain.validators_for_height(Entry.height(next_entry))
             score = BLS12AggSig.score(trainers, next_entry.mask)
             score >= 0.67
 
@@ -211,6 +211,7 @@ defmodule FabricGen do
 
         FabricEventGen.event_applied(entry, m_hash, m, l)
 
+        # %{entry_hash: hash, mutations_hash: m_hash} = Fabric.my_attestation_by_entryhash(Consensus.chain_tip())
         Enum.each(vseeds, fn(seed)->
           attestation = Attestation.sign(seed.seed, hash, m_hash)
           send(FabricCoordinatorGen, {:add_attestation, attestation})
@@ -232,16 +233,16 @@ defmodule FabricGen do
   end
 
   def proc_if_my_slot() do
-    entry = Consensus.chain_tip_entry()
+    entry = DB.Chain.tip_entry()
     next_slot = entry.header_unpacked.slot + 1
     next_height = entry.header_unpacked.height + 1
-    slot_trainer = Consensus.trainer_for_slot(next_height, next_slot)
+    slot_trainer = DB.Chain.validator_for_height(next_height)
 
     #prevent double-entries due to severe system lag (you shouldnt be validator in the first place)
     lastSlot = :persistent_term.get(:last_made_entry_slot, nil)
 
-    rooted_tip = Fabric.rooted_tip()
-    emptyHeight = Fabric.entries_by_height(next_height)
+    rooted_tip = DB.Chain.rooted_tip()
+    emptyHeight = DB.Chain.entries_by_height(next_height)
     |> Enum.filter(& &1.header_unpacked.prev_hash == rooted_tip)
     emptyHeight = emptyHeight == []
 
@@ -258,7 +259,7 @@ defmodule FabricGen do
 
         if :persistent_term.get(:snapshot_before_my_slot, nil) do
           :persistent_term.erase(:snapshot_before_my_slot)
-          IO.inspect "taking snapshot #{Fabric.rooted_tip_height()}"
+          IO.inspect "taking snapshot #{DB.Chain.rooted_height()}"
           FabricSnapshot.snapshot_tmp()
         end
 

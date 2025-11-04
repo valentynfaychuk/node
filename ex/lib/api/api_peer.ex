@@ -1,9 +1,9 @@
 defmodule API.Peer do
     def trainers(height \\ nil) do
-        height = height || Consensus.chain_height()+1
-        trainerForSlot = Consensus.trainer_for_slot(height, height)
+        height = height || DB.Chain.height()+1
+        trainerForSlot = DB.Chain.validator_for_height(height)
 
-        Consensus.trainers_for_height(height)
+        DB.Chain.validators_for_height(height)
         |> Enum.map(fn(pk)->
             p = NodeANR.get_peer_hotdata(pk)
             inSlot = trainerForSlot == pk
@@ -90,9 +90,9 @@ defmodule API.Peer do
     end
 
     def removed_trainers(epoch \\ nil) do
-        epoch = if !epoch do Consensus.chain_epoch() else epoch end
-        trainers_for_epoch = Consensus.trainers_for_height(epoch*100_000)
-        trainers = Consensus.trainers_for_height(Consensus.chain_height()+1)
+        epoch = if !epoch do DB.Chain.epoch() else epoch end
+        trainers_for_epoch = DB.Chain.validators_for_height(epoch*100_000)
+        trainers = DB.Chain.validators_for_height(DB.Chain.height()+1)
         (trainers_for_epoch -- trainers)
         |> Enum.map(& Base58.encode(&1))
     end

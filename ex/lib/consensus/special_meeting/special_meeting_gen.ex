@@ -3,7 +3,7 @@ defmodule SpecialMeetingGen do
 
   def try_slash_trainer_entry_next() do
     if SpecialMeetingAttestGen.isNextSlotStalled() do
-      mpk = Consensus.trainer_for_slot_next()
+      mpk = DB.Chain.validator_for_height_next()
       send(SpecialMeetingGen, {:try_slash_trainer_entry, mpk})
     end
   end
@@ -62,7 +62,7 @@ defmodule SpecialMeetingGen do
   def handle_info({:add_slash_trainer_tx_reply, pk, signature}, state = %{slash_trainer: _}) do
     st = state.slash_trainer
 
-    trainers = Consensus.trainers_for_height(st.height + 1)
+    trainers = DB.Chain.validators_for_height(st.height + 1)
     if pk in trainers do
       ma = BLS12AggSig.add(%{mask: st.mask, aggsig: st.aggsig}, trainers, pk, signature)
       state = put_in(state, [:slash_trainer, :mask], ma.mask)
@@ -81,7 +81,7 @@ defmodule SpecialMeetingGen do
     entry = state.slash_trainer.entry
     true = entry.hash == entry_hash
 
-    trainers = Consensus.trainers_for_height(entry.header_unpacked.height + 1)
+    trainers = DB.Chain.validators_for_height(entry.header_unpacked.height + 1)
     if pk in trainers do
       ma = BLS12AggSig.add(%{mask: entry.mask, aggsig: entry.signature}, trainers, pk, signature)
       state = put_in(state, [:slash_trainer, :entry, :mask], ma.mask)
@@ -98,8 +98,8 @@ defmodule SpecialMeetingGen do
 
   def tick(state) do
     my_pk = Application.fetch_env!(:ama, :trainer_pk)
-    height = Consensus.chain_height()
-    trainers = Consensus.trainers_for_height(height + 1)
+    height = DB.Chain.height()
+    trainers = DB.Chain.validators_for_height(height + 1)
 
     #IO.inspect state[:slash_trainer]
 
@@ -113,13 +113,22 @@ defmodule SpecialMeetingGen do
         IO.inspect tx_packed
         TXPool.insert_and_broadcast(tx_packed, %{peers: 0})
         Map.delete(state, :slash_trainer)
+
       state.slash_trainer.type == :entry and state.slash_trainer.state == :gather_tx_sigs and state.slash_trainer[:score_tx] >= 0.67 ->
         entry = build_slash_entry(state.slash_trainer)
         state = put_in(state, [:slash_trainer, :entry], entry)
         put_in(state, [:slash_trainer, :state], :gather_entry_sigs)
+
       state.slash_trainer.state == :gather_tx_sigs ->
         business = %{op: "slash_trainer_tx", epoch: state.slash_trainer.epoch, malicious_pk: state.slash_trainer.malicious_pk}
         NodeGen.broadcast(NodeProto.special_business(business), %{peers: 0, self: true})
+
+        Enum.each(Application.fetch_env!(:ama, :keys), fn(%{pk: pk, seed: seed})->
+          msg = <<"slash_trainer", state.slash_trainer.epoch::32-little, state.slash_trainer.malicious_pk::binary>>
+          signature = BlsEx.sign!(seed, msg, BLS12AggSig.dst_motion())
+          send(SpecialMeetingGen, {:add_slash_trainer_tx_reply, pk, signature})
+        end)
+
         put_in(state, [:slash_trainer, :attempts], state.slash_trainer.attempts + 1)
 
       state.slash_trainer.type == :entry and state.slash_trainer[:score_entry] >= 0.67 ->
@@ -127,9 +136,17 @@ defmodule SpecialMeetingGen do
         IO.inspect state.slash_trainer.entry, limit: 1111111111, printable_limit: 1111111111
         Fabric.insert_entry(state.slash_trainer.entry, :os.system_time(1000))
         Map.delete(state, :slash_trainer)
+
       state.slash_trainer.state == :gather_entry_sigs ->
         business = %{op: "slash_trainer_entry", entry_packed: Entry.pack(state.slash_trainer.entry)}
         NodeGen.broadcast(NodeProto.special_business(business), %{peers: 0, self: true})
+
+        Enum.each(Application.fetch_env!(:ama, :keys), fn(%{pk: pk, seed: seed})->
+          h = :erlang.term_to_binary(state.slash_trainer.entry.header_unpacked, [:deterministic])
+          signature = BlsEx.sign!(seed, Blake3.hash(h), BLS12AggSig.dst_entry())
+          send(SpecialMeetingGen, {:add_slash_trainer_entry_reply, state.slash_trainer.entry.hash, pk, signature})
+        end)
+
         put_in(state, [:slash_trainer, :attempts], state.slash_trainer.attempts + 1)
 
       true ->
@@ -139,9 +156,10 @@ defmodule SpecialMeetingGen do
   end
 
   def build_slash_tx_business(mpk) do
-    height = Consensus.chain_height()
-    epoch = Consensus.chain_epoch()
-    trainers = Consensus.trainers_for_height(height+1)
+    height = DB.Chain.height()
+    epoch = DB.Chain.epoch()
+    trainers = DB.Chain.validators_for_height(height+1)
+
     my_pk = Application.fetch_env!(:ama, :trainer_pk)
 
     signature = SpecialMeetingAttestGen.maybe_attest("slash_trainer_tx", epoch, mpk)
@@ -164,7 +182,7 @@ defmodule SpecialMeetingGen do
     packed_tx = build_slash_tx(st)
 
     true = FabricSyncAttestGen.isQuorumSynced()
-    cur_entry = Fabric.rooted_tip_entry()
+    cur_entry = DB.Chain.rooted_tip_entry()
     cur_height = cur_entry.header_unpacked.height
     cur_slot = cur_entry.header_unpacked.slot
 
@@ -173,7 +191,7 @@ defmodule SpecialMeetingGen do
     next_entry = Map.put(next_entry, :txs, txs)
     next_entry = Entry.sign(sk, next_entry)
 
-    trainers = Consensus.trainers_for_height(next_entry.header_unpacked.height + 1)
+    trainers = DB.Chain.validators_for_height(next_entry.header_unpacked.height + 1)
     mask = <<0::size(length(trainers))>>
     mask = Util.set_bit(mask, Util.index_of(trainers, my_pk))
     Map.put(next_entry, :mask, mask)
@@ -181,14 +199,14 @@ defmodule SpecialMeetingGen do
 
   def my_tickslice() do
     pk = Application.fetch_env!(:ama, :trainer_pk)
-    entry = Consensus.chain_tip_entry()
+    entry = DB.Chain.tip_entry()
 
     my_height = entry.header_unpacked.height
     slot = entry.header_unpacked.slot
     next_slot = slot + 1
     next_height = my_height + 1
 
-    trainers = Consensus.trainers_for_height(next_height + 1)
+    trainers = DB.Chain.validators_for_height(next_height + 1)
     #TODO: make this 3 or 6 later
     ts_s = :os.system_time(1)
     sync_round_offset = rem(div(ts_s, 60), length(trainers))

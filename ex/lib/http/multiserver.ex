@@ -190,14 +190,23 @@ defmodule Ama.MultiServer do
                 balances = API.Wallet.balance_all(pk)
                 quick_reply(state, %{error: :ok, balances: balances})
 
-            r.method == "POST" and String.starts_with?(r.path, "/api/tx/submit") ->
+            r.method == "POST" and r.path == "/api/tx/submit" ->
                 {r, tx_packed} = Photon.HTTP.read_body_all(state.socket, r)
                 tx_packed = if Base58.likely(tx_packed) do Base58.decode(tx_packed |> String.trim()) else tx_packed end
                 result = API.TX.submit(tx_packed)
                 quick_reply(state, result)
+            r.method == "POST" and r.path == "/api/tx/submit_and_wait" ->
+                {r, tx_packed} = Photon.HTTP.read_body_all(state.socket, r)
+                tx_packed = if Base58.likely(tx_packed) do Base58.decode(tx_packed |> String.trim()) else tx_packed end
+                result = API.TX.submit_and_wait(tx_packed)
+                quick_reply(state, result)
             r.method == "GET" and String.starts_with?(r.path, "/api/tx/submit/") ->
                 tx_packed = String.replace(r.path, "/api/tx/submit/", "")
                 result = API.TX.submit(Base58.decode(tx_packed))
+                quick_reply(state, result)
+            r.method == "GET" and String.starts_with?(r.path, "/api/tx/submit_and_wait/") ->
+                tx_packed = String.replace(r.path, "/api/tx/submit_and_wait/", "")
+                result = API.TX.submit_and_wait(Base58.decode(tx_packed))
                 quick_reply(state, result)
 
             #r.method == "GET" ->

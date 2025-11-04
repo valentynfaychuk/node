@@ -10,6 +10,25 @@ defmodule TX do
      hash: <<>>,
      signature: <<>>
    }
+   tx = TX.build(Application.fetch_env!(:ama, :trainer_sk), "Coin", "transfer", [])
+   {tx1,_} = VanillaSer.decode(tx)
+   tx2 = RDB.vecpak_decode(tx)
+   VanillaSer.decode(tx1["tx_encoded"])
+   VanillaSer.decode(tx2.tx_encoded)
+   RDB.vecpak_decode(tx1["tx_encoded"])
+   RDB.vecpak_decode(tx2.tx_encoded)
+
+   VanillaSer.encode(VanillaSer.decode(tx1["tx_encoded"]) |> elem(0)) |> RDB.vecpak_decode()
+   RDB.vecpak_encode(tx2.tx_encoded) |> RDB.vecpak_decode()
+
+   <<5, 1, 2, 111, 112>>
+   <<5, 1, 4, 97, 114, 103, 115>>
+   <<5, 1, 8, 99, 111, 110, 116, 114, 97, 99, 116>>
+   <<5, 1, 8, 102, 117, 110, 99, 116, 105, 111, 110>>
+   <<5, 1, 5, 110, 111, 110, 99, 101>>
+   <<5, 1, 6, 115, 105, 103, 110, 101, 114>>
+   <<5, 1, 7, 97, 99, 116, 105, 111, 110, 115>>
+
    """
 
    def normalize_atoms(txu) do
@@ -66,7 +85,7 @@ defmodule TX do
       if !is_binary(action[:function]), do: throw %{error: :function_must_be_binary}
       if !is_list(action[:args]), do: throw %{error: :args_must_be_list}
 
-      epoch = Consensus.chain_epoch()
+      epoch = DB.Chain.epoch()
       Enum.each(action.args, fn(arg)->
             if !is_binary(arg), do: throw(%{error: :arg_must_be_binary})
       end)
@@ -126,10 +145,10 @@ defmodule TX do
    def chain_valid(tx_packed) when is_binary(tx_packed) do chain_valid(TX.unpack(tx_packed)) end
    def chain_valid(txu) do
       #TODO: once more than 1 tx allowed per entry fix this
-      chainNonce = Consensus.chain_nonce(txu.tx.signer)
-      chainEpoch = Consensus.chain_epoch()
+      chainNonce = DB.Chain.nonce(txu.tx.signer)
+      chainEpoch = DB.Chain.epoch()
       nonceValid = !chainNonce or txu.tx.nonce > chainNonce
-      hasBalance = BIC.Base.exec_cost(chainEpoch, txu) <= Consensus.chain_balance(txu.tx.signer)
+      hasBalance = BIC.Base.exec_cost(chainEpoch, txu) <= DB.Chain.balance(txu.tx.signer)
 
       hasSol = Enum.find_value(txu.tx.actions, fn(a)-> a.function == "submit_sol" and hd(a.args) end)
       epochSolValid = if !hasSol do true else
@@ -155,8 +174,6 @@ defmodule TX do
       f = action.function
       a = action.args
       case {c,f,a} do
-         {"Coin", "transfer", [receiver, _amount]} -> valid_pk(receiver) && [receiver]
-         {"Coin", "transfer", ["AMA", receiver, _amount]} -> valid_pk(receiver) && [receiver]
          {"Coin", "transfer", [receiver, _amount, _symbol]} -> valid_pk(receiver) && [receiver]
          {"Epoch", "slash_trainer", [_epoch, malicious_pk, _signature, _mask_size, _mask]} -> valid_pk(malicious_pk) && [malicious_pk]
          _ -> nil

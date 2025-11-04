@@ -32,11 +32,25 @@ defmodule VanillaSer do
             is_map(term) ->
                 acc = <<acc::binary, 7>>
                 acc = encode_varint(:erlang.map_size(term), acc)
+
                 Enum.sort_by(term, & elem(&1,0))
                 |> Enum.reduce(acc, fn({k, v}, acc)->
                     acc = encode(k, acc)
                     encode(v, acc)
                 end)
+            #ENABLE LATER
+            #is_map(term) ->
+            #    acc = <<acc::binary, 7>>
+            #    acc = encode_varint(:erlang.map_size(term), acc)
+            #
+            #    Enum.map(term, fn {k, v} ->
+            #      {encode(k, <<>>), encode(v, <<>>)}
+            #    end)
+            #    |> Enum.sort_by(& elem(&1,0))
+            #    |> Enum.reduce(acc, fn({k, v}, acc)->
+            #    acc = acc <> k
+            #    acc <> v
+            #    end)
         end
     end
     def encode_varint(0, acc) do acc <> <<0>> end

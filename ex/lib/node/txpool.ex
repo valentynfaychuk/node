@@ -2,8 +2,6 @@ defmodule TXPool do
     def init() do
         :ets.new(TXPool, [:ordered_set, :named_table, :public,
             {:write_concurrency, true}, {:read_concurrency, true}, {:decentralized_counters, false}])
-        :ets.new(GiftedSolCache, [:ordered_set, :named_table, :public,
-            {:write_concurrency, true}, {:read_concurrency, true}, {:decentralized_counters, false}])
     end
 
     def insert(tx_packed) when is_binary(tx_packed) do insert([tx_packed]) end
@@ -31,7 +29,7 @@ defmodule TXPool do
     end
 
     def purge_stale() do
-        cur_epoch = Consensus.chain_epoch()
+        cur_epoch = DB.Chain.epoch()
         :ets.tab2list(TXPool)
         |> Enum.each(fn {key, txu} ->
             if is_stale(txu, cur_epoch) do
@@ -41,18 +39,18 @@ defmodule TXPool do
     end
 
     def validate_tx(txu, args \\ %{}) do
-      chain_epoch = Map.get_lazy(args, :epoch, fn()-> Consensus.chain_epoch() end)
-      chain_segment_vr_hash = Map.get_lazy(args, :segment_vr_hash, fn()-> Consensus.chain_segment_vr_hash() end)
-      chain_diff_bits = Map.get_lazy(args, :diff_bits, fn()-> Consensus.chain_diff_bits() end)
+      chain_epoch = Map.get_lazy(args, :epoch, fn()-> DB.Chain.epoch() end)
+      chain_segment_vr_hash = Map.get_lazy(args, :segment_vr_hash, fn()-> DB.Chain.segment_vr_hash() end)
+      chain_diff_bits = Map.get_lazy(args, :diff_bits, fn()-> DB.Chain.diff_bits() end)
       batch_state = Map.get_lazy(args, :batch_state, fn()-> %{} end)
 
       try do
-        chainNonce = Map.get_lazy(batch_state, {:chain_nonce, txu.tx.signer}, fn()-> Consensus.chain_nonce(txu.tx.signer) end)
+        chainNonce = Map.get_lazy(batch_state, {:chain_nonce, txu.tx.signer}, fn()-> DB.Chain.nonce(txu.tx.signer) end)
         nonceValid = !chainNonce or txu.tx.nonce > chainNonce
         if !nonceValid, do: throw(%{error: :invalid_tx_nonce, key: {txu.tx.nonce, txu.hash}})
         batch_state = Map.put(batch_state, {:chain_nonce, txu.tx.signer}, txu.tx.nonce)
 
-        balance = Map.get_lazy(batch_state, {:balance, txu.tx.signer}, fn()-> Consensus.chain_balance(txu.tx.signer) end)
+        balance = Map.get_lazy(batch_state, {:balance, txu.tx.signer}, fn()-> DB.Chain.balance(txu.tx.signer) end)
         balance = balance - BIC.Base.exec_cost(chain_epoch, txu)
         balance = balance - BIC.Coin.to_cents(1)
         if balance < 0, do: throw(%{error: :not_enough_tx_exec_balance, key: {txu.tx.nonce, txu.hash}})
@@ -76,9 +74,9 @@ defmodule TXPool do
 
     def validate_tx_batch(tx_packed) when is_binary(tx_packed) do validate_tx_batch([tx_packed]) end
     def validate_tx_batch(txs_packed) when is_list(txs_packed) do
-      chain_epoch = Consensus.chain_epoch()
-      segment_vr_hash = Consensus.chain_segment_vr_hash()
-      diff_bits = Consensus.chain_diff_bits()
+      chain_epoch = DB.Chain.epoch()
+      segment_vr_hash = DB.Chain.segment_vr_hash()
+      diff_bits = DB.Chain.diff_bits()
 
       {good, _} = Enum.reduce(txs_packed, {[], %{}}, fn(tx_packed, {acc, batch_state})->
         case TX.validate(tx_packed) do
@@ -96,8 +94,8 @@ defmodule TXPool do
 
     def grab_next_valid(amt \\ 1) do
         try do
-            chain_epoch = Consensus.chain_epoch()
-            segment_vr_hash = Consensus.chain_segment_vr_hash()
+            chain_epoch = DB.Chain.epoch()
+            segment_vr_hash = DB.Chain.segment_vr_hash()
             {acc, state} = :ets.foldl(fn({key, txu}, {acc, state_old})->
                 try do
                   case validate_tx(txu, %{epoch: chain_epoch, segment_vr_hash: segment_vr_hash, batch_state: state_old}) do
@@ -123,7 +121,7 @@ defmodule TXPool do
     end
 
     def is_stale(txu, cur_epoch) do
-        chainNonce = Consensus.chain_nonce(txu.tx.signer)
+        chainNonce = DB.Chain.nonce(txu.tx.signer)
         nonceValid = !chainNonce or txu.tx.nonce > chainNonce
 
         hasSol = Enum.find_value(txu.tx.actions, fn(a)-> a.function == "submit_sol" and hd(a.args) end)

@@ -211,7 +211,7 @@ pub fn decode_term<'a>(env: Env<'a>, buf: &[u8], i: &mut usize) -> Result<Term<'
         }
         5 => {
             let len = decode_varint_gt_zero(buf, i)?;
-            let bytes = read_exact(buf, i, len as usize)?.to_vec();
+            let bytes = read_exact(buf, i, len as usize)?;
             let mut ob = OwnedBinary::new(len).ok_or(Error::Atom("alloc_failed"))?;
             ob.as_mut_slice().copy_from_slice(&bytes);
             let bin = ob.release(env);

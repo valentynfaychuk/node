@@ -12,10 +12,12 @@ defmodule NodeGenReassemblyGen do
   end
 
   def clear_stale(state) do
-    threshold = :os.system_time(:nanosecond) - 8_000_000_000
+    ts_nano = :os.system_time(:nanosecond)
+    threshold_min = ts_nano - 8_000_000_000
+    threshold_max = ts_nano + 300_000_000_000
     reorg = state.reorg
     |> Map.filter(fn {{_pk, ts_nano, _shard_total}, _value} ->
-        ts_nano > threshold
+        ts_nano > threshold_min and ts_nano < threshold_max
     end)
     put_in(state, [:reorg], reorg)
   end

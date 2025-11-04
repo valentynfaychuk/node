@@ -25,7 +25,7 @@ defmodule UPOW do
 
             pk = Application.fetch_env!(:ama, :trainer_pk)
             pop = Application.fetch_env!(:ama, :trainer_pop)
-            epoch = Consensus.DB.chain_epoch()
+            epoch = DB.Chain.epoch()
 
             {hash, sol} = branch_sol(epoch, <<>>, pk, pop, pk)
             if hash < best do

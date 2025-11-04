@@ -19,13 +19,13 @@ defmodule Offline do
   def call(sk, pk, function, args, attach_symbol \\ nil, attach_amount \\ nil) do
     packed_tx = TX.build(sk, pk, function, args, nil, attach_symbol, attach_amount)
     TXPool.insert(packed_tx)
-    entry = Consensus.produce_entry(Consensus.chain_height()+1)
+    entry = Consensus.produce_entry(DB.Chain.height()+1)
     Fabric.insert_entry(entry, :os.system_time(1000))
     Consensus.apply_entry(entry)
   end
 
   def produce_entry(clean_txpool \\ true) do
-    entry = Consensus.produce_entry(Consensus.chain_height()+1)
+    entry = Consensus.produce_entry(DB.Chain.height()+1)
     Fabric.insert_entry(entry, :os.system_time(1000))
     result = Consensus.apply_entry(entry)
     clean_txpool && TXPool.purge_stale()

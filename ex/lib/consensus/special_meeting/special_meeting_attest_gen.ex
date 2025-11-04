@@ -2,7 +2,7 @@ defmodule SpecialMeetingAttestGen do
   use GenServer
 
   def getSlow() do
-    cur_epoch = Consensus.chain_epoch()
+    cur_epoch = DB.Chain.epoch()
     slow = :persistent_term.get({SpecialMeeting, :slow}, nil)
     if !!slow and slow.epoch == cur_epoch do
       slow
@@ -32,7 +32,7 @@ defmodule SpecialMeetingAttestGen do
   end
 
   def init(state) do
-    state = Map.put(state, :slow, %{epoch: Consensus.chain_epoch(), last_height: Consensus.chain_height(), running: %{}})
+    state = Map.put(state, :slow, %{epoch: DB.Chain.epoch(), last_height: DB.Chain.height(), running: %{}})
     :erlang.send_after(3000, self(), :tick_slow)
     :erlang.send_after(3000, self(), :tick_stalled)
     :erlang.send_after(3000, self(), :tick_offline)
@@ -41,7 +41,7 @@ defmodule SpecialMeetingAttestGen do
 
   def handle_info(:tick_slow, state) do
     state = tick_slow(state)
-    milliseconds = trunc((length(Consensus.trainers_for_height(Consensus.chain_height()+1)) / 2) * 1000)
+    milliseconds = trunc((length(DB.Chain.validators_for_height(DB.Chain.height()+1)) / 2) * 1000)
     :erlang.send_after(milliseconds, self(), :tick_slow)
     {:noreply, state}
   end
@@ -59,16 +59,16 @@ defmodule SpecialMeetingAttestGen do
   end
 
   def tick_slow(state) do
-    cur_epoch = Consensus.chain_epoch()
+    cur_epoch = DB.Chain.epoch()
     if cur_epoch != state.slow.epoch do
-      Map.put(state, :slow, %{epoch: cur_epoch, last_height: Consensus.chain_height(), running: %{}})
+      Map.put(state, :slow, %{epoch: cur_epoch, last_height: DB.Chain.height(), running: %{}})
     else
       tick_slow_1(state)
     end
   end
   def tick_slow_1(state) do
-    cur_epoch = Consensus.chain_epoch()
-    cur_height = Consensus.chain_height()
+    cur_epoch = DB.Chain.epoch()
+    cur_height = DB.Chain.height()
 
     last_entries_cnt = cur_height - state.slow.last_height
     if last_entries_cnt <= 0 do state else
@@ -78,9 +78,9 @@ defmodule SpecialMeetingAttestGen do
       entries = Enum.filter(entries, & div(&1.header_unpacked.height, 100_000) == cur_epoch)
       [hd | entries] = entries
 
-      hd_seentime = Fabric.entry_seentime(hd.hash)
+      hd_seentime = DB.Chain.entry_seentime(hd.hash)
       state = Enum.reduce(entries, {state, hd_seentime}, fn(entry, {state, last_seen})->
-        seentime = Fabric.entry_seentime(entry.hash)
+        seentime = DB.Chain.entry_seentime(entry.hash)
         delta = seentime - last_seen
 
         timings = get_in(state, [:slow, :running, entry.header_unpacked.signer]) || []
@@ -98,13 +98,13 @@ defmodule SpecialMeetingAttestGen do
   def tick_stalled(state) do
     isSynced = FabricSyncAttestGen.isQuorumSyncedOffBy1()
 
-    entry = Consensus.chain_tip_entry()
+    entry = DB.Chain.tip_entry()
     next_slot = entry.header_unpacked.slot + 1
     next_height = entry.header_unpacked.height + 1
-    next_slot_trainer = Consensus.trainer_for_slot(next_height, next_slot)
+    next_slot_trainer = DB.Chain.validator_for_height(next_height)
 
     ts_m = :os.system_time(1000)
-    seen_time = Fabric.entry_seentime(entry.hash)
+    seen_time = DB.Chain.entry_seentime(entry.hash)
     delta = ts_m - seen_time
 
     nextSlotStalled = :persistent_term.get({SpecialMeeting, :nextSlotStalled}, nil)
@@ -141,7 +141,7 @@ defmodule SpecialMeetingAttestGen do
     my_pk = Application.fetch_env!(:ama, :trainer_pk)
     isSynced = FabricSyncAttestGen.isQuorumSyncedOffBy1()
 
-    trainers = Consensus.trainers_for_height(Consensus.chain_height()+1)
+    trainers = DB.Chain.validators_for_height(DB.Chain.height()+1)
     {vals, _} = NodeANR.handshaked_and_online()
     onlineTrainers = Enum.map(vals, & &1.pk)
     onlineTrainers = if my_pk in onlineTrainers do onlineTrainers else onlineTrainers ++ [my_pk] end
@@ -168,7 +168,7 @@ defmodule SpecialMeetingAttestGen do
   end
 
   def has_double_entry(malicious_pk) do
-    hasDouble = Fabric.entries_by_height(Consensus.chain_height())
+    hasDouble = DB.Chain.entries_by_height(DB.Chain.height())
     |> Enum.frequencies_by(& &1.header_unpacked.signer)
     |> Enum.filter(fn {signer, _count} -> signer == malicious_pk end)
     |> Enum.any?(fn {_signer, count} -> count > 1 end)
@@ -178,7 +178,7 @@ defmodule SpecialMeetingAttestGen do
     slotStallTrainer = isNextSlotStalled()
     cond do
         byte_size(malicious_pk) != 48 -> nil
-        Consensus.chain_epoch() != epoch -> nil
+        DB.Chain.epoch() != epoch -> nil
 
         #TODO: check for Slowloris
         #avg_seentimes_last_10_slots(malicious_pk) > 1second -> true
@@ -203,7 +203,7 @@ defmodule SpecialMeetingAttestGen do
 
   def maybe_attest("slash_trainer_entry", entry_packed) do
     slotStallTrainer = isNextSlotStalled()
-    cur_entry = Fabric.rooted_tip_entry()
+    cur_entry = DB.Chain.rooted_tip_entry()
     %{error: :ok, entry: entry} = Entry.unpack_and_validate(entry_packed)
 
     1 = length(entry.txs)
@@ -215,10 +215,10 @@ defmodule SpecialMeetingAttestGen do
 
     <<mask::size(mask_size)-bitstring, _::bitstring>> = mask
 
-    trainers = Consensus.trainers_for_height(entry.header_unpacked.height)
+    trainers = DB.Chain.validators_for_height(entry.header_unpacked.height)
 
     cond do
-        Consensus.chain_epoch() != epoch -> nil
+        DB.Chain.epoch() != epoch -> nil
         Entry.validate_next(cur_entry, entry) != %{error: :ok} -> nil
         BIC.Epoch.slash_trainer_verify(epoch, malicious_pk, trainers, mask, signature) != nil -> nil
 

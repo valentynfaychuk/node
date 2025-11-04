@@ -19,7 +19,7 @@ defmodule FabricCleaner do
   def check_and_clean_finality() do
     %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
     finality_clean_next_epoch = RocksDB.get("finality_clean_next_epoch", %{db: db, cf: cf.sysconf, term: true}) || 0
-    epoch = Consensus.chain_epoch()
+    epoch = DB.Chain.epoch()
     if finality_clean_next_epoch < (epoch-1) do
       clean_finality(finality_clean_next_epoch)
     end
@@ -47,7 +47,7 @@ defmodule FabricCleaner do
       if rem(height, 1000) == 0 do
         IO.inspect {:clean_muts_rev, height}
       end
-      entries = Fabric.entries_by_height(height)
+      entries = DB.Chain.entries_by_height(height)
       Enum.each(entries, fn %{hash: hash} ->
         RocksDB.delete(hash, %{rtx: rtx, cf: cf.muts_rev})
       end)

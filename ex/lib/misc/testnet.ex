@@ -10,7 +10,7 @@ defmodule Testnet do
   end
 
   def slash_trainer() do
-    trainers = Consensus.trainers_for_height(Consensus.chain_height()+1)
+    trainers = DB.Chain.validators_for_height(DB.Chain.height()+1)
     signer_pk = List.first(trainers)
     signer_sk = Application.fetch_env!(:ama, :keys_by_pk)[signer_pk].seed
     malicious_pk = List.last(trainers)

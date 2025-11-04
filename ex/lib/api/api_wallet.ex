@@ -7,7 +7,7 @@ defmodule API.Wallet do
     #def balance(pk, symbol \\ "AMA") do
     def balance(pk, symbol \\ "AMA") do
         pk = if byte_size(pk) != 48, do: Base58.decode(pk), else: pk
-        coins = Consensus.chain_balance(pk, symbol)
+        coins = DB.Chain.balance(pk, symbol)
         %{symbol: symbol, flat: coins, float: BIC.Coin.from_flat(coins)}
     end
 

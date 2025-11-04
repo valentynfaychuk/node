@@ -56,8 +56,8 @@ defmodule ComputorGen do
     pk = Application.fetch_env!(:ama, :trainer_pk)
     pop = Application.fetch_env!(:ama, :trainer_pop)
 
-    coins = Consensus.chain_balance(pk)
-    epoch = Consensus.chain_epoch()
+    coins = DB.Chain.balance(pk)
+    epoch = DB.Chain.epoch()
     hasExecCoins = coins >= BIC.Coin.to_cents(100)
     cond do
         (state.type == :trainer and !hasExecCoins) or state.type == nil ->

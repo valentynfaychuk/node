@@ -35,10 +35,10 @@ defmodule LoggerGen do
   end
 
   def tick(state) do
-    entry_rooted = Fabric.rooted_tip_entry()
+    entry_rooted = DB.Chain.rooted_tip_entry()
     rooted_height = entry_rooted.header_unpacked.height
 
-    entry = Consensus.chain_tip_entry()
+    entry = DB.Chain.tip_entry()
     entry = Entry.unpack(entry)
     height = entry.header_unpacked.height
     slot = entry.header_unpacked.slot
@@ -48,9 +48,9 @@ defmodule LoggerGen do
     peer_cnt = length(vals++peers) + 1
 
     pk = Application.fetch_env!(:ama, :trainer_pk)
-    coins = Consensus.chain_balance(pk)
+    coins = DB.Chain.balance(pk)
 
-    trainers = Consensus.trainers_for_height(Entry.height(entry)+1)
+    trainers = DB.Chain.validators_for_height(Entry.height(entry)+1)
 
     #Moneybag mean the money in my bag
     #Moneybag mean the money in the bag
