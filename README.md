@@ -15,7 +15,8 @@ podman build --tag erlang_builder -f build.Dockerfile
 ```
 #run local testnet with RPC api
 
-TESTNET=true WORKFOLDER=/tmp/testnet HTTP_IPV4=127.0.0.1 HTTP_PORT=8080  ./amadeusd
+sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80
+TESTNET=true WORKFOLDER=/tmp/testnet HTTP_IPV4=127.0.0.1 HTTP_PORT=80  ./amadeusd
 
 # inside REPL submit a transfer to self
 

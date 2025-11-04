@@ -101,7 +101,8 @@ defmodule API.Chain do
 
     def stat_txs_sec() do
       height = DB.Chain.rooted_height()
-      last_100 = Enum.sum_by((height-100)..height, fn(height)->
+      height_start = max(height-100, 0)
+      last_100 = Enum.sum_by(height_start..height, fn(height)->
         length(DB.Chain.entries_by_height(height) |> List.first() |> Map.get(:txs))
       end)
       last_100/50

@@ -186,6 +186,7 @@ defmodule EntryGenesis do
 
         RocksDB.put(entry_signed.hash, Entry.pack(entry_signed), %{rtx: rtx, cf: cf.entry})
         RocksDB.put(entry_signed.hash, :os.system_time(1000), %{rtx: rtx, cf: cf.my_seen_time_for_entry, term: true})
+        RocksDB.put("#{entry_signed.header_unpacked.height}:#{entry_signed.hash}", entry_signed.hash, %{rtx: rtx, cf: cf.entry_by_height})
         RocksDB.put("temporal_tip", entry_signed.hash, %{rtx: rtx, cf: cf.sysconf})
         RocksDB.put("temporal_height", 0, %{rtx: rtx, cf: cf.sysconf, term: true})
         RocksDB.put("rooted_tip", entry_signed.hash, %{rtx: rtx, cf: cf.sysconf})
