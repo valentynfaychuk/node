@@ -94,7 +94,8 @@ defmodule API.Chain do
         total_supply_y30: BIC.Coin.from_flat(BIC.Epoch.circulating_without_burn(500*30)),
         pflops: pflops(),
         burned: API.Contract.total_burned().float,
-        txs_per_sec: stat_txs_sec()
+        txs_per_sec: stat_txs_sec(),
+        diff_bits: API.Epoch.get_diff_bits()
       }
     end
 
