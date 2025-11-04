@@ -142,12 +142,14 @@ defmodule Ama.MultiServer do
                 {_, bytecode} = Photon.HTTP.read_body_all(state.socket, r)
                 result = API.Contract.validate_bytecode(bytecode)
                 quick_reply(state, result)
-            r.method == "GET" and String.starts_with?(r.path, "/api/contract/get") ->
-                key = String.replace(r.path, "/api/contract/get/", "")
-                [contract, key] = :binary.split(key, "/")
-                contract = Base58.decode(contract)
-                result = API.Contract.get("c:"<>contract<>":"<>key)
+            r.method == "POST" and r.path == "/api/contract/get" ->
+                {_, key} = Photon.HTTP.read_body_all(state.socket, r)
+                result = API.Contract.get(key)
                 quick_reply(state, JSX.encode!(result))
+            r.method == "POST" and r.path == "/api/contract/get_prefix" ->
+                {_, key} = Photon.HTTP.read_body_all(state.socket, r)
+                result = API.Contract.get_prefix(key)
+                quick_reply(state, RDB.vecpak_encode(result))
             r.method == "GET" and String.starts_with?(r.path, "/api/contract/richlist") ->
                 result = API.Contract.richlist()
                 quick_reply(state, JSX.encode!(%{error: :ok, richlist: result}))
