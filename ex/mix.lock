@@ -3,7 +3,7 @@
   "blake3": {:git, "https://github.com/vans163/blake3", "396c613f7100700123805df654f63fdd7e908e15", [branch: "finalize_xof"]},
   "blake3_ex": {:git, "https://github.com/vans163/blake3", "94e0ca383c2cbe86d09d52344b8a6ed7912ab675", [branch: "finalize_xof"]},
   "bls_ex": {:git, "https://github.com/amadeus-robot/bls_ex", "6651824947c3dc9b131e2f79341732fa5c052cf1", []},
-  "comsat": {:git, "https://github.com/vans163/ComSat.git", "7178d64dfda9d4669ba9f1e475dbcf6ee93e0ef5", []},
+  "comsat": {:git, "https://github.com/vans163/ComSat.git", "cda8f6370a8044d2f2d549e33b811f23dec9f173", []},
   "elixir_make": {:hex, :elixir_make, "0.9.0", "6484b3cd8c0cee58f09f05ecaf1a140a8c97670671a6a0e7ab4dc326c3109726", [:mix], [], "hexpm", "db23d4fd8b757462ad02f8aa73431a426fe6671c80b200d9710caf3d1dd0ffdb"},
   "ex_stun": {:git, "https://github.com/elixir-webrtc/ex_stun.git", "caf8851c0fcd0962e9009a9e28172172732e447c", []},
   "exjsx": {:hex, :exjsx, "4.0.0", "60548841e0212df401e38e63c0078ec57b33e7ea49b032c796ccad8cde794b5c", [:mix], [{:jsx, "~> 2.8.0", [hex: :jsx, repo: "hexpm", optional: false]}], "hexpm", "32e95820a97cffea67830e91514a2ad53b888850442d6d395f53a1ac60c82e07"},
