@@ -89,11 +89,11 @@ defmodule BLS12AggSig do
         score/maxScore
     end
 
-    def aggregate(signer_list, signer_signature_list) do
+    def aggregate(total_signer_list, signer_signature_list) do
       signer_signature_list = List.wrap(signer_signature_list)
-      aggsig = BLS12AggSig.new_padded(length(signer_signature_list))
+      aggsig = BLS12AggSig.new_padded(length(total_signer_list))
       Enum.reduce(signer_signature_list, aggsig, fn(signer_signature, aggsig)->
-        BLS12AggSig.add_padded(aggsig, signer_list, signer_signature.signer, signer_signature.signature)
+        BLS12AggSig.add_padded(aggsig, total_signer_list, signer_signature.signer, signer_signature.signature)
       end)
       |> Map.put(:mask_set_size, length(signer_signature_list))
     end
