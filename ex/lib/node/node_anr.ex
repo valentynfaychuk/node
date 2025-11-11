@@ -89,7 +89,7 @@ defmodule NodeANR do
       goodDelta = (ts - anr.ts) > -3600 #60 minutes max into future
 
       # Not too big
-      bin = :erlang.term_to_binary(anr, [:deterministic])
+      bin = RDB.vecpak_encode(anr)
       anr = Map.take(anr, @keys)
       if byte_size(bin) <= @max_anr_size and goodDelta and verify_signature(anr) do
         anr
@@ -137,15 +137,15 @@ defmodule NodeANR do
   end
 
   def not_handshaked_pk_ip4() do
-    :ets.select(:"Elixir.NODEANR_index", [{{{:'$1', false, :'$2', :_}, :_}, [], [%{pk: :'$1', ip4: :'$2'}]}])
+    :ets.select(:"Elixir.NODEANR_index", [{{{:"$1", false, :"$2", :_}, :_}, [], [%{pk: :"$1", ip4: :"$2"}]}])
   end
 
   def handshaked_pk_ip4() do
-    :ets.select(:"Elixir.NODEANR_index", [{{{:'$1', true, :'$2', :_}, :_}, [], [{{:'$1', :'$2'}}]}])
+    :ets.select(:"Elixir.NODEANR_index", [{{{:"$1", true, :"$2", :_}, :_}, [], [{{:"$1", :"$2"}}]}])
   end
 
   def handshaked() do
-    :ets.select(:"Elixir.NODEANR_index", [{{{:'$1', true, :'$2', :_}, :_}, [], [%{pk: :'$1', ip4: :'$2'}]}])
+    :ets.select(:"Elixir.NODEANR_index", [{{{:"$1", true, :"$2", :_}, :_}, [], [%{pk: :"$1", ip4: :"$2"}]}])
   end
 
   def handshaked(pk) when is_binary(pk) do
@@ -156,16 +156,16 @@ defmodule NodeANR do
   end
 
   def by_pks_ip(pks) when is_list(pks) do
-    match_spec = Enum.map(pks, fn(pk)-> {{{pk, true, :'$1', :_}, :_}, [], [:'$1']} end)
+    match_spec = Enum.map(pks, fn(pk)-> {{{pk, true, :"$1", :_}, :_}, [], [:"$1"]} end)
     :ets.select(:"Elixir.NODEANR_index", match_spec)
   end
 
   def b3_f4() do
-    :ets.select(:"Elixir.NODEANR_index", [{{{:_, :_, :_, :_}, %{pk_b3_f4: :'$1'}}, [], [:'$1']}])
+    :ets.select(:"Elixir.NODEANR_index", [{{{:_, :_, :_, :_}, %{pk_b3_f4: :"$1"}}, [], [:"$1"]}])
   end
 
   def by_pks_b3_f4(pks) when is_list(pks) do
-    match_spec = Enum.map(pks, fn(pk)-> {{{pk, true, :_, :_}, %{pk_b3_f4: :'$1'}}, [], [:'$1']} end)
+    match_spec = Enum.map(pks, fn(pk)-> {{{pk, true, :_, :_}, %{pk_b3_f4: :"$1"}}, [], [:"$1"]} end)
     :ets.select(:"Elixir.NODEANR_index", match_spec)
   end
 
@@ -185,7 +185,7 @@ defmodule NodeANR do
     {left, rest} = Enum.split_while(validators, &(&1 != cur_validator))
     validators = rest ++ left
 
-    peers = :ets.select(:"Elixir.NODEANR_index", [{{{:'$1', true, :'$2', :_}, :_}, [], [%{pk: :'$1', ip4: :'$2'}]}])
+    peers = :ets.select(:"Elixir.NODEANR_index", [{{{:"$1", true, :"$2", :_}, :_}, [], [%{pk: :"$1", ip4: :"$2"}]}])
     |> Enum.filter(& NodeANR.get_last_message(&1.pk) >= cutoff)
     validator_peers = Enum.filter(peers, & &1.pk in validators)
     {validator_peers, Enum.shuffle(peers -- validator_peers)}
@@ -222,7 +222,7 @@ defmodule NodeANR do
   def clear_verified_offline() do
     ts_m = :os.system_time(1000)
     cutoff = ts_m - 30_000
-    :ets.select(:"Elixir.NODEANR_index", [{{{:'$1', true, :_, :_}, :_}, [], [:'$1']}])
+    :ets.select(:"Elixir.NODEANR_index", [{{{:"$1", true, :_, :_}, :_}, [], [:"$1"]}])
     |> Enum.each(fn(pk)->
       if get_last_message(pk) < cutoff do
         set_handshaked(pk, false)

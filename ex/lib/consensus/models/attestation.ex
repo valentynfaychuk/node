@@ -1,35 +1,24 @@
 defmodule Attestation do
-    @doc """
+    _ = """
     attestation {
         entry_hash: <>,
         mutations_hash: <>,
         signer: <>,
         signature: <entry_hash,mutations_hash>,
     }
-
-    ssz
-    <<
-      entry_hash::32,
-      mutations_hash::32,
-      signature::96,
-      signer::48,
-    >>
     """
-    def unpack(attestation_packed) when is_binary(attestation_packed) do
-        a = :erlang.binary_to_term(attestation_packed, [:safe])
-        unpack(a)
-    end
-    def unpack(attestation_packed) when is_map(attestation_packed) do
-        Map.take(attestation_packed, [:entry_hash, :mutations_hash, :signer, :signature])
-    end
-    def unpack(nil), do: nil
 
+    def pack_for_db(attestation_unpacked) when is_binary(attestation_unpacked) do attestation_unpacked end
+    def pack_for_db(attestation_unpacked) do
+      attestation_unpacked
+      |> Map.take([:entry_hash, :mutations_hash, :signer, :signature])
+      |> RDB.vecpak_encode()
+    end
 
-    def pack(attestation_unpacked) when is_binary(attestation_unpacked) do attestation_unpacked end
-    def pack(attestation_unpacked) do
-        attestation_unpacked
-        |> Map.take([:entry_hash, :mutations_hash, :signer, :signature])
-        |> :erlang.term_to_binary([:deterministic])
+    def pack_for_net(attestation_unpacked) do
+      attestation_unpacked
+      |> Map.take([:entry_hash, :mutations_hash, :signer, :signature])
+      |> :erlang.term_to_binary([:deterministic])
     end
 
     def sign(sk, entry_hash, mutations_hash) do
@@ -43,27 +32,20 @@ defmodule Attestation do
         }
     end
 
-    def unpack_and_validate(attestation_packed) do
+    def unpack_and_validate_from_net(a) do
         try do
-        attestation_size = Application.fetch_env!(:ama, :attestation_size)
-        if byte_size(attestation_packed) >= attestation_size, do: throw(%{error: :too_large})
-        a = :erlang.binary_to_term(attestation_packed, [:safe])
-        |> Map.take([:entry_hash, :mutations_hash, :signer, :signature])
-        if attestation_packed != :erlang.term_to_binary(a, [:deterministic]), do: throw %{error: :not_deterministicly_encoded}
 
-        res = validate(a)
-        cond do
-            res.error != :ok -> throw res
-            true -> %{error: :ok, attestation: a}
-        end
-        catch
-            :throw,r -> r
-            e,r -> IO.inspect {Attestation, :unpack_and_validate, e, r, __STACKTRACE__}; %{error: :unknown}
-        end
-    end
+        a = if is_map(a) do a else
+          attestation_size = Application.fetch_env!(:ama, :attestation_size)
+          if byte_size(a) >= attestation_size, do: throw(%{error: :too_large})
 
-    def validate(a) do
-        try do
+          a_unpacked = :erlang.binary_to_term(a, [:safe])
+          |> Map.take([:entry_hash, :mutations_hash, :signer, :signature])
+          if a != :erlang.term_to_binary(a_unpacked, [:deterministic]), do: throw %{error: :not_deterministicly_encoded}
+
+          a_unpacked
+        end
+
         if !is_binary(a.entry_hash), do: throw(%{error: :entry_hash_not_binary})
         if byte_size(a.entry_hash) != 32, do: throw(%{error: :entry_hash_not_256_bits})
         if !is_binary(a.mutations_hash), do: throw(%{error: :mutations_hash_not_binary})
@@ -74,7 +56,7 @@ defmodule Attestation do
         bin = <<a.entry_hash::binary, a.mutations_hash::binary>>
         if !BlsEx.verify?(a.signer, a.signature, bin, BLS12AggSig.dst_att()), do: throw(%{error: :invalid_signature})
 
-        %{error: :ok}
+        %{error: :ok, attestation: a}
         catch
             :throw,r -> r
             e,r -> IO.inspect {Attestation, :validate, e, r}; %{error: :unknown}
@@ -82,7 +64,7 @@ defmodule Attestation do
     end
 
     def validate_vs_chain(a) do
-        entry = DB.Chain.entry(a.entry_hash)
+        entry = DB.Entry.by_hash(a.entry_hash)
         chain_height = DB.Chain.height()
         if !!entry and entry.header_unpacked.height <= DB.Chain.height() do
             trainers = DB.Chain.validators_for_height(Entry.height(entry))

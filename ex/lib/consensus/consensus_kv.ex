@@ -212,24 +212,6 @@ defmodule ConsensusKV do
         |> Blake3.hash()
     end
 
-    def revert(m_rev) do
-        db = Process.get({RocksDB, :ctx})
-        Enum.reverse(m_rev)
-        |> Enum.each(fn(mut)->
-            case mut.op do
-                :put ->
-                    RocksDB.put(mut.key, mut.value, %{rtx: db.rtx, cf: db.cf.contractstate})
-                :delete ->
-                    RocksDB.delete(mut.key, %{rtx: db.rtx, cf: db.cf.contractstate})
-                :clear_bit ->
-                    old_value = RocksDB.get(mut.key, %{rtx: db.rtx, cf: db.cf.contractstate})
-                    << left::size(mut.value), _old_bit::size(1), right::bitstring >> = old_value
-                    new_value = << left::size(mut.value), 0::size(1), right::bitstring >>
-                    RocksDB.put(mut.key, new_value, %{rtx: db.rtx, cf: db.cf.contractstate})
-            end
-        end)
-    end
-
     def merge_nested(left, right) do
         Map.merge(left, right, &merge_nested_resolve/3)
     end

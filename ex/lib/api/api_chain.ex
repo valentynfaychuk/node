@@ -7,7 +7,7 @@ defmodule API.Chain do
 
     def entry(entry_hash, filter_on_function \\ nil) do
         entry_hash = if byte_size(entry_hash) != 32, do: Base58.decode(entry_hash), else: entry_hash
-        entry = DB.Chain.entry(entry_hash)
+        entry = DB.Entry.by_hash(entry_hash)
         if !entry do
             %{error: :not_found}
         else
@@ -27,13 +27,13 @@ defmodule API.Chain do
     end
 
     def by_height(height) do
-        entries = DB.Chain.entries_by_height(height)
+        entries = DB.Entry.by_height(height)
         |> Enum.map(& format_entry_for_client(&1))
         %{error: :ok, entries: entries}
     end
 
     def by_height_with_txs(height) do
-        entries = DB.Chain.entries_by_height(height)
+        entries = DB.Entry.by_height(height)
         |> Enum.map(fn(entry)->
             txs = API.TX.get_by_entry(entry.hash)
             entry = format_entry_for_client(entry)
@@ -42,26 +42,18 @@ defmodule API.Chain do
         %{error: :ok, entries: entries}
     end
 
-    def consensus_score_by_entryhash(hash, height) do
-        consensuses = Fabric.consensuses_by_entryhash(hash)
-        if !consensuses do
-            {nil, nil}
-        else
-            trainers = DB.Chain.validators_for_height(height)
-            {mut_hash, score, consensus} = Consensus.best_by_weight(trainers, consensuses)
-            {score, mut_hash}
-        end
-    end
-
     def consensuses_by_height(height) do
-        Fabric.consensuses_by_height(height)
+        DB.Attestation.consensuses_by_height(height)
         |> Enum.map(fn(c)->
+            aggsig = %{
+              aggsig: Base58.encode(c.aggsig.aggsig),
+              mask: Base58.encode(c.aggsig.mask),
+              mask_size: c.aggsig.mask_size,
+              mask_set_size: c.aggsig.mask_set_size,
+            }
             c = put_in(c, [:mutations_hash], Base58.encode(c.mutations_hash))
             c = put_in(c, [:entry_hash], Base58.encode(c.entry_hash))
-            c = put_in(c, [:aggsig], Base58.encode(c.aggsig))
-            signers = BLS12AggSig.unmask_trainers(DB.Chain.validators_for_height(height), c.mask)
-            |> Enum.map(& Base58.encode(&1))
-            c = put_in(c, [:signers], signers)
+            c = put_in(c, [:aggsig], aggsig)
             c = put_in(c, [:score], length(c.signers) / bit_size(c.mask))
             Map.drop(c, [:mask])
         end)
@@ -103,7 +95,7 @@ defmodule API.Chain do
       height = DB.Chain.rooted_height()
       height_start = max(height-100, 0)
       last_100 = Enum.sum_by(height_start..height, fn(height)->
-        length(DB.Chain.entries_by_height(height) |> List.first() |> Map.get(:txs))
+        length(DB.Entry.by_height(height) |> List.first() |> Map.get(:txs))
       end)
       last_100/50
     end
@@ -116,20 +108,20 @@ defmodule API.Chain do
         {_, entry} = pop_in(entry, [:header_unpacked, :txs_hash])
         entry = put_in(entry, [:hash], Base58.encode(entry.hash))
         entry = if !entry[:mask] do entry else
-          rem     = rem(bit_size(entry.mask), 8)
-          pad_bits = if rem == 0, do: 0, else: 8 - rem
-          put_in(entry, [:mask], Base58.encode(<<entry.mask::bitstring, 0::size(pad_bits)>>))
+          put_in(entry, [:mask], Base58.encode(entry.mask))
+          put_in(entry, [:mask_size], entry.mask_size)
         end
         entry = put_in(entry, [:header_unpacked, :dr], Base58.encode(entry.header_unpacked.dr))
         entry = put_in(entry, [:header_unpacked, :vr], Base58.encode(entry.header_unpacked.vr))
         entry = put_in(entry, [:header_unpacked, :prev_hash], Base58.encode(entry.header_unpacked.prev_hash))
         entry = put_in(entry, [:header_unpacked, :signer], Base58.encode(entry.header_unpacked.signer))
-        {score, mut_hash} = consensus_score_by_entryhash(hash, entry.header_unpacked.height)
-        if !score do entry else
+        {mut_hash, score} = DB.Attestation.best_consensus_by_entryhash(hash)
+        if !mut_hash do entry else
             entry = put_in(entry, [:consensus], %{})
             entry = put_in(entry, [:consensus, :score], Float.round(score, 3))
             entry = put_in(entry, [:consensus, :finality_reached], Float.round(score, 3) >= 0.67)
             entry = put_in(entry, [:consensus, :mut_hash], Base58.encode(mut_hash))
+            entry
         end
     end
 end

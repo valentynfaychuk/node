@@ -20,6 +20,22 @@ defmodule RocksDB do
         end
     end
 
+    def exists(key, opts) do
+        db = opts[:db]
+        cf = opts[:cf]
+        rtx = opts[:rtx]
+        cond do
+            !!rtx and !!cf -> RDB.transaction_exists_cf(rtx, cf, key)
+            !!rtx -> RDB.transaction_exists(rtx, key)
+            !!db and !!cf -> RDB.exists_cf(cf, key)
+            !!db -> RDB.exists(db, key)
+        end
+        |> case do
+            {:ok, true} -> true
+            {:ok, false} -> false
+        end
+    end
+
     def get_next(prefix, key, opts) do
         {:ok, it} = iterator(opts)
 
@@ -94,7 +110,7 @@ defmodule RocksDB do
       |> case do
           {:ok, nil} -> nil
           {:ok, value} ->
-            << left::size(bit_idx), bit::size(1), _::bitstring >> = value
+            <<_left::size(bit_idx), bit::size(1), _::bitstring >> = value
             bit
       end
     end
@@ -142,6 +158,22 @@ defmodule RocksDB do
         end
     end
 
+    def delete_prefix(prefix, opts) do
+        {:ok, it} = iterator(opts)
+        res = RDB.iterator_move(it, {:seek, prefix})
+        delete_prefix_1(prefix, it, res, opts)
+    end
+    defp delete_prefix_1(prefix, it, res, opts) do
+        case res do
+            {:ok, <<^prefix::binary, key::binary>>, value} ->
+                res = RDB.iterator_move(it, :next)
+                RocksDB.delete(key, opts)
+                delete_prefix_1(prefix, it, res, opts)
+            {:error, :invalid_iterator} -> :ok
+            _ -> :ok
+        end
+    end
+
     defp iterator(opts) do
         db = opts[:db]
         cf = opts[:cf]
@@ -163,8 +195,12 @@ defmodule RocksDB do
       :ok = RDB.transaction_commit(rtx)
     end
 
-    def dump(db_ref, cf) do
-        {:ok, it} = RDB.iterator_cf(db_ref, cf)
+    def transaction_rollback(rtx) do
+      :ok = RDB.transaction_rollback(rtx)
+    end
+
+    def dump(cf) do
+        {:ok, it} = RDB.iterator_cf(cf)
         res = RDB.iterator_move(it, :first)
         dump_1(it, res)
     end
@@ -199,7 +235,7 @@ defmodule RocksDB do
     end
 
     def flush_wal(db) do
-        RDB.flush_wal(db, true)
+        RDB.flush_wal(db)
     end
 
     def compact_all(cfs) do

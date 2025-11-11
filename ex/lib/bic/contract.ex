@@ -3,7 +3,7 @@ defmodule BIC.Contract do
 
     def validate(wasmbytes, env \\ nil) do
         env = if env do Map.put(env, :readonly, true) else
-            env = Consensus.make_mapenv(EntryGenesis.get())
+            env = FabricGen.make_mapenv(EntryGenesis.get())
 
             Map.merge(env, %{
                 readonly: true,

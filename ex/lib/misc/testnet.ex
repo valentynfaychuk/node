@@ -9,19 +9,22 @@ defmodule Testnet do
     RocksDB.get(key, %{db: db, cf: cf.contractstate})
   end
 
-  def slash_trainer() do
-    trainers = DB.Chain.validators_for_height(DB.Chain.height()+1)
-    signer_pk = List.first(trainers)
-    signer_sk = Application.fetch_env!(:ama, :keys_by_pk)[signer_pk].seed
-    malicious_pk = List.last(trainers)
+  def slash_trainer(signer_count \\ 1) do
+    validators = DB.Chain.validators_for_height(DB.Chain.height()+1)
+    malicious_pk = List.last(validators)
+    validators_signing = DB.Chain.validators_for_height_my(DB.Chain.height()+1) |> Enum.take(signer_count)
 
-    msg = <<"slash_trainer", 0::32-little, malicious_pk::binary>>
-    signature = BlsEx.sign!(signer_sk, msg, BLS12AggSig.dst_motion())
+    aggsig = BLS12AggSig.new_padded(length(validators))
+    aggsig = Enum.reduce(validators_signing, aggsig, fn(signer_pk, aggsig)->
+      msg = <<"slash_trainer", 0::32-little, malicious_pk::binary>>
+      seed = Application.fetch_env!(:ama, :keys_by_pk)[signer_pk].seed
+      signature = BlsEx.sign!(seed, msg, BLS12AggSig.dst_motion())
+      BLS12AggSig.add_padded(aggsig, validators, signer_pk, signature)
+    end)
 
-    ma = BLS12AggSig.new(trainers, signer_pk, signature)
+    args = ["0", malicious_pk, aggsig.aggsig, "#{aggsig.mask_size}", aggsig.mask]
 
-    args = ["0", malicious_pk, signature, "#{bit_size(ma.mask)}", Util.pad_bitstring_to_bytes(ma.mask)]
-
+    signer_sk = Application.fetch_env!(:ama, :trainer_sk)
     Testnet.call(signer_sk, "Epoch", "slash_trainer", args)
   end
 end

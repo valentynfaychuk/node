@@ -2,7 +2,7 @@ defmodule NodeGenSocketGen do
   use GenServer
 
   def start_link(ip_tuple, port, idx) do
-    GenServer.start_link(__MODULE__, [ip_tuple, port, idx], name: :'NodeGenSocketGen#{idx}')
+    GenServer.start_link(__MODULE__, [ip_tuple, port, idx], name: :"NodeGenSocketGen#{idx}")
   end
 
   def init([ip_tuple, port, idx]) do

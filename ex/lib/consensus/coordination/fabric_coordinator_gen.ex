@@ -39,7 +39,7 @@ defmodule FabricCoordinatorGen do
 
   def handle_info({:insert_consensus, consensus}, state) do
     calc_syncing(true)
-    Fabric.insert_consensus(consensus)
+    DB.Attestation.set_consensus(consensus)
     calc_syncing(false)
     {:noreply, state}
   end
@@ -47,22 +47,21 @@ defmodule FabricCoordinatorGen do
   def handle_info({:add_attestation, attestation}, state) do
     calc_syncing(true)
 
-    Fabric.aggregate_attestation(attestation)
+    aggregate_attestation(attestation)
 
     #proc cached attestations
     ts_m = :os.system_time(1000)
     cached = :ets.select(AttestationCache, [{{{attestation.entry_hash, :_}, {:"$1", :_}}, [], [:"$1"]}])
     Enum.each(cached, fn(attestation)->
-      Fabric.aggregate_attestation(attestation)
+      aggregate_attestation(attestation)
     end)
     if cached != [] do
-      deleted = :ets.select_delete(AttestationCache, [{{{attestation.entry_hash, :_}, :_}, [], [true]}])
-      #IO.inspect {:os.system_time(1000) - ts_m, length(cached), deleted, attestation.entry_hash |> Base58.encode()}
+      :ets.select_delete(AttestationCache, [{{{attestation.entry_hash, :_}, :_}, [], [true]}])
     end
 
     #clear stales
     case :ets.first_lookup(AttestationCache) do
-      :'$end_of_table' -> nil
+      :"$end_of_table" -> nil
       {key, [{_, {_, ts_m_old}}]} ->
         delta = ts_m - ts_m_old
         if delta >= 10_000 do
@@ -72,5 +71,31 @@ defmodule FabricCoordinatorGen do
 
     calc_syncing(false)
     {:noreply, state}
+  end
+
+  def aggregate_attestation(a) when is_map(a) do
+    %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+    rtx = RocksDB.transaction(db)
+
+    entry_hash = a.entry_hash
+    mutations_hash = a.mutations_hash
+
+    entry = DB.Entry.by_hash(entry_hash, %{rtx: rtx})
+    trainers = if !entry do nil else DB.Chain.validators_for_height(Entry.height(entry), %{rtx: rtx}) end
+    if !!entry and !!trainers and a.signer in trainers do
+      if entry.header_unpacked.height <= DB.Chain.height(%{rtx: rtx}) do
+        consensus = DB.Attestation.consensus(entry_hash, mutations_hash, %{rtx: rtx}) || %{mutations_hash: mutations_hash, entry_hash: entry_hash}
+        aggsig = cond do
+          !consensus[:aggsig] ->
+            aggsig = BLS12AggSig.new_padded(length(trainers))
+            BLS12AggSig.add_padded(aggsig, trainers, a.signer, a.signature)
+          true ->
+            BLS12AggSig.add_padded(consensus.aggsig, trainers, a.signer, a.signature)
+        end
+        consensus = Map.put(consensus, :aggsig, aggsig)
+        DB.Attestation.set_consensus(consensus, %{rtx: rtx})
+      end
+    end
+    RocksDB.transaction_commit(rtx)
   end
 end

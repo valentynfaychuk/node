@@ -1,5 +1,5 @@
 defmodule TX do
-   @doc """
+   _ = """
    %{
      tx: %{
       signer: Base58PK,

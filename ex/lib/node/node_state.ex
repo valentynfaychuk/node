@@ -71,12 +71,12 @@ defmodule NodeState do
   end
 
   def handle(:event_tip, istate, term) do
-    temporal = Entry.unpack(term.temporal)
-    rooted = Entry.unpack(term.rooted)
+    temporal = Entry.unpack_from_net(term.temporal)
+    rooted = Entry.unpack_from_net(term.rooted)
 
-    %{error: err_t, hash: hash_t} = Entry.validate_signature(temporal.header, temporal.signature, temporal.header_unpacked.signer, temporal[:mask])
+    %{error: err_t, hash: hash_t} = Entry.validate_signature(temporal)
     temporal = Map.merge(temporal, %{hash: hash_t, sig_error: err_t})
-    %{error: err_r, hash: hash_r} = Entry.validate_signature(rooted.header, rooted.signature, rooted.header_unpacked.signer, rooted[:mask])
+    %{error: err_r, hash: hash_r} = Entry.validate_signature(rooted)
     rooted = Map.merge(rooted, %{hash: hash_r, sig_error: err_r})
 
     NodeANR.set_tips(istate.peer.pk, rooted, temporal)
@@ -89,16 +89,20 @@ defmodule NodeState do
 
   def handle(:event_entry, istate, term) do
     seen_time = :os.system_time(1000)
-    %{error: :ok, entry: entry} = Entry.unpack_and_validate(term.entry_packed)
+    %{error: :ok, entry: entry} = Entry.unpack_and_validate_from_net(term.entry_packed)
     if Entry.height(entry) >= DB.Chain.rooted_height() do
-      Fabric.insert_entry(entry, seen_time)
+      DB.Entry.insert(entry)
       NodeANR.set_tips(istate.peer.pk, nil, Map.merge(entry, %{sig_error: :ok}))
     end
   end
 
   def handle(:event_attestation, istate, term) do
-    %{error: :ok, attestation: a} = Attestation.unpack_and_validate(term.attestation_packed)
-    send(FabricCoordinatorGen, {:add_attestation, a})
+    res = Attestation.unpack_and_validate_from_net(term.attestation_packed)
+    if res.error == :ok and Attestation.validate_vs_chain(res.attestation) do
+      send(FabricCoordinatorGen, {:add_attestation, res.attestation})
+    else
+      :ets.insert(AttestationCache, {{res.attestation.entry_hash, res.attestation.signer}, {res.attestation, :os.system_time(1000)}})
+    end
   end
 
   def handle(:catchup, istate, term) do
@@ -109,9 +113,9 @@ defmodule NodeState do
       needAttest = opts[:a] || false
       needConsensus = opts[:c] || false
       trie = %{height: height}
-      trie = if !needEntry do trie else Map.put(trie, :entries, DB.Chain.entries_by_height(height) |> Enum.filter(& &1.hash not in hasHashes) |> Enum.map(& Entry.pack(&1))) end
-      trie = if !needAttest do trie else Map.put(trie, :attestations, [Fabric.my_attestation_by_height(height) |> Attestation.pack()]) end
-      trie = if !needConsensus do trie else Map.put(trie, :consensuses, Fabric.consensuses_by_height(height) |> Enum.map(& Consensus.pack(&1))) end
+      trie = if !needEntry do trie else Map.put(trie, :entries, DB.Entry.by_height(height) |> Enum.filter(& &1.hash not in hasHashes) |> Enum.map(& Entry.pack_for_net(&1))) end
+      trie = if !needAttest do trie else Map.put(trie, :attestations, DB.Attestation.by_height_my(height) |> Enum.map(& Attestation.pack_for_net(&1))) end
+      trie = if !needConsensus do trie else Map.put(trie, :consensuses, DB.Attestation.consensuses_by_height(height) |> Enum.map(& Consensus.pack_for_net(&1))) end
       trie
     end)
     send(NodeGen.get_socket_gen(), {:send_to, [%{ip4: istate.peer.ip4, pk: istate.peer.pk}], NodeProto.catchup_reply(tries)})
@@ -122,16 +126,15 @@ defmodule NodeState do
       rooted_tip = DB.Chain.rooted_height()
 
       Enum.each(trie[:entries]||[], fn(entry_packed)->
-        seen_time = :os.system_time(1000)
-        %{error: :ok, entry: entry} = Entry.unpack_and_validate(entry_packed)
+        %{error: :ok, entry: entry} = Entry.unpack_and_validate_from_net(entry_packed)
         if Entry.height(entry) >= rooted_tip do
-          Fabric.insert_entry(entry, seen_time)
+          DB.Entry.insert(entry)
           NodeANR.set_tips(istate.peer.pk, nil, Map.merge(entry, %{sig_error: :ok}))
         end
       end)
 
       Enum.each(trie[:attestations]||[], fn(attestation_packed)->
-        res = Attestation.unpack_and_validate(attestation_packed)
+        res = Attestation.unpack_and_validate_from_net(attestation_packed)
         if res.error == :ok and Attestation.validate_vs_chain(res.attestation) do
           send(FabricCoordinatorGen, {:add_attestation, res.attestation})
         else
@@ -140,7 +143,7 @@ defmodule NodeState do
       end)
 
       Enum.each(trie[:consensuses]||[], fn(consensus_packed)->
-        consensus = Consensus.unpack(consensus_packed)
+        consensus = Consensus.unpack_from_net(consensus_packed)
         case Consensus.validate_vs_chain(consensus) do
           %{error: :ok, consensus: consensus} ->
             send(FabricCoordinatorGen, {:insert_consensus, consensus})
@@ -165,7 +168,7 @@ defmodule NodeState do
         end
       op == "slash_trainer_entry" ->
         signature = SpecialMeetingAttestGen.maybe_attest("slash_trainer_entry", term.business.entry_packed)
-        entry = Entry.unpack(term.business.entry_packed)
+        entry = Entry.unpack_from_net(term.business.entry_packed)
         if signature do
           pk = Application.fetch_env!(:ama, :trainer_pk)
           business = %{op: "slash_trainer_entry_reply", entry_hash: entry.hash, pk: pk, signature: signature}

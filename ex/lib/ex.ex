@@ -13,6 +13,9 @@ defmodule Ama do
 
     IO.puts "config folder is #{Application.fetch_env!(:ama, :work_folder)}"
     IO.puts "version: #{Application.fetch_env!(:ama, :version)}"
+    IO.puts "pk: #{Application.fetch_env!(:ama, :trainer_pk) |> Base58.encode()}"
+
+    {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: PG, start: {:pg, :start_link, []}})
 
     if Application.fetch_env!(:ama, :autoupdate) do
       IO.puts "🟢 auto-update enabled"
@@ -20,44 +23,10 @@ defmodule Ama do
       {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: AutoUpdateGen, start: {AutoUpdateGen, :start_link, []}})
     end
 
-    IO.puts "Initing Fabric.."
-    Fabric.init()
-    #Fabric.insert_genesis()
+    DB.API.init()
 
-    IO.puts "Initing TXPool.."
-    TXPool.init()
-
-    if !Application.fetch_env!(:ama, :offline) and !Application.fetch_env!(:ama, :testnet) do
-      rooted_height = DB.Chain.rooted_height()
-      if rooted_height == nil or rooted_height < Application.fetch_env!(:ama, :snapshot_height) do
-        IO.inspect {"tip - snapshot_height", rooted_height, Application.fetch_env!(:ama, :snapshot_height)}
-        padded_height = String.pad_leading("#{Application.fetch_env!(:ama, :snapshot_height)}", 12, "0")
-        IO.inspect {"or download manually | aria2c -x 4 https://snapshots.amadeus.bot/#{padded_height}.zip"}
-        Fabric.close()
-        FabricSnapshot.download_latest()
-        Fabric.init()
-      end
-    else
-      if !DB.Chain.tip() do
-        if Application.fetch_env!(:ama, :testnet) do
-          EntryGenesis.generate_testnet()
-        else
-          %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
-          RocksDB.put("bic:epoch:trainers:height:#{String.pad_leading("0", 12, "0")}",
-            :erlang.term_to_binary([EntryGenesis.signer()]), %{db: db, cf: cf.contractstate})
-
-          entry = EntryGenesis.get()
-          Fabric.insert_entry(entry, :os.system_time(1000))
-          Consensus.apply_entry(entry)
-        end
-      end
-    end
-
-    #FabricSnapshot.backstep_temporal([Base58.decode("65ixJL6XkQAH2mrHn9nrHUaZfRZqUDpUqBqzMCdoPNku")])
-
-    pk = Application.fetch_env!(:ama, :trainer_pk)
-    IO.puts "systems functional. welcome #{Base58.encode(pk)}"
-
+    :ets.new(TXPool, [:ordered_set, :named_table, :public,
+      {:write_concurrency, true}, {:read_concurrency, true}, {:decentralized_counters, false}])
     :ets.new(AttestationCache, [:ordered_set, :named_table, :public,
       {:write_concurrency, true}, {:read_concurrency, true}, {:decentralized_counters, false}])
     :ets.new(SharedSecretCache, [:ordered_set, :named_table, :public,
@@ -74,58 +43,101 @@ defmodule Ama do
       %{path: Path.join([Application.fetch_env!(:ama, :work_folder), "local_kv/"])}
     )
 
-    if !Application.fetch_env!(:ama, :offline) do
-      if !Application.fetch_env!(:ama, :testnet) do
-        {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: FabricSyncAttestGen, start: {FabricSyncAttestGen, :start_link, []}})
-        {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: FabricSyncGen, start: {FabricSyncGen, :start_link, []}})
-      end
-
-      #{:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: ComputorGen, start: {ComputorGen, :start_link, []}})
-      {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: LoggerGen, start: {LoggerGen, :start_link, []}})
-      {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: FabricGen, start: {FabricGen, :start_link, []}})
-      {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: FabricCoordinatorGen, start: {FabricCoordinatorGen, :start_link, []}})
-      {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: FabricEventGen, start: {FabricEventGen, :start_link, []}})
-      {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: SpecialMeetingAttestGen, start: {SpecialMeetingAttestGen, :start_link, []}})
-      {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: SpecialMeetingGen, start: {SpecialMeetingGen, :start_link, []}})
-
-      ip4 = Application.fetch_env!(:ama, :udp_ipv4_tuple)
-      port = Application.fetch_env!(:ama, :udp_port)
-      {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: NodeGen, start: {NodeGen, :start_link, [ip4, port]}, restart: :permanent})
-      Enum.each(0..31, fn(idx)->
-        atom = :'NodeGenReassemblyGen#{idx}'
-        {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: atom, start: {NodeGenReassemblyGen, :start_link, [atom]}, restart: :permanent})
-      end)
-
-      Enum.each(0..7, fn(idx)->
-        :ets.new(:'NODENetGuardTotalFrames#{idx}', [:ordered_set, :named_table, :public,
-          {:write_concurrency, true}, {:read_concurrency, true}, {:decentralized_counters, false}])
-        :ets.new(:'NODENetGuardPer6Seconds#{idx}', [:ordered_set, :named_table, :public,
-          {:write_concurrency, true}, {:read_concurrency, true}, {:decentralized_counters, false}])
-      end)
-      Enum.each(0..7, fn(idx)->
-        {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor,
-          %{id: :'NodeGenSocketGen#{idx}', start: {NodeGenSocketGen, :start_link, [ip4, port, idx]}, restart: :permanent})
-      end)
-
-      #web panel
-      ipv4 = {a,b,c,d} = Application.fetch_env!(:ama, :http_ipv4)
-      if ipv4 != {0,0,0,0} do
-        {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: PG, start: {:pg, :start_link, []}})
-        {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: PGWSPanel, start: {:pg, :start_link, [PGWSRPC]}})
-
-        ipv4_string = "#{a}.#{b}.#{c}.#{d}"
-        port = Application.fetch_env!(:ama, :http_port)
-        IO.puts "started http-api on #{ipv4_string}:#{port}"
-
-        {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{
-          id: Photon.GenTCPAcceptor, start: {Photon.GenTCPAcceptor, :start_link, [ipv4, port, Ama.MultiServer]}
-        })
-      end
+    cond do
+      Application.fetch_env!(:ama, :offline) -> offline_node()
+      Application.fetch_env!(:ama, :testnet) -> testnet_node()
+      true -> full_node()
     end
 
     :persistent_term.put(NodeInited, true)
 
     supervisor
+  end
+
+  def offline_node() do
+    %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+    if !DB.Entry.by_hash(EntryGenesis.get().hash) do
+      RocksDB.put("bic:epoch:trainers:height:#{String.pad_leading("0", 12, "0")}",
+        :erlang.term_to_binary([EntryGenesis.signer()]), %{db: db, cf: cf.contractstate})
+
+      entry = EntryGenesis.get()
+      DB.Entry.insert(entry)
+      FabricGen.apply_entry(entry)
+    end
+  end
+
+  def testnet_node() do
+    if !DB.Chain.tip() do
+      EntryGenesis.generate_testnet()
+    end
+    run_node_services()
+  end
+
+  def full_node() do
+    rooted_height = DB.Chain.tip() && DB.Chain.rooted_height()
+    if rooted_height == nil or rooted_height < Application.fetch_env!(:ama, :snapshot_height) do
+      IO.inspect {"tip - snapshot_height", rooted_height, Application.fetch_env!(:ama, :snapshot_height)}
+      padded_height = String.pad_leading("#{Application.fetch_env!(:ama, :snapshot_height)}", 12, "0")
+      IO.inspect {"or download manually | aria2c -x 4 https://snapshots.amadeus.bot/#{padded_height}.zip"}
+      DB.API.close()
+      FabricSnapshot.download_latest()
+      DB.API.init()
+    end
+    run_node_services()
+  end
+
+  def run_node_services() do
+    if !Application.fetch_env!(:ama, :testnet) do
+      {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: FabricSyncAttestGen, start: {FabricSyncAttestGen, :start_link, []}})
+      {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: FabricSyncGen, start: {FabricSyncGen, :start_link, []}})
+    end
+
+    #{:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: ComputorGen, start: {ComputorGen, :start_link, []}})
+    {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: LoggerGen, start: {LoggerGen, :start_link, []}})
+    {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: FabricGen, start: {FabricGen, :start_link, []}})
+    {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: FabricCoordinatorGen, start: {FabricCoordinatorGen, :start_link, []}})
+    {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: FabricEventGen, start: {FabricEventGen, :start_link, []}})
+    {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: SpecialMeetingAttestGen, start: {SpecialMeetingAttestGen, :start_link, []}})
+    {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: SpecialMeetingGen, start: {SpecialMeetingGen, :start_link, []}})
+    run_udp_listener()
+    run_webpanel()
+  end
+
+  def run_udp_listener() do
+    ip4 = Application.fetch_env!(:ama, :udp_ipv4_tuple)
+    port = Application.fetch_env!(:ama, :udp_port)
+    {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: NodeGen, start: {NodeGen, :start_link, [ip4, port]}, restart: :permanent})
+    Enum.each(0..31, fn(idx)->
+      atom = :"NodeGenReassemblyGen#{idx}"
+      {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: atom, start: {NodeGenReassemblyGen, :start_link, [atom]}, restart: :permanent})
+    end)
+
+    Enum.each(0..7, fn(idx)->
+      :ets.new(:"NODENetGuardTotalFrames#{idx}", [:ordered_set, :named_table, :public,
+        {:write_concurrency, true}, {:read_concurrency, true}, {:decentralized_counters, false}])
+      :ets.new(:"NODENetGuardPer6Seconds#{idx}", [:ordered_set, :named_table, :public,
+        {:write_concurrency, true}, {:read_concurrency, true}, {:decentralized_counters, false}])
+    end)
+    Enum.each(0..7, fn(idx)->
+      {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor,
+        %{id: :"NodeGenSocketGen#{idx}", start: {NodeGenSocketGen, :start_link, [ip4, port, idx]}, restart: :permanent})
+    end)
+  end
+
+  def run_webpanel() do
+    #web panel
+    ipv4 = {a,b,c,d} = Application.fetch_env!(:ama, :http_ipv4)
+    if ipv4 != {0,0,0,0} do
+      {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: PGWSPanel, start: {:pg, :start_link, [PGWSRPC]}})
+
+      ipv4_string = "#{a}.#{b}.#{c}.#{d}"
+      port = Application.fetch_env!(:ama, :http_port)
+      IO.puts "started http-api on #{ipv4_string}:#{port}"
+
+      {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{
+        id: Photon.GenTCPAcceptor, start: {Photon.GenTCPAcceptor, :start_link, [ipv4, port, Ama.MultiServer]}
+      })
+    end
   end
 
   def wait_node_inited(timeout_deadline \\ nil) do

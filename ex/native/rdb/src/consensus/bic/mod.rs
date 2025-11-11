@@ -9,6 +9,7 @@ pub mod sol;
 pub mod sol_bloom;
 pub mod sol_difficulty;
 pub mod sol_freivalds;
+pub mod exsss;
 
 pub fn eetf_list_of_binaries(list_of_binaries: Vec<Vec<u8>>) -> Result<Vec<u8>, eetf::EncodeError> {
     let elements: Vec<eetf::Term> = list_of_binaries

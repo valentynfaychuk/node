@@ -223,7 +223,7 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
         }
     }
 
-    //call_exit(&mut applyenv);
+    call_exit(&mut applyenv);
 
     applyenv.into_parts()
 }

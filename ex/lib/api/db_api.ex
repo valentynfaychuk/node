@@ -1,16 +1,70 @@
 defmodule DB.API do
+  def pad_integer(key) do
+    String.pad_leading("#{key}", 12, "0")
+  end
+
+  def pad_integer_20(key) do
+    String.pad_leading("#{key}", 20, "0")
+  end
+
   def db_handle(db_opts, default_cf, merge_opts \\ %{}) do
+    %{db: db_static, cf: cf_static} = :persistent_term.get({:rocksdb, Fabric})
     db = db_opts[:db]
     cf = db_opts[:cf]
     rtx = db_opts[:rtx]
     cond do
       !!rtx and !!cf -> Map.merge(%{rtx: rtx, cf: cf}, merge_opts)
-      !!rtx -> Map.merge(%{rtx: rtx, cf: Map.fetch!(cf, default_cf)}, merge_opts)
+      !!rtx -> Map.merge(%{rtx: rtx, cf: Map.fetch!(cf_static, default_cf)}, merge_opts)
       !!db and !!cf -> Map.merge(%{db: db, cf: cf}, merge_opts)
-      !!db -> Map.merge(%{db: db, cf: Map.fetch!(cf, default_cf)}, merge_opts)
+      !!db -> Map.merge(%{db: db, cf: Map.fetch!(cf_static, default_cf)}, merge_opts)
       true ->
-        %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
-        Map.merge(%{db: db, cf: Map.fetch!(cf, default_cf)}, merge_opts)
+        Map.merge(%{db: db_static, cf: Map.fetch!(cf_static, default_cf)}, merge_opts)
     end
+  end
+
+  def init() do
+    workdir = Application.fetch_env!(:ama, :work_folder)
+
+    path = Path.join([workdir, "db/fabric/"])
+    File.mkdir_p!(path)
+
+    cfs = [
+      "default",
+      "sysconf",
+      "entry", "entry_meta",
+      "attestation",
+      "tx", "tx_account_nonce", "tx_receiver_nonce",
+      "contractstate"
+    ]
+    try do
+      {:ok, db_ref, cf_ref_list} = RDB.open_transaction_db(path, cfs)
+      [
+        default_cf,
+        sysconf_cf,
+        entry_cf, entry_meta_cf,
+        attestation_cf,
+        tx_cf, tx_account_nonce_cf, tx_receiver_nonce_cf,
+        contractstate_cf
+      ] = cf_ref_list
+      cf = %{
+        default: default_cf,
+        sysconf: sysconf_cf,
+        entry: entry_cf, entry_meta: entry_meta_cf,
+        attestation: attestation_cf,
+        tx: tx_cf, tx_account_nonce: tx_account_nonce_cf, tx_receiver_nonce: tx_receiver_nonce_cf,
+        contractstate: contractstate_cf
+      }
+      :persistent_term.put({:rocksdb, Fabric}, %{db: db_ref, cf_list: cf_ref_list, cf: cf, path: path})
+    catch
+      e,r ->
+        IO.inspect {e, r}
+        IO.inspect {:using_old_db, "migrate"}
+        :erlang.halt()
+    end
+  end
+
+  def close() do
+      %{db: db} = :persistent_term.get({:rocksdb, Fabric})
+      RDB.close_db(db)
   end
 end

@@ -7,7 +7,7 @@ defmodule API.TX do
 
     def get_by_entry(entry_hash) do
         entry_hash = if byte_size(entry_hash) != 32, do: Base58.decode(entry_hash), else: entry_hash
-        case DB.Chain.entry(entry_hash) do
+        case DB.Entry.by_hash(entry_hash) do
             nil -> nil
             %{hash: entry_hash, header_unpacked: %{slot: slot}, txs: txs} ->
                 Enum.map(txs, fn(tx_packed)->
@@ -161,8 +161,9 @@ defmodule API.TX do
       end
     end
 
-    def submit_and_wait_1(hash, 30) do nil end
-    def submit_and_wait_1(hash, tries \\ 0) do
+    def submit_and_wait_1(_hash, tries \\ 0)
+    def submit_and_wait_1(_hash, 30) do nil end
+    def submit_and_wait_1(hash, tries) do
       tx = get(hash)
       if tx do tx else
         Process.sleep(100)
@@ -186,7 +187,7 @@ defmodule API.TX do
             Map.put(a, :args, args)
         end)
         tx = put_in(tx, [:tx, :actions], actions)
-        tx = if !Map.has_key?(tx, :metadata) do tx else
+        if !Map.has_key?(tx, :metadata) do tx else
             put_in(tx, [:metadata, :entry_hash], Base58.encode(tx.metadata.entry_hash))
         end
     end

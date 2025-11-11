@@ -74,13 +74,13 @@ defmodule SpecialMeetingAttestGen do
     if last_entries_cnt <= 0 do state else
       state = put_in(state, [:slow, :last_height], cur_height)
 
-      entries = Fabric.entries_last_x(last_entries_cnt+1)
+      entries = entries_last_x(last_entries_cnt+1)
       entries = Enum.filter(entries, & div(&1.header_unpacked.height, 100_000) == cur_epoch)
       [hd | entries] = entries
 
-      hd_seentime = DB.Chain.entry_seentime(hd.hash)
+      hd_seentime = DB.Entry.seentime(hd.hash)
       state = Enum.reduce(entries, {state, hd_seentime}, fn(entry, {state, last_seen})->
-        seentime = DB.Chain.entry_seentime(entry.hash)
+        seentime = DB.Entry.seentime(entry.hash)
         delta = seentime - last_seen
 
         timings = get_in(state, [:slow, :running, entry.header_unpacked.signer]) || []
@@ -95,16 +95,15 @@ defmodule SpecialMeetingAttestGen do
     end
   end
 
-  def tick_stalled(state) do
+  def tick_stalled(_state) do
     isSynced = FabricSyncAttestGen.isQuorumSyncedOffBy1()
 
     entry = DB.Chain.tip_entry()
-    next_slot = entry.header_unpacked.slot + 1
     next_height = entry.header_unpacked.height + 1
     next_slot_trainer = DB.Chain.validator_for_height(next_height)
 
     ts_m = :os.system_time(1000)
-    seen_time = DB.Chain.entry_seentime(entry.hash)
+    seen_time = DB.Entry.seentime(entry.hash)
     delta = ts_m - seen_time
 
     nextSlotStalled = :persistent_term.get({SpecialMeeting, :nextSlotStalled}, nil)
@@ -168,7 +167,7 @@ defmodule SpecialMeetingAttestGen do
   end
 
   def has_double_entry(malicious_pk) do
-    hasDouble = DB.Chain.entries_by_height(DB.Chain.height())
+    hasDouble = DB.Entry.by_height(DB.Chain.height())
     |> Enum.frequencies_by(& &1.header_unpacked.signer)
     |> Enum.filter(fn {signer, _count} -> signer == malicious_pk end)
     |> Enum.any?(fn {_signer, count} -> count > 1 end)
@@ -204,7 +203,7 @@ defmodule SpecialMeetingAttestGen do
   def maybe_attest("slash_trainer_entry", entry_packed) do
     slotStallTrainer = isNextSlotStalled()
     cur_entry = DB.Chain.rooted_tip_entry()
-    %{error: :ok, entry: entry} = Entry.unpack_and_validate(entry_packed)
+    %{error: :ok, entry: entry} = Entry.unpack_and_validate_from_net(entry_packed)
 
     1 = length(entry.txs)
     txu = TX.unpack(hd(entry.txs))
@@ -241,5 +240,15 @@ defmodule SpecialMeetingAttestGen do
 
         true -> nil
     end
+  end
+
+  def entries_last_x(cnt) do
+      entry = DB.Chain.tip_entry()
+      entries_last_x_1(cnt - 1, entry.header_unpacked.prev_hash, [entry])
+  end
+  def entries_last_x_1(cnt, prev_hash, acc) when cnt <= 0, do: acc
+  def entries_last_x_1(cnt, prev_hash, acc) do
+      entry = DB.Entry.by_hash(prev_hash)
+      entries_last_x_1(cnt - 1, entry.header_unpacked.prev_hash, [entry] ++ acc)
   end
 end

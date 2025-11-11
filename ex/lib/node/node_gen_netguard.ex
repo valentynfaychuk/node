@@ -22,14 +22,14 @@ defmodule NodeGenNetguard do
 
   def frame_ok(peer_ip) do
     phash = :erlang.phash2(peer_ip, 8)
-    counter = :ets.update_counter(:'NODENetGuardTotalFrames#{phash}', peer_ip, 1, {peer_ip, 0})
+    counter = :ets.update_counter(:"NODENetGuardTotalFrames#{phash}", peer_ip, 1, {peer_ip, 0})
     counter < @max_frames_per_6_sec
   end
 
   def op_ok(peer_ip, op) do
     if @msg_ops[op] do
       phash = :erlang.phash2(peer_ip, 8)
-      counter = :ets.update_counter(:'NODENetGuardPer6Seconds#{phash}', {peer_ip, op}, 1, {{peer_ip, op}, 0})
+      counter = :ets.update_counter(:"NODENetGuardPer6Seconds#{phash}", {peer_ip, op}, 1, {{peer_ip, op}, 0})
       counter < @max_msg_per_6_sec[op]
     end
   end
@@ -37,14 +37,14 @@ defmodule NodeGenNetguard do
   def decrement_buckets(idx) do
     step = trunc(@max_frames_per_6_sec / 2)
     :ets.foldl(fn({peer_ip, _}, _)->
-      ctr = :ets.update_counter(:'NODENetGuardTotalFrames#{idx}', peer_ip, {2, -step, 0, 0})
-      ctr == 0 && :ets.delete(:'NODENetGuardTotalFrames#{idx}', peer_ip)
-    end, nil, :'NODENetGuardTotalFrames#{idx}')
+      ctr = :ets.update_counter(:"NODENetGuardTotalFrames#{idx}", peer_ip, {2, -step, 0, 0})
+      ctr == 0 && :ets.delete(:"NODENetGuardTotalFrames#{idx}", peer_ip)
+    end, nil, :"NODENetGuardTotalFrames#{idx}")
 
     :ets.foldl(fn({{peer_ip, op}, _}, _)->
       step = trunc(@max_msg_per_6_sec[op] / 2)
-      ctr = :ets.update_counter(:'NODENetGuardPer6Seconds#{idx}', {peer_ip, op}, {2, -step, 0, 0})
-      ctr == 0 && :ets.delete(:'NODENetGuardPer6Seconds#{idx}', {peer_ip, op})
-    end, nil, :'NODENetGuardPer6Seconds#{idx}')
+      ctr = :ets.update_counter(:"NODENetGuardPer6Seconds#{idx}", {peer_ip, op}, {2, -step, 0, 0})
+      ctr == 0 && :ets.delete(:"NODENetGuardPer6Seconds#{idx}", {peer_ip, op})
+    end, nil, :"NODENetGuardPer6Seconds#{idx}")
   end
 end

@@ -15,8 +15,14 @@ config :ama, :work_folder, work_folder
 
 #load env
 #Envvar.load(Path.join([work_folder, ".env"]))
-config :ama, :snapshot_height, (System.get_env("SNAPSHOT_HEIGHT") || "34076355") |> :erlang.binary_to_integer()
+config :ama, :snapshot_height, (System.get_env("SNAPSHOT_HEIGHT") || "37454455") |> :erlang.binary_to_integer()
 
+# zip -0 -r 000037454455.zip db/
+# aws s3 cp --checksum-algorithm=CRC32 --endpoint-url https://20bf2f5d11d26a322e389687896a6601.r2.cloudflarestorage.com 000037454455.zip s3://ama-snapshot
+# aria2c -x 2 https://snapshots.amadeus.bot/000037454455.zip
+
+# tar -C /tmp/000037454455 --xform 's@^\./@@' -cf - . | zstd -T0 -1 -o /tmp/000037454455.tar.zst
+# zstd -T0 -d --stdout /tmp/000037454455.tar.zst | tar -C /tmp/restore -xf -
 
 
 #Bind Interaces

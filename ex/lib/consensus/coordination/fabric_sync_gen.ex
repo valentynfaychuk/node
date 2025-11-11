@@ -78,7 +78,7 @@ defmodule FabricSyncGen do
         |> Enum.uniq()
         {rooted_peers, temporal_peers} = NodeANR.peers_w_min_height(List.last(next_heights), :any)
         next_heights
-        |> Enum.map(& %{height: &1, hashes: Enum.map(DB.Chain.entries_by_height(&1), fn(%{hash: hash})-> hash end), e: true, c: true})
+        |> Enum.map(& %{height: &1, hashes: Enum.map(DB.Entry.by_height(&1), fn(%{hash: hash})-> hash end), e: true, c: true})
         |> Enum.chunk_every(20)
         |> fetch_chunks(rooted_peers)
 
@@ -89,14 +89,14 @@ defmodule FabricSyncGen do
         |> Enum.uniq()
         {rooted_peers, temporal_peers} = NodeANR.peers_w_min_height(List.last(next_heights), :validators)
         next_heights
-        |> Enum.map(& %{height: &1, hashes: Enum.map(DB.Chain.entries_by_height(&1), fn(%{hash: hash})-> hash end), e: true, a: true})
+        |> Enum.map(& %{height: &1, hashes: Enum.map(DB.Entry.by_height(&1), fn(%{hash: hash})-> hash end), e: true, a: true})
         |> Enum.chunk_every(10)
         |> fetch_chunks(temporal_peers)
 
       #TODO: fetch only missing heads incase of doubleblock
       behind_temp == 0 ->
         {rooted_peers, temporal_peers} = NodeANR.peers_w_min_height(temporal_height, :validators)
-        chunk = [[%{height: temporal_height, hashes: Enum.map(DB.Chain.entries_by_height(temporal_height), fn(%{hash: hash})-> hash end), e: true, a: true}]]
+        chunk = [[%{height: temporal_height, hashes: Enum.map(DB.Entry.by_height(temporal_height), fn(%{hash: hash})-> hash end), e: true, a: true}]]
         fetch_chunks(chunk, temporal_peers)
     end
   end

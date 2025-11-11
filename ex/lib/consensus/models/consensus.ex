@@ -1,0 +1,66 @@
+defmodule Consensus do
+  _ = """
+  consensus
+    %{
+      mutations_hash: <<215, 178, 135, 49, 141, 108, 154, 141, 105, 41, 234, 36,
+        222, 56, 0, 124, 63, 25, 150, 225, 37, 216, 254, 73, 65, 240, 8, 33, 179,
+        137, 99, 137>>,
+      entry_hash: <<0, 0, 1, 33, 82, 24, 33, 251, 157, 137, 149, 20, 44, 42, 139,
+        162, 226, 19, 228, 5, 44, 177, 156, 39, 199, 30, 4, 131, 143, 137, 87, 5>>,
+      aggsig: %{
+        mask: <<255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224>>,
+        aggsig: <<177, 1, 30, 184, 160, 151, 62, 89, 92, 237, 190, 215, 51, 33, 49,
+          140, 240, 33, 142, 33, 244, 90, 254, 143, 172, 251, 162, 236, 87, 98, 40,
+          217, 87, 117, 211, 197, 168, 234, 16, 79, 24, 232, 205, 37, 174, 159, 192,
+          22, 13, 17, 25, 243, 85, 159, 182, 191, 161, 77, 48, 94, 93, 94, 255, 140,
+          48, 156, 86, 53, 176, 18, 168, 20, 57, 96, 167, 185, 26, 116, 149, 185,
+          87, 1, 20, 253, 17, 250, 131, 223, 82, 161, 120, 123, 35, 112, 255, 75>>,
+        mask_size: 99,
+        mask_set_size: 99
+      }
+    }
+  """
+
+    def unpack_from_net(consensus_packed) do
+      consensus = :erlang.binary_to_term(consensus_packed, [:safe])
+      |> Map.take([:entry_hash, :mutations_hash, :mask, :aggsig])
+
+      trainers = DB.Chain.validators_for_hash(consensus.entry_hash)
+      if !is_list(trainers), do: throw %{error: :unpack_consensus_no_entry}
+      trainers_signed = BLS12AggSig.unmask_trainers(trainers, Util.pad_bitstring_to_bytes(consensus.mask), bit_size(consensus.mask))
+
+      aggsig = %{
+        aggsig: consensus.aggsig,
+        mask: Util.pad_bitstring_to_bytes(consensus.mask),
+        mask_size: bit_size(consensus.mask),
+        mask_set_size: length(trainers_signed)
+      }
+      %{entry_hash: consensus.entry_hash, mutations_hash: consensus.mutations_hash, aggsig: aggsig}
+    end
+
+    def pack_for_net(consensus) do
+      aggsig = consensus.aggsig.aggsig
+      <<mask::size(consensus.aggsig.mask_size)-bitstring, _::bitstring>> = consensus.aggsig.mask
+      %{entry_hash: consensus.entry_hash, mutations_hash: consensus.mutations_hash, mask: mask, aggsig: aggsig}
+    end
+
+    def validate_vs_chain(c) do
+        try do
+        to_sign = <<c.entry_hash::binary, c.mutations_hash::binary>>
+
+        entry = DB.Entry.by_hash(c.entry_hash)
+        if !entry, do: throw(%{error: :invalid_entry})
+        if entry.header_unpacked.height > DB.Chain.height(), do: throw(%{error: :too_far_in_future})
+
+        trainers = DB.Chain.validators_for_height(Entry.height(entry))
+        trainers_signed = BLS12AggSig.unmask_trainers(trainers, c.aggsig.mask, c.aggsig.mask_size)
+        aggpk = BlsEx.aggregate_public_keys!(trainers_signed)
+        if !BlsEx.verify?(aggpk, c.aggsig.aggsig, to_sign, BLS12AggSig.dst_att()), do: throw(%{error: :invalid_signature})
+
+        %{error: :ok, consensus: c}
+        catch
+            :throw,r -> r
+            e,r -> IO.inspect({Consensus, :validate, e, r, __STACKTRACE__}, limit: 111111); %{error: :unknown}
+        end
+    end
+end

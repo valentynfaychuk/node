@@ -78,30 +78,15 @@ defmodule FabricGen do
   def best_entry_for_height(height) do
     rooted_tip = DB.Chain.rooted_tip()
     next_entries = height
-    |> DB.Chain.entries_by_height()
+    |> DB.Entry.by_height()
     #TODO: fix this via a secondary index on is_in_main_chain
     #|> Enum.filter(& &1.header_unpacked.prev_hash == rooted_tip)
     |> Enum.map(fn(entry)->
-        trainers = DB.Chain.validators_for_height(Entry.height(entry))
-        {mut_hash, score, _consensus} = Fabric.best_consensus_by_entryhash(trainers, entry.hash)
+        {mut_hash, score} = DB.Attestation.best_consensus_by_entryhash(entry.hash)
         {entry, mut_hash, score}
     end)
     |> Enum.filter(fn {entry, mut_hash, score} -> mut_hash end)
     |> Enum.sort_by(fn {entry, mut_hash, score} -> {-score, entry.header_unpacked.slot, !entry[:mask], entry.hash} end)
-  end
-
-  def best_entry_for_height_no_score(height) do
-    rooted_tip = DB.Chain.rooted_tip()
-    next_entries = height
-    |> DB.Chain.entries_by_height()
-    |> Enum.filter(& &1.header_unpacked.prev_hash == rooted_tip)
-    |> Enum.map(fn(entry)->
-        trainers = DB.Chain.validators_for_height(Entry.height(entry))
-        {mut_hash, score, _consensus} = Fabric.best_consensus_by_entryhash(trainers, entry.hash)
-        {entry, mut_hash, score}
-    end)
-    |> Enum.filter(fn {entry, mut_hash, score} -> mut_hash end)
-    |> Enum.sort_by(fn {entry, mut_hash, score} -> {entry.header_unpacked.slot, !entry[:mask], entry.hash} end)
   end
 
   def proc_consensus() do
@@ -120,37 +105,35 @@ defmodule FabricGen do
 
   defp proc_consensus_1(next_height) do
     next_entries = best_entry_for_height(next_height)
-
     #IO.inspect {next_entries, next_height}
     case List.first(next_entries) do
         #TODO: adjust the maliciousness rate via score
-        {best_entry, mut_hash, score} when score >= 0.67 ->
-            mymut = Fabric.my_attestation_by_entryhash(best_entry.hash)
+        {best_entry, muts_hash, score} when score >= 0.67 ->
+            my_muts_hash = DB.Entry.muts_hash(best_entry.hash)
+            in_chain = DB.Entry.in_chain(best_entry.hash)
             cond do
-              !mymut ->
-                IO.puts "softfork: rewind to entry #{Base58.encode(best_entry.hash)}, height #{best_entry.header_unpacked.height}"
-                hash = try do
-                  {entry, mut_hash, score} = List.first(best_entry_for_height(next_height - 1))
-                  entry.hash
-                catch
-                  _,_ -> DB.Chain.tip()
-                end
-                true = Consensus.chain_rewind(hash)
+              #We did not apply the entry due to doubleblock or slash block
+              #Switch chain to it
+              !in_chain ->
+                rewind_to_hash = DB.Entry.by_height_in_main_chain(best_entry.header_unpacked.height - 1)
+                IO.puts "softfork: rewind to entry #{Base58.encode(rewind_to_hash)}, height #{best_entry.header_unpacked.height - 1}"
+                true = DB.Chain.rewind(rewind_to_hash)
                 proc_consensus()
 
-              mut_hash != mymut.mutations_hash ->
+              muts_hash != my_muts_hash ->
                 height = best_entry.header_unpacked.height
                 slot = best_entry.header_unpacked.slot
+                rewind_to_hash = DB.Entry.by_height_in_main_chain(best_entry.header_unpacked.height - 1)
                 IO.puts "EMERGENCY: consensus chose entry #{Base58.encode(best_entry.hash)} for height/slot #{height}/#{slot}"
-                IO.puts "but our mutations are #{Base58.encode(mymut[:mutations_hash])} while consensus is #{Base58.encode(mut_hash)}"
+                IO.puts "but our mutations are #{Base58.encode(my_muts_hash)} while consensus is #{Base58.encode(muts_hash)}"
                 IO.puts "EMERGENCY: consensus halted as state is out of sync with network"
-                {entry, mut_hash, score} = List.first(best_entry_for_height(next_height - 1))
-                true = Consensus.chain_rewind(entry.hash)
+                true = DB.Chain.rewind(rewind_to_hash)
                 :erlang.halt()
 
               true ->
-                FabricEventGen.event_rooted(best_entry, mut_hash)
-                Fabric.set_rooted_tip(best_entry.hash)
+                FabricEventGen.event_rooted(best_entry, muts_hash)
+                %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+                RocksDB.put("rooted_tip", best_entry.hash, %{db: db, cf: cf.sysconf})
                 proc_consensus()
             end
         _ -> nil
@@ -166,16 +149,16 @@ defmodule FabricGen do
     height = cur_entry.header_unpacked.height
     next_height = height + 1
     next_entries = next_height
-    |> DB.Chain.entries_by_height()
+    |> DB.Entry.by_height()
     |> Enum.filter(fn(next_entry)->
       #in slot
       next_slot = next_entry.header_unpacked.slot
-      trainer_for_slot = DB.Chain.validator_for_height(Entry.height(next_entry))
+      validator_for_entry = DB.Chain.validator_for_height(Entry.height(next_entry))
       in_slot = cond do
-        next_entry.header_unpacked.signer == trainer_for_slot -> true
+        next_entry.header_unpacked.signer == validator_for_entry -> true
         !!next_entry[:mask] ->
             trainers = DB.Chain.validators_for_height(Entry.height(next_entry))
-            score = BLS12AggSig.score(trainers, next_entry.mask)
+            score = BLS12AggSig.score(trainers, Util.pad_bitstring_to_bytes(next_entry.mask), bit_size(next_entry.mask))
             score >= 0.67
 
         true -> false
@@ -197,35 +180,14 @@ defmodule FabricGen do
     case List.first(next_entries) do
       nil -> nil
       entry ->
-        #ts_s = :os.system_time(1000)
-        #%{error: :ok, attestation_packed: attestation_packed,
-        #  mutations_hash: m_hash, logs: l, muts: m} = Consensus.apply_entry(entry)
-        #IO.inspect {:took, entry.header_unpacked.height, :os.system_time(1000) - ts_s}
-
-        task = Task.async(fn -> Consensus.apply_entry(entry) end)
-        %{error: :ok, hash: hash, validator_seeds: vseeds,
-          mutations_hash: m_hash, logs: l, muts: m
+        start_ts = :os.system_time(1000)
+        task = Task.async(fn -> FabricGen.apply_entry(entry) end)
+        %{error: :ok, mutations_hash: m_hash, logs: l, muts: m
         } = case Task.await(task, :infinity) do
           result = %{error: :ok} -> result
         end
 
         FabricEventGen.event_applied(entry, m_hash, m, l)
-
-        # %{entry_hash: hash, mutations_hash: m_hash} = Fabric.my_attestation_by_entryhash(Consensus.chain_tip())
-        Enum.each(vseeds, fn(seed)->
-          attestation = Attestation.sign(seed.seed, hash, m_hash)
-          send(FabricCoordinatorGen, {:add_attestation, attestation})
-          if FabricSyncAttestGen.isQuorumSyncedOffByX(6) do
-            msg = NodeProto.event_attestation(Attestation.pack(attestation))
-            NodeGen.broadcast(msg)
-
-            #Ensure RPC nodes are as up-to-date as possible
-            #TODO: fix this in a better way later
-            peers = Application.fetch_env!(:ama, :seedanrs_as_peers)
-            send(NodeGen.get_socket_gen(), {:send_to, peers, msg})
-          end
-        end)
-
         TXPool.delete_packed(entry.txs)
 
         proc_entries()
@@ -236,23 +198,23 @@ defmodule FabricGen do
     entry = DB.Chain.tip_entry()
     next_slot = entry.header_unpacked.slot + 1
     next_height = entry.header_unpacked.height + 1
-    slot_trainer = DB.Chain.validator_for_height(next_height)
+    next_validator = DB.Chain.validator_for_height(next_height)
+
+    am_i_next = Enum.find(Application.fetch_env!(:ama, :keys), & &1.pk == next_validator)
 
     #prevent double-entries due to severe system lag (you shouldnt be validator in the first place)
     lastSlot = :persistent_term.get(:last_made_entry_slot, nil)
 
     rooted_tip = DB.Chain.rooted_tip()
-    emptyHeight = DB.Chain.entries_by_height(next_height)
+    emptyHeight = DB.Entry.by_height(next_height)
     |> Enum.filter(& &1.header_unpacked.prev_hash == rooted_tip)
     emptyHeight = emptyHeight == []
 
-    am_i_next = Enum.find(Application.fetch_env!(:ama, :keys), & &1.pk == slot_trainer)
-
     cond do
-      !FabricSyncAttestGen.isQuorumSynced() -> nil
-
       lastSlot == next_slot -> nil
       !emptyHeight -> nil
+
+      !FabricSyncAttestGen.isQuorumSynced() -> nil
 
       am_i_next ->
         :persistent_term.put(:last_made_entry_slot, next_slot)
@@ -265,18 +227,18 @@ defmodule FabricGen do
 
         !Application.fetch_env!(:ama, :testnet) && IO.puts("🔧 im in slot #{next_slot}, working.. *Click Clak*")
 
-        proc_if_my_slot_1(am_i_next.seed, next_slot)
+        produce_insert_and_broadcast_next_entry(am_i_next.seed, entry)
 
       true ->
         nil
     end
   end
 
-  def proc_if_my_slot_1(seed, next_slot) do
-    next_entry = Consensus.produce_entry(seed, next_slot)
-    Fabric.insert_entry(next_entry, :os.system_time(1000))
+  def produce_insert_and_broadcast_next_entry(seed, cur_entry) do
+    next_entry = produce_entry(seed, cur_entry)
+    DB.Entry.insert(next_entry)
 
-    msg = NodeProto.event_entry(Entry.pack(next_entry))
+    msg = NodeProto.event_entry(Entry.pack_for_net(next_entry))
     NodeGen.broadcast(msg)
 
     #Ensure RPC nodes are as up-to-date as possible
@@ -286,5 +248,139 @@ defmodule FabricGen do
     send(NodeGen, :signal_tips_change)
 
     next_entry
+  end
+
+  def produce_entry(seed, cur_entry) do
+    next_entry = Entry.build_next(seed, cur_entry)
+    txs = TXPool.grab_next_valid(100)
+    next_entry = Map.put(next_entry, :txs, txs)
+    next_entry = Entry.sign(seed, next_entry)
+    next_entry
+  end
+
+  def make_mapenv(next_entry) do
+      %{
+          :readonly => false,
+          :seed => nil,
+          :seedf64 => 1.0,
+          :entry_signer => next_entry.header_unpacked.signer,
+          :entry_prev_hash => next_entry.header_unpacked.prev_hash,
+          :entry_slot => next_entry.header_unpacked.slot,
+          :entry_prev_slot => next_entry.header_unpacked.prev_slot,
+          :entry_height => next_entry.header_unpacked.height,
+          :entry_epoch => div(next_entry.header_unpacked.height, 100_000),
+          :entry_vr => next_entry.header_unpacked.vr,
+          :entry_vr_b3 => Blake3.hash(next_entry.header_unpacked.vr),
+          :entry_dr => next_entry.header_unpacked.dr,
+          :tx_index => 0,
+          :tx_signer => nil, #env.txu.tx.signer,
+          :tx_nonce => nil, #env.txu.tx.nonce,
+          :tx_hash => nil, #env.txu.hash,
+          :account_origin => nil, #env.txu.tx.signer,
+          :account_caller => nil, #env.txu.tx.signer,
+          :account_current => nil, #action.contract,
+          :attached_symbol => "",
+          :attached_amount => "",
+          :call_counter => 0,
+          :call_exec_points => 10_000_000,
+          :call_exec_points_remaining => 10_000_000,
+      }
+  end
+
+  def apply_entry(next_entry) do
+      %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+      height = DB.Chain.height()
+      if !height or (height + 1) == Entry.height(next_entry) do
+          apply_entry_1(next_entry)
+      else
+          %{error: :invalid_height}
+      end
+  end
+  def apply_entry_1(next_entry) do
+      %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+
+      entry = next_entry
+      next_entry_trimmed_map = %{
+          entry_signer: entry.header_unpacked.signer,
+          entry_prev_hash: entry.header_unpacked.prev_hash,
+          entry_vr: entry.header_unpacked.vr,
+          entry_vr_b3: Blake3.hash(entry.header_unpacked.vr),
+          entry_dr: entry.header_unpacked.dr,
+          entry_slot: entry.header_unpacked.slot,
+          entry_prev_slot: entry.header_unpacked.prev_slot,
+          entry_height: entry.header_unpacked.height,
+          entry_epoch: div(entry.header_unpacked.height,100_000),
+      }
+      txus = Enum.map(entry.txs, & TX.unpack(&1))
+
+      {rtx, m, m_rev, l} = RDB.apply_entry(db, next_entry_trimmed_map, Application.fetch_env!(:ama, :trainer_pk), Application.fetch_env!(:ama, :trainer_sk), entry.txs, txus)
+      rebuild_m_fn = fn(m)->
+        Enum.map(m, fn(inner)->
+          op = :"#{IO.iodata_to_binary(inner[~c"op"])}"
+          case op do
+            :set_bit -> %{op: op, key: IO.iodata_to_binary(inner[~c"key"]), value: :erlang.binary_to_integer("#{inner[~c"value"]}"), bloomsize: :erlang.binary_to_integer("#{inner[~c"bloomsize"]}")}
+            :clear_bit -> %{op: op, key: IO.iodata_to_binary(inner[~c"key"]), value: :erlang.binary_to_integer("#{inner[~c"value"]}")}
+            :delete -> %{op: op, key: IO.iodata_to_binary(inner[~c"key"])}
+            :put -> %{op: op, key: IO.iodata_to_binary(inner[~c"key"]), value: IO.iodata_to_binary(inner[~c"value"])}
+          end
+        end)
+      end
+      rebuild_l_fn = fn(m)->
+        Enum.map(m, fn(inner)->
+          %{error: :"#{IO.iodata_to_binary(inner["error"])}"}
+        end)
+      end
+      m = rebuild_m_fn.(m)
+      m_rev = rebuild_m_fn.(m_rev)
+      l = rebuild_l_fn.(l)
+
+      #call the exit
+      Process.put({RocksDB, :ctx}, %{rtx: rtx, cf: cf})
+      #mapenv = make_mapenv(next_entry)
+      #{m_exit, m_exit_rev} = BIC.Base.call_exit(mapenv)
+      #m = m ++ m_exit
+      #m_rev = m_rev ++ m_exit_rev
+
+      mutations_hash = ConsensusKV.hash_mutations(l ++ m)
+
+      RocksDB.put("temporal_tip", next_entry.hash, %{rtx: rtx, cf: cf.sysconf})
+
+      DB.Entry.apply_into_main_chain(next_entry, mutations_hash, m_rev, l, %{rtx: rtx})
+      if Application.fetch_env!(:ama, :archival_node) do
+          DB.Entry.apply_into_main_chain_muts(next_entry.hash, m, %{rtx: rtx})
+      end
+
+      validators = DB.Chain.validators_for_height(Entry.height(next_entry), %{rtx: rtx})
+      my_validators = Application.fetch_env!(:ama, :keys) |> Enum.filter(& &1.pk in validators)
+      # %{entry_hash: hash, mutations_hash: m_hash} = Fabric.my_attestation_by_entryhash(Consensus.chain_tip())
+      # vseeds = Application.fetch_env!(:ama, :keys)
+      attestations = Enum.map(my_validators, fn(seed)->
+        attestation = Attestation.sign(seed.seed, next_entry.hash, mutations_hash)
+        DB.Attestation.put(attestation, Entry.height(next_entry), %{rtx: rtx})
+        #send(FabricCoordinatorGen, {:add_attestation, attestation})
+        if FabricSyncAttestGen.isQuorumSyncedOffByX(6) do
+          msg = NodeProto.event_attestation(Attestation.pack_for_net(attestation))
+          NodeGen.broadcast(msg)
+
+          #Ensure RPC nodes are as up-to-date as possible
+          #TODO: fix this in a better way later
+          peers = Application.fetch_env!(:ama, :seedanrs_as_peers)
+          send(NodeGen.get_socket_gen(), {:send_to, peers, msg})
+        end
+        attestation
+      end)
+      if length(attestations) > 0 do
+        aggsig = BLS12AggSig.aggregate(validators, attestations)
+        consensus = %{
+          aggsig: aggsig,
+          mutations_hash: mutations_hash,
+          entry_hash: next_entry.hash
+        }
+        DB.Attestation.set_consensus(consensus, %{rtx: rtx})
+      end
+
+      :ok = RocksDB.transaction_commit(rtx)
+
+      %{error: :ok, mutations_hash: mutations_hash, logs: l, muts: m}
   end
 end

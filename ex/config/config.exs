@@ -1,9 +1,13 @@
 import Config
 
-config :logger, truncate: :infinity
 
-config :iex,
-  inspect: [width: 120, limit: 320, pretty: true, custom_options: [sort_maps: true]]
+config :logger, truncate: :infinity
+config :logger, :console, truncate: :infinity
+config :logger, :default_formatter, truncate: :infinity
+
+inspect_opts = [width: 120, limit: 320, pretty: true, custom_options: [sort_maps: true]]
+config :iex, inspect: inspect_opts
+config :logger, translator_inspect_opts: inspect_opts
 
 config :ama, :version, Mix.Project.config[:version]
 

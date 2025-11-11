@@ -25,7 +25,17 @@ defmodule FabricEventGen do
 
   def tick(state) do
     #IO.inspect "tick"
+    {:message_queue_len, n} = :erlang.process_info(self(), :message_queue_len)
+    n > 100 && purge_pending()
     state
+  end
+
+  defp purge_pending do
+    receive do
+      _other -> purge_pending()
+    after 0 ->
+      :ok
+    end
   end
 
   def handle_info(:tick, state) do

@@ -10,15 +10,15 @@ defmodule FabricSnapshot do
     end
 
     def walk(end_hash, start_hash, opts) do
-        entry = DB.Chain.entry(start_hash)
+        entry = DB.Entry.by_hash(start_hash)
         height = Entry.height(entry)
         IO.inspect {:walk, height}
-        entries = DB.Chain.entries_by_height(height)
+        entries = DB.Entry.by_height(height)
         entries = entries -- [entry]
 
         RocksDB.delete(entry.hash, %{db: opts.db, cf: opts.cf.my_attestation_for_entry})
         RocksDB.delete(entry.hash, %{db: opts.db, cf: opts.cf.muts_rev})
-        map = Fabric.consensuses_by_entryhash(entry.hash)
+        map = DB.Attestation.consensuses(entry.hash)
         if map_size(map) != 1 do
             IO.inspect {height, map}
             1/0
@@ -52,7 +52,7 @@ defmodule FabricSnapshot do
         opts = %{db: db, cf: cf}
         Enum.reverse(list)
         |> Enum.each(fn(hash)->
-            entry = DB.Chain.entry(hash)
+            entry = DB.Entry.by_hash(hash)
             in_chain = Consensus.is_in_chain(hash)
             if in_chain do
                 true = Consensus.chain_rewind(hash)

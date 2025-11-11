@@ -22,12 +22,12 @@ defmodule NodeGen do
 
   def get_socket_gen() do
     idx = :rand.uniform(8) - 1
-    :'NodeGenSocketGen#{idx}'
+    :"NodeGenSocketGen#{idx}"
   end
 
   def get_reassembly_gen(pk, ts_nano) do
     idx = :erlang.phash2({pk, ts_nano}, 32)
-    :'NodeGenReassemblyGen#{idx}'
+    :"NodeGenReassemblyGen#{idx}"
   end
 
   def broadcast(msg, opts \\ %{validators: 1000, peers: 10}) do

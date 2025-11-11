@@ -30,7 +30,7 @@ defmodule API.Wallet do
     def transfer(from_sk, to, amount, symbol, broadcast \\ true) do
         from_sk = if byte_size(from_sk) != 64, do: Base58.decode(from_sk), else: from_sk
         to = if byte_size(to) != 48, do: Base58.decode(to), else: to
-        if !BlsEx.validate_public_key(to) and to != @burn_address, do: throw(%{error: :invalid_receiver_pk})
+        if !BlsEx.validate_public_key(to) and to != BIC.Coin.burn_address(), do: throw(%{error: :invalid_receiver_pk})
         amount = if is_float(amount) do trunc(amount * 1_000_000_000) else amount end
         amount = if is_integer(amount) do :erlang.integer_to_binary(amount) else amount end
         tx_packed = TX.build(from_sk, "Coin", "transfer", [to, amount, symbol])

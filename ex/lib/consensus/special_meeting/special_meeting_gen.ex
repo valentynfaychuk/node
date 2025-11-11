@@ -68,7 +68,8 @@ defmodule SpecialMeetingGen do
       state = put_in(state, [:slash_trainer, :mask], ma.mask)
       state = put_in(state, [:slash_trainer, :aggsig], ma.aggsig)
 
-      score = BLS12AggSig.score(trainers, state.slash_trainer.mask)
+      score = BLS12AggSig.score(trainers, Util.pad_bitstring_to_bytes(state.slash_trainer.mask), bit_size(state.slash_trainer.mask))
+
       state = put_in(state, [:slash_trainer, :score_tx], score)
       IO.inspect {:tx, score}
       {:noreply, state}
@@ -87,7 +88,8 @@ defmodule SpecialMeetingGen do
       state = put_in(state, [:slash_trainer, :entry, :mask], ma.mask)
       state = put_in(state, [:slash_trainer, :entry, :signature], ma.aggsig)
 
-      score = BLS12AggSig.score(trainers, state.slash_trainer.entry.mask)
+      score = BLS12AggSig.score(trainers, Util.pad_bitstring_to_bytes(state.slash_trainer.entry.mask), bit_size(state.slash_trainer.entry.mask))
+
       state = put_in(state, [:slash_trainer, :score_entry], score)
       IO.inspect {:entry, score}
       {:noreply, state}
@@ -134,11 +136,11 @@ defmodule SpecialMeetingGen do
       state.slash_trainer.type == :entry and state.slash_trainer[:score_entry] >= 0.67 ->
         IO.inspect {:entry_with_score, state.slash_trainer[:score_entry]}
         IO.inspect state.slash_trainer.entry, limit: 1111111111, printable_limit: 1111111111
-        Fabric.insert_entry(state.slash_trainer.entry, :os.system_time(1000))
+        DB.Entry.insert(state.slash_trainer.entry)
         Map.delete(state, :slash_trainer)
 
       state.slash_trainer.state == :gather_entry_sigs ->
-        business = %{op: "slash_trainer_entry", entry_packed: Entry.pack(state.slash_trainer.entry)}
+        business = %{op: "slash_trainer_entry", entry_packed: Entry.pack_for_net(state.slash_trainer.entry)}
         NodeGen.broadcast(NodeProto.special_business(business), %{peers: 0, self: true})
 
         Enum.each(Application.fetch_env!(:ama, :keys), fn(%{pk: pk, seed: seed})->
@@ -169,9 +171,7 @@ defmodule SpecialMeetingGen do
   end
 
   def build_slash_tx(st) do
-    my_pk = Application.fetch_env!(:ama, :trainer_pk)
     my_sk = Application.fetch_env!(:ama, :trainer_sk)
-    #nonce = TXPool.lowest_nonce(my_pk) || Consensus.chain_nonce(my_pk)
     TX.build(my_sk, "Epoch", "slash_trainer",
       ["#{st.epoch}", st.malicious_pk, st.aggsig, "#{bit_size(st.mask)}", Util.pad_bitstring_to_bytes(st.mask)])
   end
@@ -186,7 +186,7 @@ defmodule SpecialMeetingGen do
     cur_height = cur_entry.header_unpacked.height
     cur_slot = cur_entry.header_unpacked.slot
 
-    next_entry = Entry.build_next(sk, cur_entry, cur_slot + 1)
+    next_entry = Entry.build_next(sk, cur_entry)
     txs = [packed_tx]
     next_entry = Map.put(next_entry, :txs, txs)
     next_entry = Entry.sign(sk, next_entry)
@@ -203,7 +203,6 @@ defmodule SpecialMeetingGen do
 
     my_height = entry.header_unpacked.height
     slot = entry.header_unpacked.slot
-    next_slot = slot + 1
     next_height = my_height + 1
 
     trainers = DB.Chain.validators_for_height(next_height + 1)
@@ -225,7 +224,7 @@ defmodule SpecialMeetingGen do
     end
   end
 
-  def check_business(business = %{op: "slash_trainer", malicious_pk: malicious_pk}) do
+  def check_business(_business = %{op: "slash_trainer", malicious_pk: malicious_pk}) do
     slotStallTrainer = SpecialMeetingAttestGen.isNextSlotStalled()
 
     cond do

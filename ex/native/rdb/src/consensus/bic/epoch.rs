@@ -1,8 +1,10 @@
 use std::panic::panic_any;
+use std::collections::HashSet;
 use crate::consensus::aggsig::DST_MOTION;
 use crate::{bcat, consensus};
 
-use crate::consensus::consensus_kv::{kv_get, kv_put, kv_exists, kv_set_bit, kv_increment};
+use crate::consensus::consensus_kv::{kv_get, kv_get_next, kv_put, kv_exists, kv_delete, kv_set_bit, kv_increment};
+use crate::consensus::consensus_apply::ApplyEnv;
 
 pub const EPOCH_EMISSION_BASE: i128 = 1_000_000_000_000_000;
 pub const EPOCH_INTERVAL: i128 = 100_000;
@@ -274,6 +276,145 @@ pub fn call_slash_trainer(env: &mut crate::consensus::consensus_apply::ApplyEnv,
     kv_put(env, &bcat(&[b"bic:epoch:trainers:height:", &height]), term_trainers.as_slice());
 }
 
-pub fn next(env: &mut crate::consensus::consensus_apply::ApplyEnv) {
-    //Currently handled on elixir side
+pub fn next(env: &mut ApplyEnv) {
+    let epoch_cur = env.caller_env.entry_epoch;
+    let epoch_next = env.caller_env.entry_epoch + 1;
+    let peddlebike67_map: HashSet<Vec<u8>> = PEDDLEBIKE67.iter().map(|pk| pk.to_vec()).collect();
+
+    // slash sols for malicious trainers
+    let trainers = kv_get_trainers(env, &bcat(&[b"bic:epoch:trainers:", epoch_cur.to_string().as_bytes()]));
+    let trainers_map: HashSet<Vec<u8>> = trainers.into_iter().collect();
+    let trainers_removed = kv_get_trainers(env, &bcat(&[b"bic:epoch:trainers:removed:", epoch_cur.to_string().as_bytes()]));
+    let trainers_removed_map: HashSet<Vec<u8>> = trainers_removed.into_iter().collect();
+    let mut leaders: Vec<(Vec<u8>, i128)> = Vec::new();
+    let mut cursor: Vec<u8> = Vec::new();
+    while let Some((next_key_wo_prefix, val)) = kv_get_next(env, b"bic:epoch:solutions_count:", &cursor) {
+        if !trainers_removed_map.contains(&next_key_wo_prefix) {
+            let count = std::str::from_utf8(&val).ok().and_then(|s| s.parse::<i128>().ok()).unwrap_or_else(|| panic_any("invalid_solutions_count"));
+            leaders.push((next_key_wo_prefix.clone(), count));
+        }
+        cursor = next_key_wo_prefix;
+    }
+    // sort descending; Highest score first; tiebreak on PK
+    leaders.sort_unstable_by(|(ka, ca), (kb, cb)| {
+        match cb.cmp(ca) {
+            std::cmp::Ordering::Equal => kb.cmp(ka),
+            other => other,
+        }
+    });
+
+    let trainers_to_recv_emissions: Vec<(Vec<u8>, i128)> = leaders
+        .iter().cloned()
+        .filter(|(pk, _)| trainers_map.contains(pk) && !peddlebike67_map.contains(pk))
+        .take(99)
+        .collect();
+
+    let epoch_total_emission = epoch_emission(epoch_cur);
+    let epoch_early_adopter_emission = epoch_total_emission / 7;
+    let epoch_communityfund_emission = epoch_total_emission - epoch_early_adopter_emission;
+
+    distribute_peddlebike67_community_fund(env, epoch_communityfund_emission);
+
+    let total_sols: i128 = trainers_to_recv_emissions.iter().map(|(_, count)| count).sum();
+    distribute_emissions_to_trainers(env, &trainers_to_recv_emissions, epoch_early_adopter_emission, total_sols);
+
+    //Update validators for next epoch
+    let new_validators = build_and_shuffle_new_validators(env, &leaders);
+    let new_validators = consensus::bic::eetf_list_of_binaries(new_validators).unwrap();
+    let _ = kv_put(env, &bcat(&[b"bic:epoch:trainers:", &epoch_next.to_string().as_bytes()]), &new_validators);
+    let height = format!("{:012}", env.caller_env.entry_height + 1);
+    let _ = kv_put(env, &bcat(&[b"bic:epoch:trainers:height:", height.as_bytes()]), &new_validators);
+
+    update_difficulty_and_log_sols(env, epoch_cur, epoch_next, total_sols);
+    clear_epoch_data(env);
+}
+
+fn distribute_emissions_to_trainers(env: &mut ApplyEnv, trainers_to_recv: &Vec<(Vec<u8>, i128)>, total_emission: i128, total_sols: i128) {
+    if total_sols == 0 {
+        return;
+    }
+
+    for (trainer, trainer_sols) in trainers_to_recv {
+        let coins = (trainer_sols * total_emission) / total_sols;
+
+        let emission_address = kv_get(env, &bcat(&[b"bic:epoch:emission_address:", trainer]));
+        let balance_key = if let Some(addr) = emission_address {
+            bcat(&[b"bic:coin:balance:", &addr, b":AMA"])
+        } else {
+            bcat(&[b"bic:coin:balance:", trainer, b":AMA"])
+        };
+
+        let _ = kv_increment(env, &balance_key, coins);
+    }
+}
+
+fn distribute_peddlebike67_community_fund(env: &mut ApplyEnv, total_emission: i128) {
+    let n_count = PEDDLEBIKE67.len() as i128;
+    let q = total_emission / n_count;
+    let r = total_emission % n_count;
+
+    for (i, peddle_pk) in PEDDLEBIKE67.iter().enumerate() {
+        let coins = if (i as i128) < r { q + 1 } else { q };
+
+        let emission_address = kv_get(env, &bcat(&[b"bic:epoch:emission_address:", peddle_pk.as_slice()]));
+        let balance_key = if let Some(addr) = emission_address {
+            bcat(&[b"bic:coin:balance:", &addr, b":AMA"])
+        } else {
+            bcat(&[b"bic:coin:balance:", peddle_pk.as_slice(), b":AMA"])
+        };
+
+        let _ = kv_increment(env, &balance_key, coins);
+    }
+}
+
+fn build_and_shuffle_new_validators(env: &ApplyEnv, leaders: &Vec<(Vec<u8>, i128)>) -> Vec<Vec<u8>> {
+    let leader_pks: Vec<Vec<u8>> = leaders.iter().map(|(pk, _)| pk.clone()).collect();
+    let filtered_leaders: Vec<Vec<u8>> =
+        leader_pks.into_iter().filter(|pk| !PEDDLEBIKE67.iter().any(|p| p.as_slice() == pk.as_slice())).collect();
+
+    let mut new_validators: Vec<Vec<u8>> = PEDDLEBIKE67.iter().map(|p| p.to_vec()).collect();
+    new_validators.extend(filtered_leaders);
+    new_validators.truncate(99);
+
+    let seed_bytes = &env.caller_env.seed;
+    let seed_array: [u8; 32] = seed_bytes.get(..32).and_then(|s| s.try_into().ok()).unwrap_or([0u8; 32]);
+    let mut rng = crate::consensus::bic::exsss::Exsss::from_seed(&seed_array);
+    rng.shuffle(&mut new_validators);
+
+    new_validators
+}
+
+fn update_difficulty_and_log_sols(env: &mut ApplyEnv, epoch_cur: u64, epoch_next: u64, total_sols: i128) {
+    use crate::consensus::consensus_kv::kv_put;
+    let old_diff_bits = kv_get(env, b"bic:epoch:diff_bits").unwrap();
+    let old_diff_bits = std::str::from_utf8(&old_diff_bits).ok().and_then(|s| s.parse::<u32>().ok()).unwrap_or_else(|| panic_any("invalid_diff_bits"));
+
+    let next_diff_bits = crate::consensus::bic::sol_difficulty::next(old_diff_bits, total_sols as u64);
+    let _ = kv_put(env, b"bic:epoch:diff_bits", next_diff_bits.to_string().as_bytes());
+    let _ = kv_put(env, format!("bic:epoch:diff_bits:{}", epoch_next).as_bytes(), next_diff_bits.to_string().as_bytes());
+    let _ = kv_put(env, format!("bic:epoch:total_sols:{}", epoch_cur).as_bytes(), total_sols.to_string().as_bytes());
+}
+
+fn clear_epoch_data(env: &mut ApplyEnv) {
+    let mut cursor: Vec<u8> = Vec::new();
+
+    let prefix = b"bic:epoch:solbloom:";
+    while let Some((next_key_wo_prefix, _val)) = kv_get_next(env, prefix, &cursor) {
+        let mut key = Vec::with_capacity(prefix.len() + next_key_wo_prefix.len());
+        key.extend_from_slice(prefix);
+        key.extend_from_slice(&next_key_wo_prefix);
+
+        kv_delete(env, &key);
+        cursor = next_key_wo_prefix;
+    }
+
+    let prefix = b"bic:epoch:solutions_count:";
+    while let Some((next_key_wo_prefix, _val)) = kv_get_next(env, prefix, &cursor) {
+        let mut key = Vec::with_capacity(prefix.len() + next_key_wo_prefix.len());
+        key.extend_from_slice(prefix);
+        key.extend_from_slice(&next_key_wo_prefix);
+
+        kv_delete(env, &key);
+        cursor = next_key_wo_prefix;
+    }
 }

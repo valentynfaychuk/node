@@ -1,4 +1,13 @@
 defmodule BLS12AggSig do
+    @doc """
+    aggsig {
+        aggsig: <>,
+        mask: <>,
+        mask_size: 0,
+        mask_set_size: 0,
+    }
+    """
+
     @dst "AMADEUS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_NUL_"
     @dst_pop "AMADEUS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_"
     @dst_att "AMADEUS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_ATTESTATION_"
@@ -30,6 +39,11 @@ defmodule BLS12AggSig do
         %{mask: mask, aggsig: signature}
     end
 
+    def new_padded(mask_size) do
+        mask = Util.pad_bitstring_to_bytes(<<0::size(mask_size)>>)
+        %{mask: mask, mask_size: mask_size, mask_set_size: 0}
+    end
+
     def add(m = %{mask: mask, aggsig: aggsig}, trainers, pk, signature) do
         index_of_trainer = Util.index_of(trainers, pk)
 
@@ -40,23 +54,47 @@ defmodule BLS12AggSig do
         end
     end
 
+    def add_padded(m = %{mask: mask, mask_size: mask_size}, signers, pk, signature) do
+        index_of_signer = Util.index_of(signers, pk)
+
+        if Util.get_bit(mask, index_of_signer) do m else
+            mask = Util.set_bit(mask, index_of_signer)
+            case m[:aggsig] do
+              nil -> %{mask: mask, mask_size: mask_size, mask_set_size: Util.popcnt(mask), aggsig: signature}
+              aggsig ->
+                aggsig = BlsEx.aggregate_signatures!([aggsig, signature])
+                %{mask: mask, mask_size: mask_size, mask_set_size: Util.popcnt(mask), aggsig: aggsig}
+            end
+        end
+    end
+
     #TODO: optimize walking with mask
-    def unmask_trainers(trainers, mask) do
-        length = bit_size(mask)
-        Enum.reduce(0..length-1, [], fn(index, acc)->
+    def unmask_trainers(_trainers, _mask, mask_size) when mask_size == 0 do [] end
+    def unmask_trainers(trainers, mask, mask_size) do
+        Enum.reduce(0..mask_size-1, [], fn(index, acc)->
             if !Util.get_bit(mask, index) do acc else
                 acc ++ [Enum.at(trainers, index)]
             end
         end)
     end
 
-    def score(trainers, mask) do
-        trainers_signed = unmask_trainers(trainers, mask)
+    def score(_trainers, _mask, mask_size) when mask_size == 0 do 0.0 end
+    def score(trainers, mask, mask_size) do
+        trainers_signed = unmask_trainers(trainers, mask, mask_size)
 
         maxScore = length(trainers)
-        score = Enum.reduce(trainers_signed, 0, fn(pk, acc)->
-            acc + ConsensusWeight.count(pk)
+        score = Enum.reduce(trainers_signed, 0, fn(_pk, acc)->
+            acc + 1
         end)
         score/maxScore
+    end
+
+    def aggregate(signer_list, signer_signature_list) do
+      signer_signature_list = List.wrap(signer_signature_list)
+      aggsig = BLS12AggSig.new_padded(length(signer_signature_list))
+      Enum.reduce(signer_signature_list, aggsig, fn(signer_signature, aggsig)->
+        BLS12AggSig.add_padded(aggsig, signer_list, signer_signature.signer, signer_signature.signature)
+      end)
+      |> Map.put(:mask_set_size, length(signer_signature_list))
     end
 end

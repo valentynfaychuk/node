@@ -280,7 +280,8 @@ defmodule BIC.Epoch do
     end
 
     def slash_trainer_verify(cur_epoch, malicious_pk, trainers, mask, signature) do
-        signers = BLS12AggSig.unmask_trainers(trainers, mask)
+        signers = BLS12AggSig.unmask_trainers(trainers, Util.pad_bitstring_to_bytes(mask), bit_size(mask))
+
         consensus_pct = length(signers) / length(trainers)
 
         apk = BlsEx.aggregate_public_keys!(signers)
@@ -306,7 +307,8 @@ defmodule BIC.Epoch do
         if malicious_pk not in trainers, do: throw(%{error: :invalid_trainer_pk})
 
         # 75% vote
-        signers = BLS12AggSig.unmask_trainers(trainers, mask)
+        signers = BLS12AggSig.unmask_trainers(trainers, Util.pad_bitstring_to_bytes(mask), bit_size(mask))
+
         consensus_pct = length(signers) / length(trainers)
         if consensus_pct < 0.67, do: throw(%{error: :invalid_amount_of_signatures})
 

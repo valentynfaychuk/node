@@ -39,7 +39,6 @@ defmodule LoggerGen do
     rooted_height = entry_rooted.header_unpacked.height
 
     entry = DB.Chain.tip_entry()
-    entry = Entry.unpack(entry)
     height = entry.header_unpacked.height
     slot = entry.header_unpacked.slot
     txpool_size = :ets.info(TXPool, :size)

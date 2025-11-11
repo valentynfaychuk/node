@@ -38,7 +38,7 @@ defmodule Ama.MultiServer do
                         end
                 end
 
-            {:tcp_closed, socket} -> :closed
+            {:tcp_closed, _socket} -> :closed
             m -> IO.inspect("MultiServer: #{inspect m}")
         end
     end
@@ -139,17 +139,17 @@ defmodule Ama.MultiServer do
                 quick_reply(state, %{error: :ok, emission_address: result})
 
             r.method == "POST" and String.starts_with?(r.path, "/api/contract/validate_bytecode") ->
-                {_, bytecode} = Photon.HTTP.read_body_all(state.socket, r)
+                {r, bytecode} = Photon.HTTP.read_body_all(state.socket, r)
                 result = API.Contract.validate_bytecode(bytecode)
-                quick_reply(state, result)
+                quick_reply(%{state|request: r}, result)
             r.method == "POST" and r.path == "/api/contract/get" ->
-                {_, key} = Photon.HTTP.read_body_all(state.socket, r)
+                {r, key} = Photon.HTTP.read_body_all(state.socket, r)
                 result = API.Contract.get(key)
-                quick_reply(state, JSX.encode!(result))
+                quick_reply(%{state|request: r}, JSX.encode!(result))
             r.method == "POST" and r.path == "/api/contract/get_prefix" ->
-                {_, key} = Photon.HTTP.read_body_all(state.socket, r)
+                {r, key} = Photon.HTTP.read_body_all(state.socket, r)
                 result = API.Contract.get_prefix(key)
-                quick_reply(state, RDB.vecpak_encode(result))
+                quick_reply(%{state|request: r}, RDB.vecpak_encode(result))
             r.method == "GET" and String.starts_with?(r.path, "/api/contract/richlist") ->
                 result = API.Contract.richlist()
                 quick_reply(state, JSX.encode!(%{error: :ok, richlist: result}))
@@ -196,12 +196,12 @@ defmodule Ama.MultiServer do
                 {r, tx_packed} = Photon.HTTP.read_body_all(state.socket, r)
                 tx_packed = if Base58.likely(tx_packed) do Base58.decode(tx_packed |> String.trim()) else tx_packed end
                 result = API.TX.submit(tx_packed)
-                quick_reply(state, result)
+                quick_reply(%{state|request: r}, result)
             r.method == "POST" and r.path == "/api/tx/submit_and_wait" ->
                 {r, tx_packed} = Photon.HTTP.read_body_all(state.socket, r)
                 tx_packed = if Base58.likely(tx_packed) do Base58.decode(tx_packed |> String.trim()) else tx_packed end
                 result = API.TX.submit_and_wait(tx_packed)
-                quick_reply(state, result)
+                quick_reply(%{state|request: r}, result)
             r.method == "GET" and String.starts_with?(r.path, "/api/tx/submit/") ->
                 tx_packed = String.replace(r.path, "/api/tx/submit/", "")
                 result = API.TX.submit(Base58.decode(tx_packed))

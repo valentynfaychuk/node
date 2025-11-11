@@ -125,7 +125,7 @@ defmodule Util do
     def get(url, headers \\ %{}, opts \\ %{}) do
         %{host: host} = URI.parse(url)
         ssl_opts = [
-            {:server_name_indication, '#{host}'},
+            {:server_name_indication, ~c"#{host}"},
             {:verify,:verify_peer},
             {:depth,99},
             {:cacerts, :certifi.cacerts()},
@@ -147,7 +147,7 @@ defmodule Util do
     def delete(url, body, headers \\ %{}, opts \\ %{}) do
         %{host: host} = URI.parse(url)
         ssl_opts = [
-            {:server_name_indication, '#{host}'},
+            {:server_name_indication, ~c"#{host}"},
             {:verify,:verify_peer},
             {:depth,99},
             {:cacerts, :certifi.cacerts()},
@@ -169,7 +169,7 @@ defmodule Util do
     def post(url, body, headers \\ %{}, opts \\ %{}) do
         %{host: host} = URI.parse(url)
         ssl_opts = [
-            {:server_name_indication, '#{host}'},
+            {:server_name_indication, ~c"#{host}"},
             {:verify,:verify_peer},
             {:depth,99},
             {:cacerts, :certifi.cacerts()},
@@ -192,7 +192,7 @@ defmodule Util do
     def put(url, body, headers \\ %{}, opts \\ %{}) do
         %{host: host} = URI.parse(url)
         ssl_opts = [
-            {:server_name_indication, '#{host}'},
+            {:server_name_indication, ~c"#{host}"},
             {:verify,:verify_peer},
             {:depth,99},
             {:cacerts, :certifi.cacerts()},
@@ -247,6 +247,52 @@ defmodule Util do
         bit == 1
     end
 
+    def popcnt(bs) when is_bitstring(bs) do
+      pc4 = <<0,1,1,2,1,2,2,3,1,2,2,3,2,3,3,4>>
+
+      total_bits = bit_size(bs)
+      full_bytes = div(total_bits, 8)
+      rem_bits   = rem(total_bits, 8)
+
+      <<bytes::binary-size(full_bytes), rest::bitstring-size(rem_bits)>> = bs
+
+      # byte popcount via two 4-bit lookups per byte, looped with an anonymous recursion
+      byte_count =
+        (fn loop, i, acc ->
+           if i == byte_size(bytes) do
+             acc
+           else
+             b  = :binary.at(bytes, i)
+             hi = :erlang.bsr(b, 4)
+             lo = :erlang.band(b, 15)
+             loop.(loop, i + 1, acc + :binary.at(pc4, hi) + :binary.at(pc4, lo))
+           end
+         end).(fn loop, i, acc ->
+                if i == byte_size(bytes) do
+                  acc
+                else
+                  b  = :binary.at(bytes, i)
+                  hi = :erlang.bsr(b, 4)
+                  lo = :erlang.band(b, 15)
+                  loop.(loop, i + 1, acc + :binary.at(pc4, hi) + :binary.at(pc4, lo))
+                end
+              end, 0, 0)
+
+      # tail (≤7 bits): pack to int and Kernighan-count with an anonymous recursion
+      tail_count =
+        if rem_bits == 0 do
+          0
+        else
+          <<v::unsigned-integer-size(rem_bits)>> = rest
+          (fn k, x, a -> if x == 0, do: a, else: k.(k, :erlang.band(x, x - 1), a + 1) end).(
+            fn k, x, a -> if x == 0, do: a, else: k.(k, :erlang.band(x, x - 1), a + 1) end,
+            v, 0
+          )
+        end
+
+      byte_count + tail_count
+    end
+
     def index_of(list, key) do
         {result, index} = Enum.reduce_while(list, {nil, 0}, fn(element, {result, index})->
             if element == key do
@@ -263,5 +309,14 @@ defmodule Util do
     def verify_time_sync() do
         {res, _} = System.shell("timedatectl status")
         String.contains?(res, "System clock synchronized: yes")
+    end
+
+    def ensure_copied(bin) when is_binary(bin) do
+      if :binary.referenced_byte_size(bin) > byte_size(bin) do
+        IO.inspect {:ensure_copied, :binary.referenced_byte_size(bin), byte_size(bin)}
+        :binary.copy(bin)
+      else
+        bin
+      end
     end
 end

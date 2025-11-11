@@ -1,5 +1,7 @@
 #!/bin/bash
 
+#&& export ERL_COMPILER_OPTIONS=bin_opt_info \
+
 podman run -it --rm -v ../.:/root/node --entrypoint bash erlang_builder -c "echo 'building amadeus..' \
     && cd /root/node/ex \
     && export MIX_ENV=prod \

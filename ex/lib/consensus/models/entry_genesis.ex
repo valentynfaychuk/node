@@ -141,7 +141,7 @@ defmodule EntryGenesis do
 
     def generate_testnet() do
       %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
-      if !RocksDB.get("temporal_height", %{db: db, cf: cf.sysconf}) do
+      if !RocksDB.get("temporal_tip", %{db: db, cf: cf.sysconf}) do
         IO.puts "making testnet.."
 
         pk = Application.fetch_env!(:ama, :trainer_pk)
@@ -174,7 +174,6 @@ defmodule EntryGenesis do
         }
         entry_signed = Entry.sign(sk, entry)
 
-
         rtx = RocksDB.transaction(db)
         Process.put({RocksDB, :ctx}, %{rtx: rtx, cf: cf})
 
@@ -184,11 +183,9 @@ defmodule EntryGenesis do
         pop = BlsEx.sign!(sk, pk, BLS12AggSig.dst_pop())
         entry_signed = Entry.pack(entry_signed) |> Entry.unpack()
 
-        RocksDB.put(entry_signed.hash, Entry.pack(entry_signed), %{rtx: rtx, cf: cf.entry})
-        RocksDB.put(entry_signed.hash, :os.system_time(1000), %{rtx: rtx, cf: cf.my_seen_time_for_entry, term: true})
-        RocksDB.put("#{entry_signed.header_unpacked.height}:#{entry_signed.hash}", entry_signed.hash, %{rtx: rtx, cf: cf.entry_by_height})
+        DB.Entry.insert(entry_signed, %{rtx: rtx})
+        DB.Entry.apply_into_main_chain(entry_signed, mutations_hash, [], [], %{rtx: rtx})
         RocksDB.put("temporal_tip", entry_signed.hash, %{rtx: rtx, cf: cf.sysconf})
-        RocksDB.put("temporal_height", 0, %{rtx: rtx, cf: cf.sysconf, term: true})
         RocksDB.put("rooted_tip", entry_signed.hash, %{rtx: rtx, cf: cf.sysconf})
 
         validator_pks = Application.fetch_env!(:ama, :keys) |> Enum.map(& &1.pk)
@@ -201,8 +198,6 @@ defmodule EntryGenesis do
           RocksDB.put("bic:epoch:pop:#{key.pk}", key.pop, %{rtx: rtx, cf: cf.contractstate})
         end)
         rtx = RocksDB.transaction_commit(rtx)
-
-        #Fabric.aggregate_attestation(attestation |> Attestation.pack())
       end
     end
 end
