@@ -150,7 +150,8 @@ defmodule DB.Chain do
     %{cf: cf} = :persistent_term.get({:rocksdb, Fabric})
     Enum.reverse(m_rev)
     |> Enum.each(fn(mut)->
-      case mut.op do
+      op = :"#{mut.op}"
+      case op do
         :put ->
           RocksDB.put(mut.key, mut.value, %{rtx: db_opts.rtx, cf: cf.contractstate})
         :delete ->

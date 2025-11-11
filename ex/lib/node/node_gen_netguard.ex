@@ -13,8 +13,8 @@ defmodule NodeGenNetguard do
     catchup_reply: 20,
     event_tip: 30,
     event_entry: 30,
-    event_tx: 6000,
-    event_attestation: 6000,
+    event_tx: 8000,
+    event_attestation: 8000,
     solicit_entry: 2,
     sell_sol: 10_000,
   }

@@ -251,6 +251,14 @@ fn call_txs_pre_upfront_cost<'a>(env: &mut ApplyEnv, txus: &[rustler::Term<'a>])
 }
 
 fn call_exit(env: &mut ApplyEnv) {
+    //seed RNG for random validator selection
+    let vr = env.caller_env.entry_vr.to_vec();
+    let seed_hash = blake3::hash(&vr);
+    env.caller_env.seed = seed_hash.as_bytes().to_vec();
+    // extract f64 from first 8 bytes of seed_hash in little-endian
+    let seedf64 = f64::from_le_bytes(seed_hash.as_bytes()[0..8].try_into().unwrap_or([0u8; 8]));
+    env.caller_env.seedf64 = seedf64;
+
     env.muts = Vec::new();
     env.muts_rev = Vec::new();
 
