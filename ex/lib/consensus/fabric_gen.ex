@@ -207,7 +207,6 @@ defmodule FabricGen do
 
     rooted_tip = DB.Chain.rooted_tip()
     emptyHeight = DB.Entry.by_height(next_height)
-    |> Enum.filter(& &1.header_unpacked.prev_hash == rooted_tip)
     emptyHeight = emptyHeight == []
 
     cond do
@@ -352,8 +351,10 @@ defmodule FabricGen do
 
       validators = DB.Chain.validators_for_height(Entry.height(next_entry), %{rtx: rtx})
       my_validators = Application.fetch_env!(:ama, :keys) |> Enum.filter(& &1.pk in validators)
-      # %{entry_hash: hash, mutations_hash: m_hash} = Fabric.my_attestation_by_entryhash(Consensus.chain_tip())
-      # vseeds = Application.fetch_env!(:ama, :keys)
+      # {next_entry, mutations_hash} = {%{hash: DB.Chain.tip(), header_unpacked: %{height: DB.Chain.height()}}, DB.Entry.muts_hash(DB.Chain.tip())}
+      # my_validators = Application.fetch_env!(:ama, :keys)
+      # rtx = RocksDB.transaction(:persistent_term.get({:rocksdb, Fabric}).db)
+      # :ok = RocksDB.transaction_commit(rtx)
       attestations = Enum.map(my_validators, fn(seed)->
         attestation = Attestation.sign(seed.seed, next_entry.hash, mutations_hash)
         DB.Attestation.put(attestation, Entry.height(next_entry), %{rtx: rtx})
