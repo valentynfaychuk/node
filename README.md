@@ -15,11 +15,22 @@ podman build --tag erlang_builder -f build.Dockerfile
 ```
 #run local testnet with RPC api
 
+#point RPC endpoint to localhost
+vim /etc/hosts
+127.0.0.1 nodes.amadeus.bot
+
+#run google chrome with cert verification disabled and CORS disabled
+mkdir -p /tmp/chrome_debug
+google-chrome  --user-data-dir="/tmp/chrome_debug" --no-first-run --no-default-browser-check \
+--ignore-certificate-errors --disable-web-security --unsafely-treat-insecure-origin-as-secure=https://nodes.amadeus.bot
+
+#allow listening on port 80 and 443
 sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80
+
+#run the local testnet
 TESTNET=true WORKFOLDER=/tmp/testnet HTTP_IPV4=127.0.0.1 HTTP_PORT=80  ./amadeusd
 
 # inside REPL submit a transfer to self
-
 pk = Application.fetch_env!(:ama, :trainer_pk)
 sk = Application.fetch_env!(:ama, :trainer_sk)
 Testnet.call(sk, "Coin", "transfer", [pk,"1","AMA"])

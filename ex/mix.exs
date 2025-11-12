@@ -6,7 +6,7 @@ defmodule Ama.MixProject do
   def project do
     [
       app: @app,
-      version: "1.2.4",
+      version: "1.2.5",
       elixir: ">= 1.18.0",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -36,12 +36,13 @@ defmodule Ama.MixProject do
 
       {:rustler, ">= 0.36.1", optional: true},
       {:blake3_ex, git: "https://github.com/vans163/blake3", branch: "finalize_xof"},
-      {:bls_ex, git: "https://github.com/amadeus-robot/bls_ex"},
-      {:reedsolomon_ex, git: "https://github.com/amadeus-robot/reedsolomon_ex"},
-      {:wasmer_ex, git: "https://github.com/amadeus-robot/wasmer_ex"},
+      {:bls_ex, git: "https://github.com/amadeusprotocol/bls_ex"},
+      {:reedsolomon_ex, git: "https://github.com/amadeusprotocol/reedsolomon_ex"},
+      {:wasmer_ex, git: "https://github.com/amadeusprotocol/wasmer_ex"},
 
       {:comsat, git: "https://github.com/vans163/ComSat.git"},
       {:ex_stun, git: "https://github.com/elixir-webrtc/ex_stun.git"},
+      {:x509, git: "https://github.com/voltone/x509"},
     ]
   end
 
