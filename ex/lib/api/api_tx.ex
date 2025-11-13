@@ -9,7 +9,7 @@ defmodule API.TX do
         entry_hash = if byte_size(entry_hash) != 32, do: Base58.decode(entry_hash), else: entry_hash
         case DB.Entry.by_hash(entry_hash) do
             nil -> nil
-            %{hash: entry_hash, header_unpacked: %{slot: slot}, txs: txs} ->
+            %{hash: entry_hash, header: %{slot: slot}, txs: txs} ->
                 Enum.map(txs, fn(tx_packed)->
                     txu = TX.unpack(tx_packed)
                     |> Map.put(:metadata, %{entry_hash: entry_hash, entry_slot: slot})

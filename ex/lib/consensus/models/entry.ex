@@ -23,7 +23,7 @@ defmodule Entry do
             prev_hash: <<>>,
             proposer: <>,
             dr <hash(prev_dr)>
-            vr <hash(sign(prev_vr))>
+            vr <sign(prev_vr)>
             tx_root: <32>   0 1 2 3 4 txs_count txs_hash
             validator_root: 0 1 2 3 4 validators_count validators_hash last_validators_change
             chain_root:     0 1 2 3 4 chain_id chain_tip chain_tip_height (leave out for a future update)
@@ -53,110 +53,67 @@ defmodule Entry do
     h (entry_hash || state_root || receipts_logs_extra_root)
     """
 
-    def unpack(entry_packed) when is_binary(entry_packed) do
-        e = :erlang.binary_to_term(entry_packed, [:safe])
-        unpack(e)
-    end
-    def unpack(entry_map) when is_map(entry_map) do
-        eh = :erlang.binary_to_term(entry_map.header, [:safe])
-        Map.put(entry_map, :header_unpacked, eh)
-    end
-    def unpack(nil), do: nil
-
-    def pack(entry_unpacked) when is_binary(entry_unpacked) do entry_unpacked end
-    def pack(entry_unpacked) do
-        entry_unpacked
-        |> Map.take([:header, :txs, :hash, :signature, :mask])
-        |> :erlang.term_to_binary([:deterministic])
-    end
+    @fields [:header, :hash, :signature, :txs, :mask, :mask_size, :mask_set_size]
+    @fields_header [:height, :prev_hash, :slot, :prev_slot, :signer, :dr, :vr, :txs_hash]
 
     def unpack_from_db(nil), do: nil
     def unpack_from_db(entry_packed) do
         entry = if is_binary(entry_packed) do RDB.vecpak_decode(entry_packed) else entry_packed end
-        header_packed = :erlang.term_to_binary(entry.header, [:deterministic])
-        Map.merge(entry, %{header: header_packed, header_unpacked: entry.header})
+        Map.take(entry, @fields)
+    end
+
+    def pack_for_db(entry_packed) when is_binary(entry_packed) do entry_packed end
+    def pack_for_db(entry) do
+        entry = Map.take(entry, @fields)
+        entry_header = Map.take(entry.header, @fields_header)
+        entry = Map.put(entry, :header, entry_header)
+        RDB.vecpak_encode(entry)
     end
 
     def unpack_from_net(nil), do: nil
-    def unpack_from_net(entry_packed) do
-        e = if is_binary(entry_packed) do :erlang.binary_to_term(entry_packed, [:safe]) else entry_packed end
-        eh = :erlang.binary_to_term(e.header, [:safe])
-        e = Map.put(e, :header_unpacked, eh)
-        if !e[:mask] do e else
-          trainers = DB.Chain.validators_for_height(eh.height)
-          trainers_signed = BLS12AggSig.unmask_trainers(trainers, Util.pad_bitstring_to_bytes(e.mask), bit_size(e.mask))
-          Map.merge(e, %{mask: Util.pad_bitstring_to_bytes(e.mask), mask_size: bit_size(e.mask), mask_set_size: length(trainers_signed)})
+    def unpack_from_net(entry) do
+        entry = Map.take(entry, @fields)
+        entry_header = Map.take(entry.header, @fields_header)
+        entry = Map.put(entry, :header, entry_header)
+        if !entry[:mask] do entry else
+          trainers = DB.Chain.validators_for_height(entry_header.height)
+          trainers_signed = BLS12AggSig.unmask_trainers(trainers, entry.mask, entry.mask_size)
+          true = entry.mask_size == length(trainers)
+          true = entry.mask_set_size == length(trainers_signed)
+          entry
         end
-    end
-
-    def pack_for_db(entry_unpacked) when is_binary(entry_unpacked) do entry_unpacked end
-    def pack_for_db(entry_unpacked) do
-        header = cond do
-          is_map(entry_unpacked.header) -> entry_unpacked.header
-          is_binary(entry_unpacked.header_unpacked) -> :erlang.binary_to_term(entry_unpacked.header_unpacked)
-          is_map(entry_unpacked.header_unpacked) -> entry_unpacked.header_unpacked
-        end
-        entry_unpacked
-        |> Map.take([:txs, :hash, :signature, :mask, :mask_size, :mask_set_size])
-        |> Map.put(:header, header)
-        |> RDB.vecpak_encode()
     end
 
     def pack_for_net(entry) do
-      entry = if !entry[:mask] do entry else
-        <<mask::size(entry.mask_size)-bitstring, _::bitstring>> = entry.mask
-        %{header: entry.header, header_unpacked: entry.header_unpacked, txs: entry.txs, hash: entry.hash, signature: entry.signature, mask: mask}
-      end
-      header = entry.header_unpacked |> :erlang.term_to_binary([:deterministic])
-
-      entry
-      |> Map.take([:txs, :hash, :signature, :mask])
-      |> Map.put(:header, header)
-      |> :erlang.term_to_binary([:deterministic])
+      entry = Map.take(entry, @fields)
+      entry_header = Map.take(entry.header, @fields_header)
+      Map.put(entry, :header, entry_header)
     end
 
-    def sign(sk, entry_unpacked) do
-        txs_hash = Blake3.hash(Enum.join(entry_unpacked.txs))
-        entry_unpacked = put_in(entry_unpacked, [:header_unpacked, :txs_hash], txs_hash)
-        h = :erlang.term_to_binary(entry_unpacked.header_unpacked, [:deterministic])
-
-        hash = Blake3.hash(h)
+    def sign(sk, entry) do
+        txs_hash = Blake3.hash(Enum.join(entry.txs))
+        entry = put_in(entry, [:header, :txs_hash], txs_hash)
+        hash = Blake3.hash(:erlang.term_to_binary(entry.header, [:deterministic]))
         signature = BlsEx.sign!(sk, hash, BLS12AggSig.dst_entry())
         %{
-            header: h,
-            header_unpacked: entry_unpacked.header_unpacked,
-            txs: entry_unpacked.txs,
+            header: entry.header,
             hash: hash,
             signature: signature,
+            txs: entry.txs,
         }
     end
 
-    def unpack_and_validate_from_net(entry_packed) do
+    def unpack_and_validate_from_net(entry) do
         try do
+        entry = unpack_from_net(entry)
 
-        entry_size = Application.fetch_env!(:ama, :entry_size)
-        if byte_size(entry_packed) >= entry_size, do: throw(%{error: :too_large})
-        e = :erlang.binary_to_term(entry_packed, [:safe])
-        |> Map.take([:header, :txs, :hash, :signature, :mask])
-        if entry_packed != :erlang.term_to_binary(e, [:deterministic]), do: throw %{error: :not_deterministicly_encoded}
-        eh = :erlang.binary_to_term(e.header, [:safe])
-        |> Map.take([:slot, :prev_slot, :height, :prev_hash, :signer, :dr, :vr, :txs_hash])
-        if e.header != :erlang.term_to_binary(eh, [:deterministic]), do: throw %{error: :not_deterministicly_encoded_header}
-
-        e = Map.put(e, :header_unpacked, eh)
-        res_sig = validate_signature(e)
-        res_entry = validate_entry(e)
-
-        e = if !e[:mask] do e else
-          trainers = DB.Chain.validators_for_height(eh.height)
-          trainers_signed = BLS12AggSig.unmask_trainers(trainers, Util.pad_bitstring_to_bytes(e.mask), bit_size(e.mask))
-          Map.merge(e, %{mask: Util.pad_bitstring_to_bytes(e.mask), mask_size: bit_size(e.mask), mask_set_size: length(trainers_signed)})
-        end
+        res_sig = validate_signature(entry)
+        res_entry = validate_entry(entry)
 
         cond do
             res_sig.error != :ok -> throw res_sig
             res_entry.error != :ok -> throw res_entry
-            true -> %{error: :ok, entry: e}
+            true -> %{error: :ok, entry: entry}
         end
         catch
             :throw,r -> r
@@ -164,35 +121,9 @@ defmodule Entry do
         end
     end
 
-    def validate_signature(e) do
-        header = e.header
-        signature = e.signature
-        signer = e.header_unpacked.signer
-        mask = e[:mask]
-        hash = Blake3.hash(header)
-        try do
-        if mask do
-            header_unpacked = :erlang.binary_to_term(header, [:safe])
-
-            trainers = DB.Chain.validators_for_height(header_unpacked.height)
-            trainers_signed = BLS12AggSig.unmask_trainers(trainers, Util.pad_bitstring_to_bytes(e.mask), bit_size(e.mask))
-            if nil in trainers_signed, do: throw(%{error: :wrong_epoch})
-
-            aggpk = BlsEx.aggregate_public_keys!(trainers_signed)
-            if !BlsEx.verify?(aggpk, signature, hash, BLS12AggSig.dst_entry()), do: throw(%{error: :invalid_mask_signature})
-        else
-            if !BlsEx.verify?(signer, signature, hash, BLS12AggSig.dst_entry()), do: throw(%{error: :invalid_signature})
-        end
-        %{error: :ok, hash: hash}
-        catch
-            :throw,r -> Map.put(r, :hash, hash)
-            e,r -> IO.inspect({Entry, :validate_signature, e, r, __STACKTRACE__}, limit: 1111111); %{error: :unknown, hash: hash}
-        end
-    end
-
     def validate_entry(e) do
         try do
-        eh = e.header_unpacked
+        eh = e.header
         if !is_integer(eh.slot), do: throw(%{error: :slot_not_integer})
         if !is_integer(eh.prev_slot), do: throw(%{error: :prev_slot_not_integer})
         if !is_integer(eh.height), do: throw(%{error: :height_not_integer})
@@ -229,10 +160,32 @@ defmodule Entry do
         end
     end
 
+    def validate_signature(e) do
+        header = e.header
+        hash = Blake3.hash(:erlang.term_to_binary(header, [:deterministic]))
+        mask = e[:mask]
+        try do
+          if mask do
+              trainers = DB.Chain.validators_for_height(header.height)
+              trainers_signed = BLS12AggSig.unmask_trainers(trainers, e.mask, e.mask_size)
+              if nil in trainers_signed, do: throw(%{error: :wrong_epoch})
+
+              aggpk = BlsEx.aggregate_public_keys!(trainers_signed)
+              if !BlsEx.verify?(aggpk, e.signature, hash, BLS12AggSig.dst_entry()), do: throw(%{error: :invalid_mask_signature})
+          else
+              if !BlsEx.verify?(header.signer, e.signature, hash, BLS12AggSig.dst_entry()), do: throw(%{error: :invalid_signature})
+          end
+          %{error: :ok, hash: hash}
+        catch
+            :throw,r -> Map.put(r, :hash, hash)
+            e,r -> IO.inspect({Entry, :validate_signature, e, r, __STACKTRACE__}, limit: 1111111); %{error: :unknown, hash: hash}
+        end
+    end
+
     def validate_next(cur_entry, next_entry) do
         try do
-        ceh = cur_entry.header_unpacked
-        neh = next_entry.header_unpacked
+        ceh = cur_entry.header
+        neh = next_entry.header
         if ceh.slot != neh.prev_slot, do: throw(%{error: :invalid_slot})
         if ceh.height != (neh.height - 1), do: throw(%{error: :invalid_height})
         if cur_entry.hash != neh.prev_hash, do: throw(%{error: :invalid_hash})
@@ -264,14 +217,14 @@ defmodule Entry do
     def build_next(sk, cur_entry) do
         pk = BlsEx.get_public_key!(sk)
 
-        dr = Blake3.hash(cur_entry.header_unpacked.dr)
-        vr = BlsEx.sign!(sk, cur_entry.header_unpacked.vr, BLS12AggSig.dst_vrf())
+        dr = Blake3.hash(cur_entry.header.dr)
+        vr = BlsEx.sign!(sk, cur_entry.header.vr, BLS12AggSig.dst_vrf())
 
         %{
-            header_unpacked: %{
-                slot: cur_entry.header_unpacked.slot + 1,
-                height: cur_entry.header_unpacked.height + 1,
-                prev_slot: cur_entry.header_unpacked.slot,
+            header: %{
+                slot: cur_entry.header.slot + 1,
+                height: cur_entry.header.height + 1,
+                prev_slot: cur_entry.header.slot,
                 prev_hash: cur_entry.hash,
                 dr: dr,
                 vr: vr,
@@ -281,11 +234,11 @@ defmodule Entry do
     end
 
     def epoch(entry) do
-        div(entry.header_unpacked.height, 100_000)
+        div(entry.header.height, 100_000)
     end
 
     def height(entry) do
-        entry.header_unpacked.height
+        entry.header.height
     end
 
     def contains_tx(entry, txfunction) do

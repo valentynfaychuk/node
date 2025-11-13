@@ -39,8 +39,8 @@ defmodule NodeProto do
     %{op: :event_entry, entry_packed: entry_packed}
   end
 
-  def event_attestation(attestation_packed) do
-    %{op: :event_attestation, attestation_packed: attestation_packed}
+  def event_attestation(attestations) do
+    %{op: :event_attestation, attestations: List.wrap(attestations)}
   end
 
   def catchup(height_flags) do
@@ -58,31 +58,15 @@ defmodule NodeProto do
     %{op: :special_business_reply, business: business}
   end
 
-    def deflate_compress(data) do
-      z = :zlib.open()
-      :zlib.deflateInit(z, 6, :deflated, -15, 8, :default)
-      compressed = :zlib.deflate(z, data, :finish)
-      :zlib.deflateEnd(z)
-      :zlib.close(z)
-      :erlang.list_to_binary(compressed)
-    end
-
-    def deflate_decompress(compressed_data) do
-      z = :zlib.open()
-      :zlib.inflateInit(z, -15)
-      decompressed = :zlib.inflate(z, compressed_data)
-      :zlib.inflateEnd(z)
-      :zlib.close(z)
-      :erlang.list_to_binary(decompressed)
-    end
-
-  def compress(msg) do
-    msg
-    |> :erlang.term_to_binary([:deterministic])
-    |> deflate_compress()
+  def decompress_and_unpack(compressed_data) do
+    vec = compressed_data
+    |> :zstd.decompress()
+    |> IO.iodata_to_binary()
+    |> RDB.vecpak_decode()
+    Map.put(vec, :op, String.to_existing_atom(vec.op))
   end
 
-  def compress2(msg) do
+  def compress(msg) do
     msg
     |> RDB.vecpak_encode()
     |> :zstd.compress()
@@ -117,7 +101,7 @@ defmodule NodeProto do
       if pk == Application.fetch_env!(:ama, :trainer_pk), do: throw(%{error: :msg_to_self})
 
       version = "#{va}.#{vb}.#{vc}"
-      if version < "1.1.7", do: throw(%{error: :old_version})
+      if version < "1.2.5", do: throw(%{error: :old_version})
 
       if s_total >= 10_000, do: throw(%{error: :too_large_shard})
       if original_size >= 1024_0_000, do: throw(%{error: :too_large_size})

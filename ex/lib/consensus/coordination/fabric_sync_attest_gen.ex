@@ -128,19 +128,19 @@ defmodule FabricSyncAttestGen do
 
   def tick_synced() do
     temporal = DB.Chain.tip_entry()
-    temporal_height = temporal.header_unpacked.height
+    temporal_height = temporal.header.height
     rooted = DB.Chain.rooted_tip_entry()
-    rooted_height = rooted.header_unpacked.height
+    rooted_height = rooted.header.height
 
     {height_rooted_abs, height_abs, height_bft} = NodeANR.highest_validator_height()
 
-    old_highest_abs = highestTemporalHeight()
+    old_highest_abs = FabricSyncAttestGen.highestTemporalHeight()
     new_highest_abs = max(temporal_height, height_abs)
     if new_highest_abs != old_highest_abs do
       :persistent_term.get({Net, :highestTemporalHeight}) |> :atomics.put(1, new_highest_abs)
     end
 
-    old_highest_rooted_abs = highestRootedHeight()
+    old_highest_rooted_abs = FabricSyncAttestGen.highestRootedHeight()
     new_highest_rooted_abs = max(rooted_height, height_rooted_abs)
     if new_highest_rooted_abs != old_highest_rooted_abs do
       :persistent_term.get({Net, :highestRootedHeight}) |> :atomics.put(1, new_highest_rooted_abs)

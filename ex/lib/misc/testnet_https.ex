@@ -67,8 +67,6 @@ defmodule TestNetHTTPSProxy do
     ip_string = "#{elem(ip,0)}.#{elem(ip,1)}.#{elem(ip,2)}.#{elem(ip,3)}"
     port = state[:port] || 443
 
-    IO.puts("TestNet HTTPS->HTTP Proxy listening (in-mem cert) on https://#{ip_string}:#{port}")
-
     :ok = :ssl.start()
     %{cert_der: cert_der, key_der: key_der} = LocalCert.gen()
     ssl_opts = [

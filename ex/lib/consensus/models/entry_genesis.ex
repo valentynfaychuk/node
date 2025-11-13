@@ -133,7 +133,6 @@ defmodule EntryGenesis do
         attestation = Attestation.sign(sk, entry_signed.hash, mutations_hash)
 
         pop = BlsEx.sign!(sk, pk, BLS12AggSig.dst_pop())
-        entry_signed = Entry.pack(entry_signed) |> Entry.unpack()
 
         IO.inspect {entry_signed, attestation, pop}, limit: :infinity
         :ok
@@ -161,7 +160,7 @@ defmodule EntryGenesis do
         vr = BlsEx.sign!(sk, dr<>dr<>dr, BLS12AggSig.dst_vrf())
 
         entry = %{
-          header_unpacked: %{
+          header: %{
             slot: 0,
             height: 0,
             prev_slot: -1,
@@ -181,7 +180,6 @@ defmodule EntryGenesis do
         attestation = Attestation.sign(sk, entry_signed.hash, mutations_hash)
 
         pop = BlsEx.sign!(sk, pk, BLS12AggSig.dst_pop())
-        entry_signed = Entry.pack(entry_signed) |> Entry.unpack()
 
         DB.Entry.insert(entry_signed, %{rtx: rtx})
         DB.Entry.apply_into_main_chain(entry_signed, mutations_hash, [], [], %{rtx: rtx})

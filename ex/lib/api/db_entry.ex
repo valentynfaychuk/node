@@ -73,7 +73,7 @@ defmodule DB.Entry do
     entry_packed = Entry.pack_for_db(entry)
     if !by_hash(entry.hash, db_opts) do
       RocksDB.put(entry.hash, entry_packed, db_handle(db_opts, :entry, %{}))
-      RocksDB.put("by_height:#{pad_integer(entry.header_unpacked.height)}:#{entry.hash}", entry.hash, db_handle(db_opts, :entry_meta, %{}))
+      RocksDB.put("by_height:#{pad_integer(entry.header.height)}:#{entry.hash}", entry.hash, db_handle(db_opts, :entry_meta, %{}))
       RocksDB.put("entry:#{entry.hash}:seentime", :os.system_time(1000), db_handle(db_opts, :entry_meta, %{to_integer: true}))
     end
 
@@ -83,11 +83,11 @@ defmodule DB.Entry do
   def apply_into_main_chain(entry, muts_hash, muts_rev, receipts, db_opts = %{rtx: _}) do
     entry_packed = Entry.pack_for_db(entry)
     RocksDB.put(entry.hash, entry_packed, db_handle(db_opts, :entry, %{}))
-    RocksDB.put("by_height:#{pad_integer(entry.header_unpacked.height)}:#{entry.hash}", entry.hash, db_handle(db_opts, :entry_meta, %{}))
-    RocksDB.put("by_height_in_main_chain:#{pad_integer(entry.header_unpacked.height)}", entry.hash, db_handle(db_opts, :entry_meta, %{}))
+    RocksDB.put("by_height:#{pad_integer(entry.header.height)}:#{entry.hash}", entry.hash, db_handle(db_opts, :entry_meta, %{}))
+    RocksDB.put("by_height_in_main_chain:#{pad_integer(entry.header.height)}", entry.hash, db_handle(db_opts, :entry_meta, %{}))
     #RocksDB.put("entry:#{entry.hash}:seentime", :os.system_time(1000), db_handle(db_opts, :entry_meta, %{to_integer: true}))
-    RocksDB.put("entry:#{entry.hash}:prev", entry.header_unpacked.prev_hash, db_handle(db_opts, :entry_meta, %{}))
-    RocksDB.put("entry:#{entry.header_unpacked.prev_hash}:next", entry.hash, db_handle(db_opts, :entry_meta, %{}))
+    RocksDB.put("entry:#{entry.hash}:prev", entry.header.prev_hash, db_handle(db_opts, :entry_meta, %{}))
+    RocksDB.put("entry:#{entry.header.prev_hash}:next", entry.hash, db_handle(db_opts, :entry_meta, %{}))
     RocksDB.put("entry:#{entry.hash}:in_chain", "", db_handle(db_opts, :entry_meta, %{}))
     RocksDB.put("entry:#{entry.hash}:muts_hash", muts_hash, db_handle(db_opts, :entry_meta, %{}))
     RocksDB.put("entry:#{entry.hash}:muts_rev", RDB.vecpak_encode(muts_rev), db_handle(db_opts, :entry_meta, %{}))
@@ -125,11 +125,11 @@ defmodule DB.Entry do
 
     RocksDB.delete(hash, db_handle(db_opts, :entry, %{}))
 
-    height_padded = pad_integer(entry.header_unpacked.height)
+    height_padded = pad_integer(entry.header.height)
     main_chain_hash = RocksDB.get("by_height_in_main_chain:#{height_padded}", db_handle(db_opts, :entry_meta, %{}))
     if hash == main_chain_hash do
       RocksDB.delete("by_height_in_main_chain:#{height_padded}", db_handle(db_opts, :entry_meta, %{}))
-      RocksDB.delete("entry:#{entry.header_unpacked.prev_hash}:next", db_handle(db_opts, :entry_meta, %{}))
+      RocksDB.delete("entry:#{entry.header.prev_hash}:next", db_handle(db_opts, :entry_meta, %{}))
     end
     RocksDB.delete("by_height:#{height_padded}:#{hash}", db_handle(db_opts, :entry_meta, %{}))
     RocksDB.delete("entry:#{hash}:seentime", db_handle(db_opts, :entry_meta, %{}))

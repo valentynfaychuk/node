@@ -32,9 +32,9 @@ defmodule FabricSyncGen do
 
   def tick() do
     temporal = DB.Chain.tip_entry()
-    temporal_height = temporal.header_unpacked.height
+    temporal_height = temporal.header.height
     rooted = DB.Chain.rooted_tip_entry()
-    rooted_height = rooted.header_unpacked.height
+    rooted_height = rooted.header.height
 
     height_network_temp = FabricSyncAttestGen.highestTemporalHeight()
     behind_temp = height_network_temp - temporal_height

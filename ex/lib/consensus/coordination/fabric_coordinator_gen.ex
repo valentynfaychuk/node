@@ -83,7 +83,7 @@ defmodule FabricCoordinatorGen do
     entry = DB.Entry.by_hash(entry_hash, %{rtx: rtx})
     trainers = if !entry do nil else DB.Chain.validators_for_height(Entry.height(entry), %{rtx: rtx}) end
     if !!entry and !!trainers and a.signer in trainers do
-      if entry.header_unpacked.height <= DB.Chain.height(%{rtx: rtx}) do
+      if entry.header.height <= DB.Chain.height(%{rtx: rtx}) do
         consensus = DB.Attestation.consensus(entry_hash, mutations_hash, %{rtx: rtx}) || %{mutations_hash: mutations_hash, entry_hash: entry_hash}
         aggsig = cond do
           !consensus[:aggsig] ->

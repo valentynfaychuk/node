@@ -82,7 +82,7 @@ defmodule SpecialMeetingGen do
     entry = state.slash_trainer.entry
     true = entry.hash == entry_hash
 
-    trainers = DB.Chain.validators_for_height(entry.header_unpacked.height + 1)
+    trainers = DB.Chain.validators_for_height(entry.header.height + 1)
     if pk in trainers do
       ma = BLS12AggSig.add(%{mask: entry.mask, aggsig: entry.signature}, trainers, pk, signature)
       state = put_in(state, [:slash_trainer, :entry, :mask], ma.mask)
@@ -144,7 +144,7 @@ defmodule SpecialMeetingGen do
         NodeGen.broadcast(NodeProto.special_business(business), %{peers: 0, self: true})
 
         Enum.each(Application.fetch_env!(:ama, :keys), fn(%{pk: pk, seed: seed})->
-          h = :erlang.term_to_binary(state.slash_trainer.entry.header_unpacked, [:deterministic])
+          h = :erlang.term_to_binary(state.slash_trainer.entry.header, [:deterministic])
           signature = BlsEx.sign!(seed, Blake3.hash(h), BLS12AggSig.dst_entry())
           send(SpecialMeetingGen, {:add_slash_trainer_entry_reply, state.slash_trainer.entry.hash, pk, signature})
         end)
@@ -183,15 +183,15 @@ defmodule SpecialMeetingGen do
 
     true = FabricSyncAttestGen.isQuorumSynced()
     cur_entry = DB.Chain.rooted_tip_entry()
-    cur_height = cur_entry.header_unpacked.height
-    cur_slot = cur_entry.header_unpacked.slot
+    cur_height = cur_entry.header.height
+    cur_slot = cur_entry.header.slot
 
     next_entry = Entry.build_next(sk, cur_entry)
     txs = [packed_tx]
     next_entry = Map.put(next_entry, :txs, txs)
     next_entry = Entry.sign(sk, next_entry)
 
-    trainers = DB.Chain.validators_for_height(next_entry.header_unpacked.height + 1)
+    trainers = DB.Chain.validators_for_height(next_entry.header.height + 1)
     mask = <<0::size(length(trainers))>>
     mask = Util.set_bit(mask, Util.index_of(trainers, my_pk))
     Map.put(next_entry, :mask, mask)
@@ -201,8 +201,8 @@ defmodule SpecialMeetingGen do
     pk = Application.fetch_env!(:ama, :trainer_pk)
     entry = DB.Chain.tip_entry()
 
-    my_height = entry.header_unpacked.height
-    slot = entry.header_unpacked.slot
+    my_height = entry.header.height
+    slot = entry.header.slot
     next_height = my_height + 1
 
     trainers = DB.Chain.validators_for_height(next_height + 1)

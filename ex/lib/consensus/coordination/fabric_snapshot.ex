@@ -31,7 +31,7 @@ defmodule FabricSnapshot do
 
         case entry do
             %{hash: ^end_hash} -> true
-            %{header_unpacked: %{prev_hash: prev_hash, height: target_height}} ->
+            %{header: %{prev_hash: prev_hash, height: target_height}} ->
                 walk(end_hash, prev_hash, opts)
         end
     end

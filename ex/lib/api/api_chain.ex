@@ -11,8 +11,8 @@ defmodule API.Chain do
         if !entry do
             %{error: :not_found}
         else
-            next_entry = API.Chain.by_height(entry.header_unpacked.height+1).entries
-            |> Enum.find(& &1.header_unpacked.prev_hash == Base58.encode(entry.hash) && &1[:consensus][:finality_reached])
+            next_entry = API.Chain.by_height(entry.header.height+1).entries
+            |> Enum.find(& &1.header.prev_hash == Base58.encode(entry.hash) && &1[:consensus][:finality_reached])
             entry = format_entry_for_client(entry)
             entry = if !next_entry do entry else
               put_in(entry, [:next_entry_hash_finality_reached], next_entry.hash)
@@ -104,17 +104,18 @@ defmodule API.Chain do
     def format_entry_for_client(entry) do
         hash = entry.hash
         entry = Map.put(entry, :tx_count, length(entry.txs))
-        entry = Map.drop(entry, [:header, :signature, :txs])
-        {_, entry} = pop_in(entry, [:header_unpacked, :txs_hash])
+        entry = Map.drop(entry, [:signature, :txs])
+        {_, entry} = pop_in(entry, [:header, :txs_hash])
         entry = put_in(entry, [:hash], Base58.encode(entry.hash))
         entry = if !entry[:mask] do entry else
           put_in(entry, [:mask], Base58.encode(entry.mask))
           put_in(entry, [:mask_size], entry.mask_size)
         end
-        entry = put_in(entry, [:header_unpacked, :dr], Base58.encode(entry.header_unpacked.dr))
-        entry = put_in(entry, [:header_unpacked, :vr], Base58.encode(entry.header_unpacked.vr))
-        entry = put_in(entry, [:header_unpacked, :prev_hash], Base58.encode(entry.header_unpacked.prev_hash))
-        entry = put_in(entry, [:header_unpacked, :signer], Base58.encode(entry.header_unpacked.signer))
+        entry = put_in(entry, [:header, :dr], Base58.encode(entry.header.dr))
+        entry = put_in(entry, [:header, :vr], Base58.encode(entry.header.vr))
+        entry = put_in(entry, [:header, :prev_hash], Base58.encode(entry.header.prev_hash))
+        entry = put_in(entry, [:header, :signer], Base58.encode(entry.header.signer))
+        entry = put_in(entry, [:header_unpacked], entry.header)
         {mut_hash, score} = DB.Attestation.best_consensus_by_entryhash(hash)
         if !mut_hash do entry else
             entry = put_in(entry, [:consensus], %{})

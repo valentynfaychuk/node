@@ -55,7 +55,7 @@ defmodule NodeANR do
     }
     anr = if !anr_name do anr else Map.put(anr, :anr_name, anr_name) end
     anr = if !anr_desc do anr else Map.put(anr, :anr_desc, anr_desc) end
-    anr_to_sign = anr |> :erlang.term_to_binary([:deterministic])
+    anr_to_sign = anr |> RDB.vecpak_encode()
     sig = BlsEx.sign!(sk, anr_to_sign, BLS12AggSig.dst_anr())
     anr = Map.put(anr, :signature, sig)
   end
@@ -77,7 +77,7 @@ defmodule NodeANR do
 
   def verify_signature(anr) do
     signed = Map.take(anr, @keys_for_signature)
-    |> :erlang.term_to_binary([:deterministic])
+    |> RDB.vecpak_encode()
     BlsEx.verify?(anr.pk, anr.signature, signed, BLS12AggSig.dst_anr())
     and BlsEx.verify?(anr.pk, anr.pop, anr.pk, BLS12AggSig.dst_pop())
   end
@@ -255,7 +255,7 @@ defmodule NodeANR do
   end
 
   def get_last_message(pk) do :ets.lookup_element(NODEANRHOT, pk, 2, 0) end
-  def get_version(pk) do :ets.lookup_element(NODEANRHOT, pk, 3, 0) end
+  def get_version(pk) do :ets.lookup_element(NODEANRHOT, pk, 3, "") end
   def get_latency(pk) do :ets.lookup_element(NODEANRHOT, pk, 4, 0) end
   def get_peer_hotdata(pk) do
     case :ets.lookup(NODEANRHOT, pk) do
@@ -294,14 +294,14 @@ defmodule NodeANR do
   def highest_validator_height() do
     {vals, peers} = NodeANR.handshaked_and_online()
     vals = Enum.map(vals, fn(%{ip4: ip4, pk: pk})->
-      height_root = :ets.lookup_element(NODEANRHOT, pk, 5, nil)[:header_unpacked][:height]
-      height_temp = :ets.lookup_element(NODEANRHOT, pk, 6, nil)[:header_unpacked][:height]
+      height_root = :ets.lookup_element(NODEANRHOT, pk, 5, nil)[:header][:height]
+      height_temp = :ets.lookup_element(NODEANRHOT, pk, 6, nil)[:header][:height]
       %{pk: pk, ip4: ip4, height_root: height_root, height_temp: height_temp}
     end)
     |> Enum.filter(& &1.height_root && &1.height_temp)
     peers = Enum.map(peers, fn(%{ip4: ip4, pk: pk})->
-      height_root = :ets.lookup_element(NODEANRHOT, pk, 5, nil)[:header_unpacked][:height]
-      height_temp = :ets.lookup_element(NODEANRHOT, pk, 6, nil)[:header_unpacked][:height]
+      height_root = :ets.lookup_element(NODEANRHOT, pk, 5, nil)[:header][:height]
+      height_temp = :ets.lookup_element(NODEANRHOT, pk, 6, nil)[:header][:height]
       %{pk: pk, ip4: ip4, height_root: height_root, height_temp: height_temp}
     end)
     |> Enum.filter(& &1.height_root && &1.height_temp)
@@ -322,8 +322,8 @@ defmodule NodeANR do
     {vals, peers} = NodeANR.handshaked_and_online()
     total = if type == :any do vals ++ peers else vals end
     total = Enum.map(total, fn(%{ip4: ip4, pk: pk})->
-      height_root = :ets.lookup_element(NODEANRHOT, pk, 5, nil)[:header_unpacked][:height] || 0
-      height_temp = :ets.lookup_element(NODEANRHOT, pk, 6, nil)[:header_unpacked][:height] || 0
+      height_root = :ets.lookup_element(NODEANRHOT, pk, 5, nil)[:header][:height] || 0
+      height_temp = :ets.lookup_element(NODEANRHOT, pk, 6, nil)[:header][:height] || 0
       %{pk: pk, ip4: ip4, height_root: height_root, height_temp: height_temp}
     end)
     {Enum.filter(total, & &1.height_root >= height), Enum.filter(total, & &1.height_temp >= height)}

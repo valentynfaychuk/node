@@ -7,7 +7,7 @@ defmodule DB.Chain do
     DB.Entry.by_hash(tip(db_opts), db_opts)
   end
 
-  def height(db_opts \\ %{}) do tip_entry(db_opts).header_unpacked.height end
+  def height(db_opts \\ %{}) do tip_entry(db_opts).header.height end
   def epoch(db_opts \\ %{}) do div(height(db_opts), 100_000) end
 
   def rooted_tip(db_opts \\ %{}) do RocksDB.get("rooted_tip", db_handle(db_opts, :sysconf, %{})) end
@@ -19,7 +19,7 @@ defmodule DB.Chain do
   def rooted_height(db_opts \\ %{}) do
       entry = rooted_tip_entry(db_opts)
       if entry do
-          entry.header_unpacked.height
+          entry.header.height
       end
   end
 
@@ -56,7 +56,7 @@ defmodule DB.Chain do
           tx_bytes = binary_part(entry_bytes, map.index_start, map.index_size)
           TX.unpack(tx_bytes)
           |> Map.put(:result, map[:result])
-          |> Map.put(:metadata, %{entry_hash: map.entry_hash, entry_height: entry.header_unpacked.height, entry_slot: entry.header_unpacked.slot})
+          |> Map.put(:metadata, %{entry_hash: map.entry_hash, entry_height: entry.header.height, entry_slot: entry.header.slot})
       end
   end
 
@@ -83,7 +83,7 @@ defmodule DB.Chain do
 
   def validators_for_hash(hash, db_opts \\ %{}) do
     entry = DB.Entry.by_hash(hash)
-    if entry do validators_for_height(entry.header_unpacked.height, db_opts) end
+    if entry do validators_for_height(entry.header.height, db_opts) end
   end
 
   def validators_for_height_my(height, db_opts \\ %{}) do
@@ -122,7 +122,7 @@ defmodule DB.Chain do
       !in_chain or tip_entry.hash == target_hash ->
         RocksDB.transaction_rollback(rtx)
         false
-      target_hash_entry.header_unpacked.height < rooted_height ->
+      target_hash_entry.header.height < rooted_height ->
         IO.inspect "cannot rewind finalized entry"
         RocksDB.transaction_rollback(rtx)
         false
@@ -138,7 +138,7 @@ defmodule DB.Chain do
     revert_muts(m_rev, %{rtx: rtx})
 
     DB.Entry.delete_UNSAFE(current_entry.hash, %{rtx: rtx})
-    prev_hash = current_entry.header_unpacked.prev_hash
+    prev_hash = current_entry.header.prev_hash
     if prev_hash == target_hash do
       :ok
     else

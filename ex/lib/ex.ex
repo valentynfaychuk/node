@@ -72,6 +72,8 @@ defmodule Ama do
     end
     ipv4 = {a,b,c,d} = Application.fetch_env!(:ama, :http_ipv4)
     if ipv4 != {0,0,0,0} do
+      ipv4_string = "#{a}.#{b}.#{c}.#{d}"
+      IO.puts "started https-api on #{ipv4_string}:#{443}"
       {:ok, _} = DynamicSupervisor.start_child(Ama.Supervisor, %{id: TestNetHTTPSProxy, start: {TestNetHTTPSProxy, :start_link, [%{ip: ipv4, port: 443}]}})
     end
     run_node_services()

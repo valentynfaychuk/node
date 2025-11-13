@@ -97,12 +97,14 @@ defmodule NodeState do
   end
 
   def handle(:event_attestation, istate, term) do
-    res = Attestation.unpack_and_validate_from_net(term.attestation_packed)
-    if res.error == :ok and Attestation.validate_vs_chain(res.attestation) do
-      send(FabricCoordinatorGen, {:add_attestation, res.attestation})
-    else
-      :ets.insert(AttestationCache, {{res.attestation.entry_hash, res.attestation.signer}, {res.attestation, :os.system_time(1000)}})
-    end
+    Enum.each(term.attestations, fn(attestation)->
+      case Attestation.validate_vs_chain(attestation) do
+        %{error: :ok} ->
+          send(FabricCoordinatorGen, {:add_attestation, attestation})
+        _ ->
+          :ets.insert(AttestationCache, {{attestation.entry_hash, attestation.signer}, {attestation, :os.system_time(1000)}})
+      end
+    end)
   end
 
   def handle(:catchup, istate, term) do
@@ -114,8 +116,8 @@ defmodule NodeState do
       needConsensus = opts[:c] || false
       trie = %{height: height}
       trie = if !needEntry do trie else Map.put(trie, :entries, DB.Entry.by_height(height) |> Enum.filter(& &1.hash not in hasHashes) |> Enum.map(& Entry.pack_for_net(&1))) end
-      trie = if !needAttest do trie else Map.put(trie, :attestations, DB.Attestation.by_height_my(height) |> Enum.map(& Attestation.pack_for_net(&1))) end
-      trie = if !needConsensus do trie else Map.put(trie, :consensuses, DB.Attestation.consensuses_by_height(height) |> Enum.map(& Consensus.pack_for_net(&1))) end
+      trie = if !needAttest do trie else Map.put(trie, :attestations, DB.Attestation.by_height_my(height)) end
+      trie = if !needConsensus do trie else Map.put(trie, :consensuses, DB.Attestation.consensuses_by_height(height)) end
       trie
     end)
     send(NodeGen.get_socket_gen(), {:send_to, [%{ip4: istate.peer.ip4, pk: istate.peer.pk}], NodeProto.catchup_reply(tries)})
@@ -133,19 +135,18 @@ defmodule NodeState do
         end
       end)
 
-      Enum.each(trie[:attestations]||[], fn(attestation_packed)->
-        res = Attestation.unpack_and_validate_from_net(attestation_packed)
-        if res.error == :ok and Attestation.validate_vs_chain(res.attestation) do
-          send(FabricCoordinatorGen, {:add_attestation, res.attestation})
-        else
-          :ets.insert(AttestationCache, {{res.attestation.entry_hash, res.attestation.signer}, {res.attestation, :os.system_time(1000)}})
+      Enum.each(trie[:attestations]||[], fn(attestation)->
+        case Attestation.validate_vs_chain(attestation) do
+          %{error: :ok} ->
+            send(FabricCoordinatorGen, {:add_attestation, attestation})
+          _ ->
+            :ets.insert(AttestationCache, {{attestation.entry_hash, attestation.signer}, {attestation, :os.system_time(1000)}})
         end
       end)
 
-      Enum.each(trie[:consensuses]||[], fn(consensus_packed)->
-        consensus = Consensus.unpack_from_net(consensus_packed)
+      Enum.each(trie[:consensuses]||[], fn(consensus)->
         case Consensus.validate_vs_chain(consensus) do
-          %{error: :ok, consensus: consensus} ->
+          %{error: :ok} ->
             send(FabricCoordinatorGen, {:insert_consensus, consensus})
           _ -> nil
         end

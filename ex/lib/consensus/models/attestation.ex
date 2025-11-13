@@ -7,18 +7,13 @@ defmodule Attestation do
         signature: <entry_hash,mutations_hash>,
     }
     """
+    @fields [:entry_hash, :mutations_hash, :signer, :signature]
 
     def pack_for_db(attestation_unpacked) when is_binary(attestation_unpacked) do attestation_unpacked end
     def pack_for_db(attestation_unpacked) do
       attestation_unpacked
-      |> Map.take([:entry_hash, :mutations_hash, :signer, :signature])
+      |> Map.take(@fields)
       |> RDB.vecpak_encode()
-    end
-
-    def pack_for_net(attestation_unpacked) do
-      attestation_unpacked
-      |> Map.take([:entry_hash, :mutations_hash, :signer, :signature])
-      |> :erlang.term_to_binary([:deterministic])
     end
 
     def sign(sk, entry_hash, mutations_hash) do
@@ -32,19 +27,9 @@ defmodule Attestation do
         }
     end
 
-    def unpack_and_validate_from_net(a) do
-        try do
-
-        a = if is_map(a) do a else
-          attestation_size = Application.fetch_env!(:ama, :attestation_size)
-          if byte_size(a) >= attestation_size, do: throw(%{error: :too_large})
-
-          a_unpacked = :erlang.binary_to_term(a, [:safe])
-          |> Map.take([:entry_hash, :mutations_hash, :signer, :signature])
-          if a != :erlang.term_to_binary(a_unpacked, [:deterministic]), do: throw %{error: :not_deterministicly_encoded}
-
-          a_unpacked
-        end
+    def validate(a) do
+      try do
+        a = Map.take(a, @fields)
 
         if !is_binary(a.entry_hash), do: throw(%{error: :entry_hash_not_binary})
         if byte_size(a.entry_hash) != 32, do: throw(%{error: :entry_hash_not_256_bits})
@@ -53,24 +38,25 @@ defmodule Attestation do
         if !is_binary(a.signer), do: throw(%{error: :signer_not_binary})
         if byte_size(a.signer) != 48, do: throw(%{error: :signer_not_48_bytes})
 
-        bin = <<a.entry_hash::binary, a.mutations_hash::binary>>
-        if !BlsEx.verify?(a.signer, a.signature, bin, BLS12AggSig.dst_att()), do: throw(%{error: :invalid_signature})
+        claim = <<a.entry_hash::binary, a.mutations_hash::binary>>
+        if !BlsEx.verify?(a.signer, a.signature, claim, BLS12AggSig.dst_att()), do: throw(%{error: :invalid_signature})
 
         %{error: :ok, attestation: a}
-        catch
-            :throw,r -> r
-            e,r -> IO.inspect {Attestation, :validate, e, r}; %{error: :unknown}
-        end
+      catch
+          :throw,r -> r
+          e,r -> IO.inspect {Attestation, :validate, e, r}; %{error: :unknown}
+      end
     end
 
     def validate_vs_chain(a) do
-        entry = DB.Entry.by_hash(a.entry_hash)
-        chain_height = DB.Chain.height()
-        if !!entry and entry.header_unpacked.height <= DB.Chain.height() do
-            trainers = DB.Chain.validators_for_height(Entry.height(entry))
-            if !!trainers and a.signer in trainers do
-                true
-            end
-        end
+      entry = DB.Entry.by_hash(a.entry_hash)
+      res = validate(a)
+      cond do
+        res.error != :ok -> res
+        !entry -> %{error: :entry_dne}
+        Entry.height(entry) > DB.Chain.height() -> %{error: :ahead_of_localchain}
+        a.signer not in DB.Chain.validators_for_height(Entry.height(entry)) -> %{error: :not_validator}
+        true -> %{error: :ok}
+      end
     end
 end

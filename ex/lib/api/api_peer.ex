@@ -8,7 +8,7 @@ defmodule API.Peer do
             p = NodeANR.get_peer_hotdata(pk)
             inSlot = trainerForSlot == pk
             if !!p and NodeANR.get_is_online(pk) do
-                [Base58.encode(pk), p.version, true, inSlot, p.latency, Base58.encode(get_in(p, [:temporal, :hash])), get_in(p, [:temporal, :header_unpacked, :height]), get_in(p, [:rooted, :header_unpacked, :height])]
+                [Base58.encode(pk), p.version, true, inSlot, p.latency, Base58.encode(get_in(p, [:temporal, :hash])), get_in(p, [:temporal, :header, :height]), get_in(p, [:rooted, :header, :height])]
             else
                 [Base58.encode(pk), p[:version], false, inSlot]
             end
@@ -47,8 +47,8 @@ defmodule API.Peer do
           peer = NodeANR.get_peer_hotdata(pk)
           [
             peer[:version],peer[:latency],Base58.encode(pk),
-            get_in(peer, [:temporal, :header_unpacked, :height]),
-            get_in(peer, [:rooted, :header_unpacked, :height]),
+            get_in(peer, [:temporal, :header, :height]),
+            get_in(peer, [:rooted, :header, :height]),
           ]
         end)
         |> Enum.sort(:desc)
@@ -69,9 +69,9 @@ defmodule API.Peer do
               pk: Base58.encode(pk),
               version: peer.version,
               latency: peer.latency,
-              temporal_height: get_in(peer, [:temporal, :header_unpacked, :height]),
+              temporal_height: get_in(peer, [:temporal, :header, :height]),
               temporal_hash: get_in(peer, [:temporal, :hash]) |> Base58.encode(),
-              rooted_height: get_in(peer, [:rooted, :header_unpacked, :height]),
+              rooted_height: get_in(peer, [:rooted, :header, :height]),
               rooted_hash: get_in(peer, [:rooted, :hash]) |> Base58.encode(),
               is_trainer: pd[:is_trainer]
             }

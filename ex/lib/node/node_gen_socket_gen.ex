@@ -66,14 +66,8 @@ defmodule NodeGenSocketGen do
     key = :crypto.hash(:sha256, [shared_secret, :binary.encode_unsigned(ts_nano), iv])
     plaintext = :crypto.crypto_one_time_aead(:aes_256_gcm, key, iv, ciphertext, <<>>, tag, false)
 
-    msg = if version >= "1.2.3" do
-      msg = plaintext
-      |> NodeProto2.decompress_and_unpack()
-    else
-      msg = plaintext
-      |> NodeProto.deflate_decompress()
-      |> :erlang.binary_to_term([:safe])
-    end
+    msg = plaintext
+    |> NodeProto.decompress_and_unpack()
 
     if !NodeGenNetguard.op_ok(peer_ip, msg.op) do
       IO.inspect {:dropping_due_to_op_flood, peer_ip, msg.op}
@@ -134,29 +128,16 @@ defmodule NodeGenSocketGen do
         port = Application.fetch_env!(:ama, :udp_port)
         Enum.each(peer_pairs, fn(%{ip4: ip4, pk: pk})->
           version = NodeANR.get_version(pk)
-          if version >= "1.2.3" do
-            msg_compressed = NodeProto2.compress(msg)
+          msg_compressed = NodeProto.compress(msg)
 
-            {:ok, ip} = :inet.parse_address(~c'#{ip4}')
-            NodeProto.encrypt_message(msg_compressed, NodeANR.get_shared_secret(pk))
-            |> Enum.each(fn(msg_packed)->
-              case :gen_udp.send(state.socket, ip, port, msg_packed) do
-                :ok -> :ok
-                {:error, :eperm} -> :rand.uniform(100) == 1 && IO.puts("udp_send_error eperm")
-              end
-            end)
-          else
-            msg_compressed = NodeProto.compress(msg)
-
-            {:ok, ip} = :inet.parse_address(~c'#{ip4}')
-            NodeProto.encrypt_message(msg_compressed, NodeANR.get_shared_secret(pk))
-            |> Enum.each(fn(msg_packed)->
-              case :gen_udp.send(state.socket, ip, port, msg_packed) do
-                :ok -> :ok
-                {:error, :eperm} -> :rand.uniform(100) == 1 && IO.puts("udp_send_error eperm")
-              end
-            end)
-          end
+          {:ok, ip} = :inet.parse_address(~c'#{ip4}')
+          NodeProto.encrypt_message(msg_compressed, NodeANR.get_shared_secret(pk))
+          |> Enum.each(fn(msg_packed)->
+            case :gen_udp.send(state.socket, ip, port, msg_packed) do
+              :ok -> :ok
+              {:error, :eperm} -> :rand.uniform(100) == 1 && IO.puts("udp_send_error eperm")
+            end
+          end)
         end)
 
       {:udp_passive, _socket} ->

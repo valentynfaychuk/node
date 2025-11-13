@@ -86,14 +86,14 @@ defmodule FabricGen do
         {entry, mut_hash, score}
     end)
     |> Enum.filter(fn {entry, mut_hash, score} -> mut_hash end)
-    |> Enum.sort_by(fn {entry, mut_hash, score} -> {-score, entry.header_unpacked.slot, !entry[:mask], entry.hash} end)
+    |> Enum.sort_by(fn {entry, mut_hash, score} -> {-score, entry.header.slot, !entry[:mask], entry.hash} end)
   end
 
   def proc_consensus() do
     entry_root = DB.Chain.rooted_tip_entry()
     entry_temp = DB.Chain.tip_entry()
-    height_root = entry_root.header_unpacked.height
-    height_temp = entry_temp.header_unpacked.height
+    height_root = entry_root.header.height
+    height_temp = entry_temp.header.height
     if height_root < height_temp do
       proc_consensus_1(height_root+1)
       if DB.Chain.rooted_tip() != entry_root.hash do
@@ -115,15 +115,15 @@ defmodule FabricGen do
               #We did not apply the entry due to doubleblock or slash block
               #Switch chain to it
               !in_chain ->
-                rewind_to_hash = DB.Entry.by_height_in_main_chain(best_entry.header_unpacked.height - 1)
-                IO.puts "softfork: rewind to entry #{Base58.encode(rewind_to_hash)}, height #{best_entry.header_unpacked.height - 1}"
+                rewind_to_hash = DB.Entry.by_height_in_main_chain(best_entry.header.height - 1)
+                IO.puts "softfork: rewind to entry #{Base58.encode(rewind_to_hash)}, height #{best_entry.header.height - 1}"
                 true = DB.Chain.rewind(rewind_to_hash)
                 proc_consensus()
 
               muts_hash != my_muts_hash ->
-                height = best_entry.header_unpacked.height
-                slot = best_entry.header_unpacked.slot
-                rewind_to_hash = DB.Entry.by_height_in_main_chain(best_entry.header_unpacked.height - 1)
+                height = best_entry.header.height
+                slot = best_entry.header.slot
+                rewind_to_hash = DB.Entry.by_height_in_main_chain(best_entry.header.height - 1)
                 IO.puts "EMERGENCY: consensus chose entry #{Base58.encode(best_entry.hash)} for height/slot #{height}/#{slot}"
                 IO.puts "but our mutations are #{Base58.encode(my_muts_hash)} while consensus is #{Base58.encode(muts_hash)}"
                 IO.puts "EMERGENCY: consensus halted as state is out of sync with network"
@@ -145,17 +145,17 @@ defmodule FabricGen do
     softfork_deny_hash = :persistent_term.get(SoftforkDenyHash, [])
 
     cur_entry = DB.Chain.tip_entry()
-    cur_slot = cur_entry.header_unpacked.slot
-    height = cur_entry.header_unpacked.height
+    cur_slot = cur_entry.header.slot
+    height = cur_entry.header.height
     next_height = height + 1
     next_entries = next_height
     |> DB.Entry.by_height()
     |> Enum.filter(fn(next_entry)->
       #in slot
-      next_slot = next_entry.header_unpacked.slot
+      next_slot = next_entry.header.slot
       validator_for_entry = DB.Chain.validator_for_height(Entry.height(next_entry))
       in_slot = cond do
-        next_entry.header_unpacked.signer == validator_for_entry -> true
+        next_entry.header.signer == validator_for_entry -> true
         !!next_entry[:mask] ->
             trainers = DB.Chain.validators_for_height(Entry.height(next_entry))
             score = BLS12AggSig.score(trainers, Util.pad_bitstring_to_bytes(next_entry.mask), bit_size(next_entry.mask))
@@ -175,7 +175,7 @@ defmodule FabricGen do
         true -> true
       end
     end)
-    |> Enum.sort_by(& {&1.hash not in softfork_hash, &1.header_unpacked.slot, !&1[:mask], &1.hash})
+    |> Enum.sort_by(& {&1.hash not in softfork_hash, &1.header.slot, !&1[:mask], &1.hash})
 
     case List.first(next_entries) do
       nil -> nil
@@ -196,8 +196,8 @@ defmodule FabricGen do
 
   def proc_if_my_slot() do
     entry = DB.Chain.tip_entry()
-    next_slot = entry.header_unpacked.slot + 1
-    next_height = entry.header_unpacked.height + 1
+    next_slot = entry.header.slot + 1
+    next_height = entry.header.height + 1
     next_validator = DB.Chain.validator_for_height(next_height)
 
     am_i_next = Enum.find(Application.fetch_env!(:ama, :keys), & &1.pk == next_validator)
@@ -262,15 +262,15 @@ defmodule FabricGen do
           :readonly => false,
           :seed => nil,
           :seedf64 => 1.0,
-          :entry_signer => next_entry.header_unpacked.signer,
-          :entry_prev_hash => next_entry.header_unpacked.prev_hash,
-          :entry_slot => next_entry.header_unpacked.slot,
-          :entry_prev_slot => next_entry.header_unpacked.prev_slot,
-          :entry_height => next_entry.header_unpacked.height,
-          :entry_epoch => div(next_entry.header_unpacked.height, 100_000),
-          :entry_vr => next_entry.header_unpacked.vr,
-          :entry_vr_b3 => Blake3.hash(next_entry.header_unpacked.vr),
-          :entry_dr => next_entry.header_unpacked.dr,
+          :entry_signer => next_entry.header.signer,
+          :entry_prev_hash => next_entry.header.prev_hash,
+          :entry_slot => next_entry.header.slot,
+          :entry_prev_slot => next_entry.header.prev_slot,
+          :entry_height => next_entry.header.height,
+          :entry_epoch => div(next_entry.header.height, 100_000),
+          :entry_vr => next_entry.header.vr,
+          :entry_vr_b3 => Blake3.hash(next_entry.header.vr),
+          :entry_dr => next_entry.header.dr,
           :tx_index => 0,
           :tx_signer => nil, #env.txu.tx.signer,
           :tx_nonce => nil, #env.txu.tx.nonce,
@@ -300,15 +300,15 @@ defmodule FabricGen do
 
       entry = next_entry
       next_entry_trimmed_map = %{
-          entry_signer: entry.header_unpacked.signer,
-          entry_prev_hash: entry.header_unpacked.prev_hash,
-          entry_vr: entry.header_unpacked.vr,
-          entry_vr_b3: Blake3.hash(entry.header_unpacked.vr),
-          entry_dr: entry.header_unpacked.dr,
-          entry_slot: entry.header_unpacked.slot,
-          entry_prev_slot: entry.header_unpacked.prev_slot,
-          entry_height: entry.header_unpacked.height,
-          entry_epoch: div(entry.header_unpacked.height,100_000),
+          entry_signer: entry.header.signer,
+          entry_prev_hash: entry.header.prev_hash,
+          entry_vr: entry.header.vr,
+          entry_vr_b3: Blake3.hash(entry.header.vr),
+          entry_dr: entry.header.dr,
+          entry_slot: entry.header.slot,
+          entry_prev_slot: entry.header.prev_slot,
+          entry_height: entry.header.height,
+          entry_epoch: div(entry.header.height,100_000),
       }
       txus = Enum.map(entry.txs, & TX.unpack(&1))
 
@@ -358,16 +358,6 @@ defmodule FabricGen do
       attestations = Enum.map(my_validators, fn(seed)->
         attestation = Attestation.sign(seed.seed, next_entry.hash, mutations_hash)
         DB.Attestation.put(attestation, Entry.height(next_entry), %{rtx: rtx})
-        #send(FabricCoordinatorGen, {:add_attestation, attestation})
-        if FabricSyncAttestGen.isQuorumSyncedOffByX(6) do
-          msg = NodeProto.event_attestation(Attestation.pack_for_net(attestation))
-          NodeGen.broadcast(msg)
-
-          #Ensure RPC nodes are as up-to-date as possible
-          #TODO: fix this in a better way later
-          peers = Application.fetch_env!(:ama, :seedanrs_as_peers)
-          send(NodeGen.get_socket_gen(), {:send_to, peers, msg})
-        end
         attestation
       end)
       if length(attestations) > 0 do
@@ -378,6 +368,15 @@ defmodule FabricGen do
           entry_hash: next_entry.hash
         }
         DB.Attestation.set_consensus(consensus, %{rtx: rtx})
+
+        if FabricSyncAttestGen.isQuorumSyncedOffByX(6) do
+          msg = NodeProto.event_attestation(attestations)
+          NodeGen.broadcast(msg)
+          #Ensure RPC nodes are as up-to-date as possible
+          #TODO: fix this in a better way later
+          peers = Application.fetch_env!(:ama, :seedanrs_as_peers)
+          send(NodeGen.get_socket_gen(), {:send_to, peers, msg})
+        end
       end
 
       :ok = RocksDB.transaction_commit(rtx)

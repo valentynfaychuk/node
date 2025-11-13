@@ -75,7 +75,7 @@ defmodule SpecialMeetingAttestGen do
       state = put_in(state, [:slow, :last_height], cur_height)
 
       entries = entries_last_x(last_entries_cnt+1)
-      entries = Enum.filter(entries, & div(&1.header_unpacked.height, 100_000) == cur_epoch)
+      entries = Enum.filter(entries, & div(&1.header.height, 100_000) == cur_epoch)
       [hd | entries] = entries
 
       hd_seentime = DB.Entry.seentime(hd.hash)
@@ -83,9 +83,9 @@ defmodule SpecialMeetingAttestGen do
         seentime = DB.Entry.seentime(entry.hash)
         delta = seentime - last_seen
 
-        timings = get_in(state, [:slow, :running, entry.header_unpacked.signer]) || []
+        timings = get_in(state, [:slow, :running, entry.header.signer]) || []
         timings = Enum.take(timings ++ [delta], -10)
-        state = put_in(state, [:slow, :running, entry.header_unpacked.signer], timings)
+        state = put_in(state, [:slow, :running, entry.header.signer], timings)
 
         {state, seentime}
       end)
@@ -99,7 +99,7 @@ defmodule SpecialMeetingAttestGen do
     isSynced = FabricSyncAttestGen.isQuorumSyncedOffBy1()
 
     entry = DB.Chain.tip_entry()
-    next_height = entry.header_unpacked.height + 1
+    next_height = entry.header.height + 1
     next_slot_trainer = DB.Chain.validator_for_height(next_height)
 
     ts_m = :os.system_time(1000)
@@ -168,7 +168,7 @@ defmodule SpecialMeetingAttestGen do
 
   def has_double_entry(malicious_pk) do
     hasDouble = DB.Entry.by_height(DB.Chain.height())
-    |> Enum.frequencies_by(& &1.header_unpacked.signer)
+    |> Enum.frequencies_by(& &1.header.signer)
     |> Enum.filter(fn {signer, _count} -> signer == malicious_pk end)
     |> Enum.any?(fn {_signer, count} -> count > 1 end)
   end
@@ -214,7 +214,7 @@ defmodule SpecialMeetingAttestGen do
 
     <<mask::size(mask_size)-bitstring, _::bitstring>> = mask
 
-    trainers = DB.Chain.validators_for_height(entry.header_unpacked.height)
+    trainers = DB.Chain.validators_for_height(entry.header.height)
 
     cond do
         DB.Chain.epoch() != epoch -> nil
@@ -222,19 +222,19 @@ defmodule SpecialMeetingAttestGen do
         BIC.Epoch.slash_trainer_verify(epoch, malicious_pk, trainers, mask, signature) != nil -> nil
 
         has_double_entry(malicious_pk) ->
-          h = :erlang.term_to_binary(entry.header_unpacked, [:deterministic])
+          h = :erlang.term_to_binary(entry.header, [:deterministic])
           sk = Application.fetch_env!(:ama, :trainer_sk)
           BlsEx.sign!(sk, Blake3.hash(h), BLS12AggSig.dst_entry())
 
         #TODO: check for Slowloris
         #avg_seentimes_last_10_slots(malicious_pk) > 1second -> true
         !!calcSlow(malicious_pk) and calcSlow(malicious_pk) > 600 ->
-          h = :erlang.term_to_binary(entry.header_unpacked, [:deterministic])
+          h = :erlang.term_to_binary(entry.header, [:deterministic])
           sk = Application.fetch_env!(:ama, :trainer_sk)
           BlsEx.sign!(sk, Blake3.hash(h), BLS12AggSig.dst_entry())
 
         malicious_pk == slotStallTrainer or malicious_pk in offlineTrainers()->
-          h = :erlang.term_to_binary(entry.header_unpacked, [:deterministic])
+          h = :erlang.term_to_binary(entry.header, [:deterministic])
           sk = Application.fetch_env!(:ama, :trainer_sk)
           BlsEx.sign!(sk, Blake3.hash(h), BLS12AggSig.dst_entry())
 
@@ -244,11 +244,11 @@ defmodule SpecialMeetingAttestGen do
 
   def entries_last_x(cnt) do
       entry = DB.Chain.tip_entry()
-      entries_last_x_1(cnt - 1, entry.header_unpacked.prev_hash, [entry])
+      entries_last_x_1(cnt - 1, entry.header.prev_hash, [entry])
   end
   def entries_last_x_1(cnt, prev_hash, acc) when cnt <= 0, do: acc
   def entries_last_x_1(cnt, prev_hash, acc) do
       entry = DB.Entry.by_hash(prev_hash)
-      entries_last_x_1(cnt - 1, entry.header_unpacked.prev_hash, [entry] ++ acc)
+      entries_last_x_1(cnt - 1, entry.header.prev_hash, [entry] ++ acc)
   end
 end

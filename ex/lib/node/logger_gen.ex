@@ -36,11 +36,11 @@ defmodule LoggerGen do
 
   def tick(state) do
     entry_rooted = DB.Chain.rooted_tip_entry()
-    rooted_height = entry_rooted.header_unpacked.height
+    rooted_height = entry_rooted.header.height
 
     entry = DB.Chain.tip_entry()
-    height = entry.header_unpacked.height
-    slot = entry.header_unpacked.slot
+    height = entry.header.height
+    slot = entry.header.slot
     txpool_size = :ets.info(TXPool, :size)
 
     {vals, peers} = NodeANR.handshaked_and_online()
