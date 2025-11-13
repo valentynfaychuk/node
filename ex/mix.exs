@@ -52,7 +52,7 @@ defmodule Ama.MixProject do
       steps: [:assemble, &Bakeware.assemble/1],
       strip_beams: Mix.env() == :prod,
       bakeware: [
-        compression_level: 1,
+        compression_level: 2,
         #compression_level: 19,
         start_command: "start_iex"
       ],
