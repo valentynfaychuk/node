@@ -37,41 +37,73 @@ defmodule SpecialMeetingGen do
     {:noreply, state}
   end
 
-  def handle_info({:try_slash_trainer_entry, mpk}, state) do
-    slash_trainer = build_slash_tx_business(mpk)
+  def handle_info({:try_slash_trainer_tx, mpk}, state) do
+    slash_trainer = %{}
+
+    height = DB.Chain.height()
+    epoch = DB.Chain.epoch()
+    validators = DB.Chain.validators_for_height(height + 1)
+    my_validators = Application.fetch_env!(:ama, :keys) |> Enum.filter(& &1.pk in validators)
+
+    aggsig = BLS12AggSig.new_padded(length(validators))
+    aggsig = Enum.reduce(my_validators, aggsig, fn(%{pk: pk, seed: seed}, aggsig)->
+      signature = BlsEx.sign!(seed, <<"slash_trainer", epoch::32-little, mpk::binary>>, BLS12AggSig.dst_motion())
+      BLS12AggSig.add_padded(aggsig, validators, pk, signature)
+    end)
+
     state = put_in(state, [:slash_trainer], slash_trainer)
-    state = put_in(state, [:slash_trainer, :type], :entry)
+    state = put_in(state, [:slash_trainer, :type], :tx)
+    state = put_in(state, [:slash_trainer, :tx], %{})
+    state = put_in(state, [:slash_trainer, :tx, :tx], nil)
+    state = put_in(state, [:slash_trainer, :tx, :aggsig], aggsig)
+    state = put_in(state, [:slash_trainer, :mpk], mpk)
     state = put_in(state, [:slash_trainer, :state], :gather_tx_sigs)
     state = put_in(state, [:slash_trainer, :attempts], 0)
-    state = put_in(state, [:slash_trainer, :score_tx], 0)
-    state = put_in(state, [:slash_trainer, :score_entry], 0)
+    state = put_in(state, [:slash_trainer, :height], height)
+    state = put_in(state, [:slash_trainer, :epoch], epoch)
+    state = put_in(state, [:slash_trainer, :validators], validators)
+    state = put_in(state, [:slash_trainer, :my_validators], my_validators)
     {:noreply, state}
   end
 
-  def handle_info({:try_slash_trainer_tx, mpk}, state) do
-    slash_trainer = build_slash_tx_business(mpk)
+  def handle_info({:try_slash_trainer_entry, mpk}, state) do
+    slash_trainer = %{}
+
+    height = DB.Chain.height()
+    epoch = DB.Chain.epoch()
+    validators = DB.Chain.validators_for_height(height + 1)
+    my_validators = Application.fetch_env!(:ama, :keys) |> Enum.filter(& &1.pk in validators)
+
+    aggsig = BLS12AggSig.new_padded(length(validators))
+    aggsig = Enum.reduce(my_validators, aggsig, fn(%{pk: pk, seed: seed}, aggsig)->
+      signature = BlsEx.sign!(seed, <<"slash_trainer", epoch::32-little, mpk::binary>>, BLS12AggSig.dst_motion())
+      BLS12AggSig.add_padded(aggsig, validators, pk, signature)
+    end)
+
     state = put_in(state, [:slash_trainer], slash_trainer)
-    state = put_in(state, [:slash_trainer, :type], :tx)
+    state = put_in(state, [:slash_trainer, :type], :entry)
+    state = put_in(state, [:slash_trainer, :tx], %{})
+    state = put_in(state, [:slash_trainer, :tx, :tx], nil)
+    state = put_in(state, [:slash_trainer, :tx, :aggsig], aggsig)
+    state = put_in(state, [:slash_trainer, :entry], %{})
+    state = put_in(state, [:slash_trainer, :entry, :entry], nil)
+    state = put_in(state, [:slash_trainer, :entry, :aggsig], BLS12AggSig.new_padded(length(validators)))
+    state = put_in(state, [:slash_trainer, :mpk], mpk)
     state = put_in(state, [:slash_trainer, :state], :gather_tx_sigs)
     state = put_in(state, [:slash_trainer, :attempts], 0)
-    state = put_in(state, [:slash_trainer, :score_tx], 0)
-    state = put_in(state, [:slash_trainer, :score_entry], 0)
+    state = put_in(state, [:slash_trainer, :height], height)
+    state = put_in(state, [:slash_trainer, :epoch], epoch)
+    state = put_in(state, [:slash_trainer, :validators], validators)
+    state = put_in(state, [:slash_trainer, :my_validators], my_validators)
     {:noreply, state}
   end
 
   def handle_info({:add_slash_trainer_tx_reply, pk, signature}, state = %{slash_trainer: _}) do
     st = state.slash_trainer
-
-    trainers = DB.Chain.validators_for_height(st.height + 1)
-    if pk in trainers do
-      ma = BLS12AggSig.add(%{mask: st.mask, aggsig: st.aggsig}, trainers, pk, signature)
-      state = put_in(state, [:slash_trainer, :mask], ma.mask)
-      state = put_in(state, [:slash_trainer, :aggsig], ma.aggsig)
-
-      score = BLS12AggSig.score(trainers, Util.pad_bitstring_to_bytes(state.slash_trainer.mask), bit_size(state.slash_trainer.mask))
-
-      state = put_in(state, [:slash_trainer, :score_tx], score)
-      IO.inspect {:tx, score}
+    if pk in st.validators do
+      aggsig = BLS12AggSig.add_padded(st.tx.aggsig, st.validators, pk, signature)
+      state = put_in(state, [:slash_trainer, :tx, :aggsig], aggsig)
+      IO.inspect {:tx, aggsig.mask_set_size / aggsig.mask_size}
       {:noreply, state}
     else
       {:noreply, state}
@@ -79,19 +111,12 @@ defmodule SpecialMeetingGen do
   end
 
   def handle_info({:add_slash_trainer_entry_reply, entry_hash, pk, signature}, state = %{slash_trainer: _}) do
-    entry = state.slash_trainer.entry
-    true = entry.hash == entry_hash
-
-    trainers = DB.Chain.validators_for_height(entry.header.height + 1)
-    if pk in trainers do
-      ma = BLS12AggSig.add(%{mask: entry.mask, aggsig: entry.signature}, trainers, pk, signature)
-      state = put_in(state, [:slash_trainer, :entry, :mask], ma.mask)
-      state = put_in(state, [:slash_trainer, :entry, :signature], ma.aggsig)
-
-      score = BLS12AggSig.score(trainers, Util.pad_bitstring_to_bytes(state.slash_trainer.entry.mask), bit_size(state.slash_trainer.entry.mask))
-
-      state = put_in(state, [:slash_trainer, :score_entry], score)
-      IO.inspect {:entry, score}
+    st = state.slash_trainer
+    true = st.entry.hash == entry_hash
+    if pk in st.validators do
+      aggsig = BLS12AggSig.add_padded(st.entry.aggsig, st.validators, pk, signature)
+      state = put_in(state, [:slash_trainer, :entry, :aggsig], aggsig)
+      IO.inspect {:entry, st.aggsig.mask_set_size / st.aggsig.mask_size}
       {:noreply, state}
     else
       {:noreply, state}
@@ -99,87 +124,55 @@ defmodule SpecialMeetingGen do
   end
 
   def tick(state) do
-    my_pk = Application.fetch_env!(:ama, :trainer_pk)
-    height = DB.Chain.height()
-    trainers = DB.Chain.validators_for_height(height + 1)
-
     #IO.inspect state[:slash_trainer]
-
+    st = state[:slash_trainer]
     cond do
-      my_pk not in trainers -> state
       !state[:slash_trainer] -> state
-      state.slash_trainer.attempts > 3 -> Map.delete(state, :slash_trainer)
+      st.attempts > 3 -> Map.delete(state, :slash_trainer)
 
-      state.slash_trainer.type == :tx and state.slash_trainer[:score_tx] >= 0.67 ->
-        tx_packed = build_slash_tx(state.slash_trainer)
+      st.type == :tx and (st.tx.aggsig.mask_set_size / st.tx.aggsig.mask_size) >= 0.67 ->
+        tx_packed = build_slash_tx(st.epoch, st.mpk, st.tx.aggsig.aggsig, st.tx.aggsig.mask, st.tx.aggsig.mask_size)
         IO.inspect tx_packed
         TXPool.insert_and_broadcast(tx_packed, %{peers: 0})
         Map.delete(state, :slash_trainer)
 
-      state.slash_trainer.type == :entry and state.slash_trainer.state == :gather_tx_sigs and state.slash_trainer[:score_tx] >= 0.67 ->
-        entry = build_slash_entry(state.slash_trainer)
-        state = put_in(state, [:slash_trainer, :entry], entry)
+      st.type == :entry and st.state == :gather_tx_sigs and (st.tx.aggsig.mask_set_size / st.tx.aggsig.mask_size) >= 0.67 ->
+        {entry, aggsig} = build_slash_entry(st)
+        state = put_in(state, [:slash_trainer, :entry, :entry], entry)
+        state = put_in(state, [:slash_trainer, :entry, :aggsig], aggsig)
         put_in(state, [:slash_trainer, :state], :gather_entry_sigs)
 
-      state.slash_trainer.state == :gather_tx_sigs ->
-        business = %{op: "slash_trainer_tx", epoch: state.slash_trainer.epoch, malicious_pk: state.slash_trainer.malicious_pk}
-        NodeGen.broadcast(NodeProto.special_business(business), %{peers: 0, self: true})
+      st.state == :gather_tx_sigs ->
+        business = %{op: "slash_trainer_tx", epoch: st.epoch, malicious_pk: st.mpk}
+        NodeGen.broadcast(NodeProto.special_business(business), %{peers: 0})
+        put_in(state, [:slash_trainer, :attempts], st.attempts + 1)
 
-        Enum.each(Application.fetch_env!(:ama, :keys), fn(%{pk: pk, seed: seed})->
-          msg = <<"slash_trainer", state.slash_trainer.epoch::32-little, state.slash_trainer.malicious_pk::binary>>
-          signature = BlsEx.sign!(seed, msg, BLS12AggSig.dst_motion())
-          send(SpecialMeetingGen, {:add_slash_trainer_tx_reply, pk, signature})
-        end)
-
-        put_in(state, [:slash_trainer, :attempts], state.slash_trainer.attempts + 1)
-
-      state.slash_trainer.type == :entry and state.slash_trainer[:score_entry] >= 0.67 ->
-        IO.inspect {:entry_with_score, state.slash_trainer[:score_entry]}
-        IO.inspect state.slash_trainer.entry, limit: 1111111111, printable_limit: 1111111111
-        DB.Entry.insert(state.slash_trainer.entry)
+      st.type == :entry and (st.entry.aggsig.mask_set_size / st.entry.aggsig.mask_size) >= 0.67 ->
+        IO.inspect {:entry_with_score, st.entry.aggsig.mask_set_size / st.entry.aggsig.mask_size}
+        entry = Map.merge(st.entry.entry, %{signature: st.entry.aggsig.aggsig,
+          mask: st.entry.aggsig.mask, mask_size: st.entry.aggsig.mask_size, mask_set_size: st.entry.aggsig.mask_set_size})
+        IO.inspect entry, limit: 1111111111, printable_limit: 1111111111
+        DB.Entry.insert(entry)
         Map.delete(state, :slash_trainer)
 
-      state.slash_trainer.state == :gather_entry_sigs ->
-        business = %{op: "slash_trainer_entry", entry_packed: Entry.pack_for_net(state.slash_trainer.entry)}
-        NodeGen.broadcast(NodeProto.special_business(business), %{peers: 0, self: true})
-
-        Enum.each(Application.fetch_env!(:ama, :keys), fn(%{pk: pk, seed: seed})->
-          h = :erlang.term_to_binary(state.slash_trainer.entry.header, [:deterministic])
-          signature = BlsEx.sign!(seed, Blake3.hash(h), BLS12AggSig.dst_entry())
-          send(SpecialMeetingGen, {:add_slash_trainer_entry_reply, state.slash_trainer.entry.hash, pk, signature})
-        end)
-
-        put_in(state, [:slash_trainer, :attempts], state.slash_trainer.attempts + 1)
+      st.state == :gather_entry_sigs ->
+        business = %{op: "slash_trainer_entry", entry_packed: Entry.pack_for_net(st.entry.entry)}
+        NodeGen.broadcast(NodeProto.special_business(business), %{peers: 0})
+        put_in(state, [:slash_trainer, :attempts], st.attempts + 1)
 
       true ->
-        IO.inspect {:fin, state.slash_trainer}
+        IO.inspect {:fin, st}
         state
     end
   end
 
-  def build_slash_tx_business(mpk) do
-    height = DB.Chain.height()
-    epoch = DB.Chain.epoch()
-    trainers = DB.Chain.validators_for_height(height+1)
-
-    my_pk = Application.fetch_env!(:ama, :trainer_pk)
-
-    signature = SpecialMeetingAttestGen.maybe_attest("slash_trainer_tx", epoch, mpk)
-
-    ma = BLS12AggSig.new(trainers, my_pk, signature)
-    %{height: height, malicious_pk: mpk, epoch: epoch, mask: ma.mask, aggsig: ma.aggsig}
-  end
-
-  def build_slash_tx(st) do
+  def build_slash_tx(epoch, mpk, aggsig, mask, mask_size) do
     my_sk = Application.fetch_env!(:ama, :trainer_sk)
-    TX.build(my_sk, "Epoch", "slash_trainer",
-      ["#{st.epoch}", st.malicious_pk, st.aggsig, "#{bit_size(st.mask)}", Util.pad_bitstring_to_bytes(st.mask)])
+    TX.build(my_sk, "Epoch", "slash_trainer", ["#{epoch}", mpk, aggsig, "#{mask_size}", mask])
   end
 
   def build_slash_entry(st) do
-    my_pk = Application.fetch_env!(:ama, :trainer_pk)
     sk = Application.fetch_env!(:ama, :trainer_sk)
-    packed_tx = build_slash_tx(st)
 
     true = FabricSyncAttestGen.isQuorumSynced()
     cur_entry = DB.Chain.rooted_tip_entry()
@@ -187,14 +180,17 @@ defmodule SpecialMeetingGen do
     cur_slot = cur_entry.header.slot
 
     next_entry = Entry.build_next(sk, cur_entry)
-    txs = [packed_tx]
+    txs = [build_slash_tx(st.epoch, st.mpk, st.tx.aggsig.aggsig, st.tx.aggsig.mask, st.tx.aggsig.mask_size)]
     next_entry = Map.put(next_entry, :txs, txs)
     next_entry = Entry.sign(sk, next_entry)
 
-    trainers = DB.Chain.validators_for_height(next_entry.header.height + 1)
-    mask = <<0::size(length(trainers))>>
-    mask = Util.set_bit(mask, Util.index_of(trainers, my_pk))
-    Map.put(next_entry, :mask, mask)
+    aggsig = Enum.reduce(st.my_validators, st.entry.aggsig, fn(%{pk: pk, seed: seed}, aggsig)->
+      h = :erlang.term_to_binary(next_entry.header, [:deterministic])
+      signature = BlsEx.sign!(seed, Blake3.hash(h), BLS12AggSig.dst_entry())
+      BLS12AggSig.add_padded(aggsig, st.validators, pk, signature)
+    end)
+
+    {next_entry, aggsig}
   end
 
   def my_tickslice() do

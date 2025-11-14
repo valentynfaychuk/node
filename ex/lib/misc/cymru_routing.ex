@@ -2,8 +2,8 @@ defmodule CymruRouting do
   @host ~c'whois.cymru.com'
   @port 43
   @tcp_opts [:binary, active: false, packet: 0]
-  @connect_timeout 3_000
-  @recv_timeout 8_000
+  @connect_timeout 6_000
+  @recv_timeout 6_000
 
   def lookup(ip) do
     with {:ok, s} <- normalize_ip(ip),
