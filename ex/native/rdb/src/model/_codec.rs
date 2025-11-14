@@ -14,7 +14,6 @@ impl<T: EncodeToTerm> EncodeIntoBuf for T {
     }
 }
 
-
 pub trait DecodeFromTerm: Sized {
     fn from_term(t: &Term) -> Self;
 }

@@ -9,6 +9,7 @@ pub enum Term {
     //Map(HashMap<Term,Term>),
 }
 
+//TODO: varint should support any size not limited to RUST i128
 #[inline(always)]
 pub fn encode_varint(buf: &mut Vec<u8>, v: i128) {
     if v == 0 {
@@ -24,6 +25,37 @@ pub fn encode_varint(buf: &mut Vec<u8>, v: i128) {
     buf.push((sign << 7) | (len as u8));
     let be = mag.to_be_bytes();
     buf.extend_from_slice(&be[first..]);
+}
+
+#[inline(always)]
+pub fn decode_varint(buf: &[u8], i: &mut usize) -> Result<i128, &'static str> {
+    if *i >= buf.len() { return Err("eof"); }
+    let b0 = buf[*i]; *i += 1;
+    if b0 == 0 {
+        return Ok(0);
+    }
+    if b0 == 0x80 { return Err("noncanonical_zero"); }
+
+    let sign = (b0 & 0x80) != 0;
+    let len  = (b0 & 0x7F) as usize;
+    if len == 0 || len > 16 { return Err("bad_varint_length"); }
+    if buf.len().saturating_sub(*i) < len { return Err("eof"); }
+
+    if buf[*i] == 0 { return Err("varint_leading_zero"); }
+
+    // read big-endian magnitude
+    let mut be = [0u8; 16];
+    be[16 - len..].copy_from_slice(&buf[*i..*i + len]);
+    *i += len;
+
+    let mag = u128::from_be_bytes(be);
+    if mag > i128::MAX as u128 { return Err("varint_underflow"); }
+
+    if sign {
+        Ok(-(mag as i128))
+    } else {
+        Ok(mag as i128)
+    }
 }
 
 pub fn encode_term(buf: &mut Vec<u8>, term: Term) {
@@ -79,37 +111,6 @@ pub fn encode_term(buf: &mut Vec<u8>, term: Term) {
                 encode_term(buf, v);
             }
         }*/
-    }
-}
-
-#[inline(always)]
-fn decode_varint(buf: &[u8], i: &mut usize) -> Result<i128, &'static str> {
-    if *i >= buf.len() { return Err("eof"); }
-    let b0 = buf[*i]; *i += 1;
-    if b0 == 0 {
-        return Ok(0);
-    }
-    if b0 == 0x80 { return Err("noncanonical_zero"); }
-
-    let sign = (b0 & 0x80) != 0;
-    let len  = (b0 & 0x7F) as usize;
-    if len == 0 || len > 16 { return Err("bad_varint_length"); }
-    if buf.len().saturating_sub(*i) < len { return Err("eof"); }
-
-    if buf[*i] == 0 { return Err("varint_leading_zero"); }
-
-    // read big-endian magnitude
-    let mut be = [0u8; 16];
-    be[16 - len..].copy_from_slice(&buf[*i..*i + len]);
-    *i += len;
-
-    let mag = u128::from_be_bytes(be);
-    if mag > i128::MAX as u128 { return Err("varint_underflow"); }
-
-    if sign {
-        Ok(-(mag as i128))
-    } else {
-        Ok(mag as i128)
     }
 }
 

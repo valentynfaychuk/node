@@ -4,22 +4,11 @@ use rustler::{
     Atom, Decoder, Encoder, Env, Error, NifResult, NifTaggedEnum, ResourceArc, Term
 };
 use num_traits::ToPrimitive;
+use crate::model::_vecpak::{ encode_varint, decode_varint };
 
 #[inline(always)]
-pub fn encode_varint(buf: &mut Vec<u8>, v: i128) {
-    if v == 0 {
-        buf.push(0);
-        return;
-    }
-
-    let sign = (v < 0) as u8;
-    let mag = v.unsigned_abs();
-    let lz = mag.leading_zeros() as usize; //bitsize (128 for i128)
-    let first = lz / 8;
-    let len = 16 - first;
-    buf.push((sign << 7) | (len as u8));
-    let be = mag.to_be_bytes();
-    buf.extend_from_slice(&be[first..]);
+fn decode_varint_ex(buf: &[u8], i: &mut usize) -> Result<i128, Error> {
+    decode_varint(buf, i).map_err(|e| Error::Atom(e))
 }
 
 //pub fn encode_term(env: Env, buf: &mut Vec<u8>, term: Term) -> NifResult<()> {
@@ -143,40 +132,9 @@ pub fn encode_term(env: Env, buf: &mut Vec<u8>, term: Term) -> Result<(), Error>
     Err(Error::BadArg)
 }
 
-#[inline(always)]
-fn decode_varint(buf: &[u8], i: &mut usize) -> Result<i128, Error> {
-    if *i >= buf.len() { return Err(Error::Atom("eof")); }
-    let b0 = buf[*i]; *i += 1;
-    if b0 == 0 {
-        return Ok(0);
-    }
-    if b0 == 0x80 { return Err(Error::Atom("noncanonical_zero")); }
-
-    let sign = (b0 & 0x80) != 0;
-    let len  = (b0 & 0x7F) as usize;
-    if len == 0 || len > 16 { return Err(Error::Atom("bad_varint_length")); }
-    if buf.len().saturating_sub(*i) < len { return Err(Error::Atom("eof")); }
-
-    if buf[*i] == 0 { return Err(Error::Atom("varint_leading_zero")); }
-
-    // read big-endian magnitude
-    let mut be = [0u8; 16];
-    be[16 - len..].copy_from_slice(&buf[*i..*i + len]);
-    *i += len;
-
-    let mag = u128::from_be_bytes(be);
-    if mag > i128::MAX as u128 { return Err(Error::Atom("varint_underflow")); }
-
-    if sign {
-        Ok(-(mag as i128))
-    } else {
-        Ok(mag as i128)
-    }
-}
-
 #[inline]
 fn decode_varint_gt_zero(buf: &[u8], i: &mut usize) -> Result<usize, Error> {
-    let n = decode_varint(buf, i)?;
+    let n = decode_varint_ex(buf, i)?;
     if n < 0 { return Err(Error::Atom("length_is_negative")); }
     usize::try_from(n).map_err(|_| Error::Atom("length_overflow"))
 }
@@ -205,7 +163,7 @@ pub fn decode_term<'a>(env: Env<'a>, buf: &[u8], i: &mut usize) -> Result<Term<'
         1 => { Ok(true.encode(env)) }
         2 => { Ok(false.encode(env)) }
         3 => {
-            let v = decode_varint(buf, i)?;
+            let v = decode_varint_ex(buf, i)?;
             let term = v.encode(env);
             Ok(term)
         }
