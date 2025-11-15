@@ -1,4 +1,4 @@
-use crate::model::_vecpak::{Term, encode_term};
+use vecpak::{Term, encode_term};
 
 pub trait EncodeToTerm {
     fn to_term(&self) -> Result<Term, &'static str>;

@@ -1,6 +1,6 @@
 use crate::model::_codec as codec;
 use crate::model::_codec::{EncodeToTerm, DecodeFromTerm};
-use crate::model::_vecpak::{Term};
+use vecpak::{Term};
 
 #[derive(Debug, Clone)]
 pub struct Attestation {

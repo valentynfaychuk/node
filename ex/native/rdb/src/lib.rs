@@ -18,6 +18,8 @@ use std::path::Path;
 use std::ptr::NonNull;
 use std::sync::{Mutex};
 
+use vecpak_ex;
+
 use crate::consensus::consensus_muts;
 
 
@@ -706,7 +708,7 @@ fn apply_entry<'a>(env: Env<'a>, db: ResourceArc<DbResource>, next_entry_trimmed
 #[rustler::nif]
 fn vecpak_encode<'a>(env: Env<'a>, map: Term<'a>) -> Result<Term<'a>, Error> {
     let mut buf = Vec::with_capacity(1024);
-    model::_vecpak_ex::encode_term(env, &mut buf, map)?;
+    vecpak_ex::encode_term(env, &mut buf, map)?;
 
     let mut ob = OwnedBinary::new(buf.len()).ok_or_else(|| Error::Term(Box::new("alloc failed")))?;
     ob.as_mut_slice().copy_from_slice(&buf);
@@ -716,7 +718,7 @@ fn vecpak_encode<'a>(env: Env<'a>, map: Term<'a>) -> Result<Term<'a>, Error> {
 
 #[rustler::nif]
 fn vecpak_decode<'a>(env: Env<'a>, bin: Binary) -> Result<Term<'a>, Error> {
-    let term = model::_vecpak_ex::decode_term_from_slice(env, bin.as_slice())?;
+    let term = vecpak_ex::decode_term_from_slice(env, bin.as_slice())?;
     Ok(term.encode(env))
 }
 

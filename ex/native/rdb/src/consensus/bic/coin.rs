@@ -1,6 +1,7 @@
 use std::panic::panic_any;
 use crate::{bcat, consensus};
-use crate::consensus::consensus_kv::{kv_get, kv_put, kv_exists, kv_set_bit, kv_increment};
+use crate::consensus::consensus_kv::{kv_get, kv_put, kv_increment};
+use vecpak::{encode, decode, Term};
 
 pub const DECIMALS: u32 = 9;
 pub const BURN_ADDRESS: [u8; 48] = [0u8; 48];
@@ -78,11 +79,10 @@ pub fn has_permission(env: &crate::consensus::consensus_apply::ApplyEnv, symbol:
     match kv_get(env, &bcat(&[b"bic:coin:permission:", symbol])) {
         None => false,
         Some(permission_list) => {
-            let cursor = std::io::Cursor::new(permission_list.as_slice());
-            let term_permission_list = eetf::Term::decode(cursor).unwrap();
-            match term_permission_list {
-                eetf::Term::List(term_permission_list) => term_permission_list.elements.iter().any(|el| {
-                    matches!(el, eetf::Term::Binary(b) if b.bytes.as_slice() == signer)
+            let term = decode(permission_list.as_slice()).unwrap();
+            match term {
+                Term::List(term_list) => term_list.iter().any(|el| {
+                    matches!(el, Term::Binary(b) if b.as_slice() == signer)
                 }),
                 _ => false
             }
@@ -142,9 +142,9 @@ pub fn call_create_and_mint(env: &mut crate::consensus::consensus_apply::ApplyEn
     kv_increment(env, &bcat(&[b"bic:coin:totalSupply:", &symbol]), amount);
 
     let mut admin = Vec::new();
-    admin.push(env.caller_env.account_caller.to_vec());
-    let term_admins = consensus::bic::eetf_list_of_binaries(admin).unwrap();
-    kv_put(env, &bcat(&[b"bic:coin:permission:", &symbol]), &term_admins);
+    admin.push(Term::Binary(env.caller_env.account_caller.to_vec()));
+    let buf = encode(Term::List(admin));
+    kv_put(env, &bcat(&[b"bic:coin:permission:", &symbol]), &buf);
 
     if mintable == b"true" { kv_put(env, &bcat(&[b"bic:coin:mintable:", &symbol]), b"true") }
     if pausable == b"true" { kv_put(env, &bcat(&[b"bic:coin:pausable:", &symbol]), b"true") }
