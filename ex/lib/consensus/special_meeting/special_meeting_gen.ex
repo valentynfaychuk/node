@@ -185,8 +185,12 @@ defmodule SpecialMeetingGen do
     next_entry = Entry.sign(sk, next_entry)
 
     aggsig = Enum.reduce(st.my_validators, st.entry.aggsig, fn(%{pk: pk, seed: seed}, aggsig)->
-      h = :erlang.term_to_binary(next_entry.header, [:deterministic])
-      signature = BlsEx.sign!(seed, Blake3.hash(h), BLS12AggSig.dst_entry())
+      h = if next_entry.header.height >= Entry.forkheight() do
+        h = :crypto.hash(:sha256, RDB.vecpak_encode(next_entry.header))
+      else
+        h = Blake3.hash(:erlang.term_to_binary(next_entry.header, [:deterministic]))
+      end
+      signature = BlsEx.sign!(seed, h, BLS12AggSig.dst_entry())
       BLS12AggSig.add_padded(aggsig, st.validators, pk, signature)
     end)
 

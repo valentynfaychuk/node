@@ -156,7 +156,7 @@ defmodule EntryGenesis do
         end
 
         entropy_seed = :crypto.strong_rand_bytes(512)
-        dr = Blake3.hash(entropy_seed)
+        dr = :crypto.hash(:sha256, entropy_seed)
         vr = BlsEx.sign!(sk, dr<>dr<>dr, BLS12AggSig.dst_vrf())
 
         entry = %{

@@ -221,22 +221,16 @@ defmodule SpecialMeetingAttestGen do
         Entry.validate_next(cur_entry, entry) != %{error: :ok} -> nil
         BIC.Epoch.slash_trainer_verify(epoch, malicious_pk, trainers, mask, signature) != nil -> nil
 
-        has_double_entry(malicious_pk) ->
-          h = :erlang.term_to_binary(entry.header, [:deterministic])
+        has_double_entry(malicious_pk)
+        or (!!calcSlow(malicious_pk) and calcSlow(malicious_pk) > 600)
+        or (malicious_pk == slotStallTrainer or malicious_pk in offlineTrainers()) ->
+          h = if entry.header.height >= Entry.forkheight() do
+            h = :crypto.hash(:sha256, RDB.vecpak_encode(entry.header))
+          else
+            h = Blake3.hash(:erlang.term_to_binary(entry.header, [:deterministic]))
+          end
           sk = Application.fetch_env!(:ama, :trainer_sk)
-          BlsEx.sign!(sk, Blake3.hash(h), BLS12AggSig.dst_entry())
-
-        #TODO: check for Slowloris
-        #avg_seentimes_last_10_slots(malicious_pk) > 1second -> true
-        !!calcSlow(malicious_pk) and calcSlow(malicious_pk) > 600 ->
-          h = :erlang.term_to_binary(entry.header, [:deterministic])
-          sk = Application.fetch_env!(:ama, :trainer_sk)
-          BlsEx.sign!(sk, Blake3.hash(h), BLS12AggSig.dst_entry())
-
-        malicious_pk == slotStallTrainer or malicious_pk in offlineTrainers()->
-          h = :erlang.term_to_binary(entry.header, [:deterministic])
-          sk = Application.fetch_env!(:ama, :trainer_sk)
-          BlsEx.sign!(sk, Blake3.hash(h), BLS12AggSig.dst_entry())
+          BlsEx.sign!(sk, h, BLS12AggSig.dst_entry())
 
         true -> nil
     end

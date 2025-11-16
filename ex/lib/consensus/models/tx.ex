@@ -31,6 +31,18 @@ defmodule TX do
 
    """
 
+   def pack(txu) do
+     txu = Map.take(txu, [:tx_encoded, :hash, :signature])
+     VanillaSer.encode(txu)
+   end
+
+   def unpack(tx_packed) do
+     txu = VanillaSer.decode!(tx_packed)
+     tx = VanillaSer.decode!(Map.fetch!(txu, "tx_encoded"))
+     txu = Map.put(txu, "tx", tx)
+     normalize_atoms(txu)
+   end
+
    def normalize_atoms(txu) do
       t = %{
          tx_encoded: Map.fetch!(txu, "tx_encoded"),
@@ -178,17 +190,5 @@ defmodule TX do
          {"Epoch", "slash_trainer", [_epoch, malicious_pk, _signature, _mask_size, _mask]} -> valid_pk(malicious_pk) && [malicious_pk]
          _ -> nil
       end || []
-   end
-
-   def pack(txu) do
-     txu = Map.take(txu, [:tx_encoded, :hash, :signature])
-     VanillaSer.encode(txu)
-   end
-
-   def unpack(tx_packed) do
-     txu = VanillaSer.decode!(tx_packed)
-     tx = VanillaSer.decode!(Map.fetch!(txu, "tx_encoded"))
-     txu = Map.put(txu, "tx", tx)
-     normalize_atoms(txu)
    end
 end

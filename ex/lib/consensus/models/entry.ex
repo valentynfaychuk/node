@@ -55,6 +55,11 @@ defmodule Entry do
 
     @fields [:header, :hash, :signature, :txs, :mask, :mask_size, :mask_set_size]
     @fields_header [:height, :prev_hash, :slot, :prev_slot, :signer, :dr, :vr, :txs_hash]
+    @forkheight 402_00000
+
+    def forkheight() do
+      @forkheight
+    end
 
     def unpack_from_db(nil), do: nil
     def unpack_from_db(entry_packed) do
@@ -90,6 +95,18 @@ defmodule Entry do
       Map.put(entry, :header, entry_header)
     end
 
+    def sign(sk, entry = %{header: %{height: height}}) when height >= @forkheight do
+        txs_hash = :crypto.hash(:sha256, Enum.join(entry.txs))
+        entry = put_in(entry, [:header, :txs_hash], txs_hash)
+        hash = :crypto.hash(:sha256, RDB.vecpak_encode(entry.header))
+        signature = BlsEx.sign!(sk, hash, BLS12AggSig.dst_entry())
+        %{
+            header: entry.header,
+            hash: hash,
+            signature: signature,
+            txs: entry.txs,
+        }
+    end
     def sign(sk, entry) do
         txs_hash = Blake3.hash(Enum.join(entry.txs))
         entry = put_in(entry, [:header, :txs_hash], txs_hash)
@@ -143,7 +160,11 @@ defmodule Entry do
         if !is_list(e.txs), do: throw(%{error: :txs_not_list})
         if length(e.txs) > 100, do: throw(%{error: :TEMPORARY_txs_only_100_per_entry})
 
-        if eh.txs_hash != Blake3.hash(Enum.join(e.txs)), do: throw(%{error: :txs_hash_invalid})
+        if eh.height >= @forkheight do
+          if eh.txs_hash != :crypto.hash(:sha256, Enum.join(e.txs)), do: throw(%{error: :txs_hash_invalid})
+        else
+          if eh.txs_hash != Blake3.hash(Enum.join(e.txs)), do: throw(%{error: :txs_hash_invalid})
+        end
 
         is_special_meeting_block = !!e[:mask]
         steam = Task.async_stream(e.txs, fn tx_packed ->
@@ -162,7 +183,11 @@ defmodule Entry do
 
     def validate_signature(e) do
         header = e.header
-        hash = Blake3.hash(:erlang.term_to_binary(header, [:deterministic]))
+        hash = if header.height >= @forkheight do
+          :crypto.hash(:sha256, RDB.vecpak_encode(header))
+        else
+          Blake3.hash(:erlang.term_to_binary(header, [:deterministic]))
+        end
         mask = e[:mask]
         try do
           if mask do
@@ -190,7 +215,11 @@ defmodule Entry do
         if ceh.height != (neh.height - 1), do: throw(%{error: :invalid_height})
         if cur_entry.hash != neh.prev_hash, do: throw(%{error: :invalid_hash})
 
-        if Blake3.hash(ceh.dr) != neh.dr, do: throw(%{error: :invalid_dr})
+        if neh.height >= @forkheight do
+          if :crypto.hash(:sha256, ceh.dr) != neh.dr, do: throw(%{error: :invalid_dr})
+        else
+          if Blake3.hash(ceh.dr) != neh.dr, do: throw(%{error: :invalid_dr})
+        end
         if !BlsEx.verify?(neh.signer, neh.vr, ceh.vr, BLS12AggSig.dst_vrf()), do: throw(%{error: :invalid_vr})
 
         txus = Enum.map(next_entry.txs, & TX.unpack(&1))
@@ -217,7 +246,11 @@ defmodule Entry do
     def build_next(sk, cur_entry) do
         pk = BlsEx.get_public_key!(sk)
 
-        dr = Blake3.hash(cur_entry.header.dr)
+        dr = if cur_entry.header.height >= (@forkheight - 1) do
+          dr = :crypto.hash(:sha256, cur_entry.header.dr)
+        else
+          dr = Blake3.hash(cur_entry.header.dr)
+        end
         vr = BlsEx.sign!(sk, cur_entry.header.vr, BLS12AggSig.dst_vrf())
 
         %{
