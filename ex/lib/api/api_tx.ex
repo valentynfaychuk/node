@@ -107,7 +107,7 @@ defmodule API.TX do
     end
 
     def submit(tx_packed) do
-        result = TX.validate(tx_packed)
+        result = TX.validate(tx_packed, TX.unpack(tx_packed))
         if result[:error] == :ok do
             if tx_packed =~ "deploy" do
                 txu = TX.unpack(tx_packed)
@@ -133,7 +133,7 @@ defmodule API.TX do
     end
 
     def submit_and_wait(tx_packed, broadcast \\ true) do
-      result = TX.validate(tx_packed)
+      result = TX.validate(tx_packed, TX.unpack(tx_packed))
       if result[:error] == :ok do
           txu = TX.unpack(tx_packed)
           if tx_packed =~ "deploy" do

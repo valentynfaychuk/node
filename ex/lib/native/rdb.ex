@@ -49,4 +49,7 @@ defmodule RDB do
   def vecpak_decode(_bin), do: :erlang.nif_error(:nif_not_loaded)
 
   def freivalds(_tensor, _vr), do: :erlang.nif_error(:nif_not_loaded)
+
+  def bintree_root(_propslist), do: :erlang.nif_error(:nif_not_loaded)
+  def bintree_root_prove(_propslist, _key), do: :erlang.nif_error(:nif_not_loaded)
 end

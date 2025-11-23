@@ -179,17 +179,14 @@ defmodule SpecialMeetingGen do
     cur_height = cur_entry.header.height
     cur_slot = cur_entry.header.slot
 
-    next_entry = Entry.build_next(sk, cur_entry)
     txs = [build_slash_tx(st.epoch, st.mpk, st.tx.aggsig.aggsig, st.tx.aggsig.mask, st.tx.aggsig.mask_size)]
-    next_entry = Map.put(next_entry, :txs, txs)
+    validators = DB.Chain.validators_for_height(Entry.height(cur_entry)+1)
+    validators_last_change_height = DB.Chain.validators_last_change_height(Entry.height(cur_entry)+1)
+    next_entry = Entry.build_next(sk, cur_entry, txs, validators, validators_last_change_height)
     next_entry = Entry.sign(sk, next_entry)
 
     aggsig = Enum.reduce(st.my_validators, st.entry.aggsig, fn(%{pk: pk, seed: seed}, aggsig)->
-      h = if next_entry.header.height >= Entry.forkheight() do
-        h = :crypto.hash(:sha256, RDB.vecpak_encode(next_entry.header))
-      else
-        h = Blake3.hash(:erlang.term_to_binary(next_entry.header, [:deterministic]))
-      end
+      h = :crypto.hash(:sha256, RDB.vecpak_encode(next_entry.header))
       signature = BlsEx.sign!(seed, h, BLS12AggSig.dst_entry())
       BLS12AggSig.add_padded(aggsig, st.validators, pk, signature)
     end)

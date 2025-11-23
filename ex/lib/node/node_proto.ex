@@ -35,6 +35,12 @@ defmodule NodeProto do
     %{op: :event_tx, txs_packed: txs_packed}
   end
 
+  def event_tx2(tx_packed) when is_binary(tx_packed) do event_tx2([tx_packed]) end
+  def event_tx2(txs_packed) when is_list(txs_packed) do
+    txus = Enum.map(txs_packed, & TX.unpack(&1))
+    %{op: :event_tx, txs: txus, txs_packed: []}
+  end
+
   def event_entry(entry_packed) do
     %{op: :event_entry, entry_packed: entry_packed}
   end

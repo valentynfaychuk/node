@@ -21,6 +21,7 @@ defmodule TXPool do
     def insert_and_broadcast(tx_packed, opts \\ %{}) do
       TXPool.insert(tx_packed)
       NodeGen.broadcast(NodeProto.event_tx(tx_packed), opts)
+      NodeGen.broadcast(NodeProto.event_tx2(tx_packed), opts)
     end
 
     def purge_stale() do
@@ -74,7 +75,7 @@ defmodule TXPool do
       diff_bits = DB.Chain.diff_bits()
 
       {good, _} = Enum.reduce(txs_packed, {[], %{}}, fn(tx_packed, {acc, batch_state})->
-        case TX.validate(tx_packed) do
+        case TX.validate(tx_packed, TX.unpack(tx_packed)) do
           %{error: :ok, txu: txu} ->
             case TXPool.validate_tx(txu, %{epoch: chain_epoch, segment_vr_hash: segment_vr_hash, diff_bits: diff_bits, batch_state: batch_state}) do
               %{error: :ok, batch_state: batch_state} -> {acc ++ [tx_packed], batch_state}

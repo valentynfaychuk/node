@@ -54,11 +54,15 @@ defmodule Entry do
     """
 
     @fields [:header, :hash, :signature, :txs, :mask, :mask_size, :mask_set_size]
-    @fields_header [:height, :prev_hash, :slot, :prev_slot, :signer, :dr, :vr, :txs_hash]
-    @forkheight 402_00000
+    @fields_header [:height, :prev_hash, :slot, :prev_slot, :signer, :dr, :vr, :txs_hash, :root_tx, :root_validator]
+    @forkheight 411_00000
 
     def forkheight() do
       @forkheight
+    end
+
+    def forkheight2() do
+      @forkheight+@forkheight
     end
 
     def unpack_from_db(nil), do: nil
@@ -95,31 +99,6 @@ defmodule Entry do
       Map.put(entry, :header, entry_header)
     end
 
-    def sign(sk, entry = %{header: %{height: height}}) when height >= @forkheight do
-        txs_hash = :crypto.hash(:sha256, Enum.join(entry.txs))
-        entry = put_in(entry, [:header, :txs_hash], txs_hash)
-        hash = :crypto.hash(:sha256, RDB.vecpak_encode(entry.header))
-        signature = BlsEx.sign!(sk, hash, BLS12AggSig.dst_entry())
-        %{
-            header: entry.header,
-            hash: hash,
-            signature: signature,
-            txs: entry.txs,
-        }
-    end
-    def sign(sk, entry) do
-        txs_hash = Blake3.hash(Enum.join(entry.txs))
-        entry = put_in(entry, [:header, :txs_hash], txs_hash)
-        hash = Blake3.hash(:erlang.term_to_binary(entry.header, [:deterministic]))
-        signature = BlsEx.sign!(sk, hash, BLS12AggSig.dst_entry())
-        %{
-            header: entry.header,
-            hash: hash,
-            signature: signature,
-            txs: entry.txs,
-        }
-    end
-
     def unpack_and_validate_from_net(entry) do
         try do
         entry = unpack_from_net(entry)
@@ -152,23 +131,41 @@ defmodule Entry do
         if byte_size(eh.vr) != 96, do: throw(%{error: :vr_not_96_bytes})
         if !is_binary(eh.signer), do: throw(%{error: :signer_not_binary})
         if byte_size(eh.signer) != 48, do: throw(%{error: :signer_not_48_bytes})
-        if !is_binary(eh.txs_hash), do: throw(%{error: :txs_hash_not_binary})
-        if byte_size(eh.txs_hash) != 32, do: throw(%{error: :txs_hash_not_256_bits})
 
         if !!e[:mask] and !is_bitstring(e.mask), do: throw(%{error: :mask_not_bitstring})
 
         if !is_list(e.txs), do: throw(%{error: :txs_not_list})
         if length(e.txs) > 100, do: throw(%{error: :TEMPORARY_txs_only_100_per_entry})
 
-        if eh.height >= @forkheight do
-          if eh.txs_hash != :crypto.hash(:sha256, Enum.join(e.txs)), do: throw(%{error: :txs_hash_invalid})
+        if eh.height >= forkheight() do
+          if !is_binary(eh.root_tx), do: throw(%{error: :root_tx_not_binary})
+          if byte_size(eh.root_tx) != 32, do: throw(%{error: :root_tx_not_256_bits})
+          if eh.root_tx != root_tx(Enum.map(Enum.map(e.txs, & TX.unpack(&1)), & &1.hash)), do: throw(%{error: :root_tx_invalid})
+
+          if !is_binary(eh.root_validator), do: throw(%{error: :root_validator_not_binary})
+          if byte_size(eh.root_validator) != 32, do: throw(%{error: :root_validator_not_256_bits})
+          validators = DB.Chain.validators_for_height(eh.height)
+          validators_last_change_height = DB.Chain.validators_last_change_height(eh.height)
+          if eh.root_validator != root_validator(validators, validators_last_change_height), do: throw(%{error: :root_validator_invalid})
+
+          #is_special_meeting_block = !!e[:mask]
+          #steam = Task.async_stream(e.txs, fn txu ->
+          #  %{error: err} = TX.validate(TX.pack(txu), txu, is_special_meeting_block)
+          #  err
+          #end)
+          #err = Enum.find_value(steam, fn {:ok, result} -> result != :ok && result end)
+          #if err, do: throw(err)
+
         else
-          if eh.txs_hash != Blake3.hash(Enum.join(e.txs)), do: throw(%{error: :txs_hash_invalid})
+          if !is_binary(eh.txs_hash), do: throw(%{error: :txs_hash_not_binary})
+          if byte_size(eh.txs_hash) != 32, do: throw(%{error: :txs_hash_not_256_bits})
+          if eh.txs_hash != :crypto.hash(:sha256, Enum.join(e.txs)), do: throw(%{error: :txs_hash_invalid})
+
         end
 
         is_special_meeting_block = !!e[:mask]
         steam = Task.async_stream(e.txs, fn tx_packed ->
-            %{error: err} = TX.validate(tx_packed, is_special_meeting_block)
+          %{error: err} = TX.validate(tx_packed, TX.unpack(tx_packed), is_special_meeting_block)
             err
         end)
         err = Enum.find_value(steam, fn {:ok, result} -> result != :ok && result end)
@@ -183,11 +180,7 @@ defmodule Entry do
 
     def validate_signature(e) do
         header = e.header
-        hash = if header.height >= @forkheight do
-          :crypto.hash(:sha256, RDB.vecpak_encode(header))
-        else
-          Blake3.hash(:erlang.term_to_binary(header, [:deterministic]))
-        end
+        hash = :crypto.hash(:sha256, RDB.vecpak_encode(header))
         mask = e[:mask]
         try do
           if mask do
@@ -215,24 +208,31 @@ defmodule Entry do
         if ceh.height != (neh.height - 1), do: throw(%{error: :invalid_height})
         if cur_entry.hash != neh.prev_hash, do: throw(%{error: :invalid_hash})
 
-        if neh.height >= @forkheight do
-          if :crypto.hash(:sha256, ceh.dr) != neh.dr, do: throw(%{error: :invalid_dr})
-        else
-          if Blake3.hash(ceh.dr) != neh.dr, do: throw(%{error: :invalid_dr})
-        end
+        if :crypto.hash(:sha256, ceh.dr) != neh.dr, do: throw(%{error: :invalid_dr})
         if !BlsEx.verify?(neh.signer, neh.vr, ceh.vr, BLS12AggSig.dst_vrf()), do: throw(%{error: :invalid_vr})
 
-        txus = Enum.map(next_entry.txs, & TX.unpack(&1))
         chain_epoch = DB.Chain.epoch()
         segment_vr_hash = DB.Chain.segment_vr_hash()
         diff_bits = DB.Chain.diff_bits()
-        Enum.reduce(txus, %{}, fn(txu, batch_state)->
-            case TXPool.validate_tx(txu, %{epoch: chain_epoch, segment_vr_hash: segment_vr_hash, diff_bits: diff_bits, batch_state: batch_state}) do
-               %{error: :ok, batch_state: batch_state} -> batch_state
-               %{error: error} when error in [:invalid_tx_nonce, :not_enough_tx_exec_balance] -> throw %{error: error}
-               _ -> batch_state
-            end
-        end)
+
+        if neh.height >= forkheight2() do
+          Enum.reduce(next_entry.txs, %{}, fn(txu, batch_state)->
+              case TXPool.validate_tx(txu, %{epoch: chain_epoch, segment_vr_hash: segment_vr_hash, diff_bits: diff_bits, batch_state: batch_state}) do
+                %{error: :ok, batch_state: batch_state} -> batch_state
+                %{error: error} when error in [:invalid_tx_nonce, :not_enough_tx_exec_balance] -> throw %{error: error}
+                _ -> batch_state
+              end
+          end)
+        else
+          txus = Enum.map(next_entry.txs, & TX.unpack(&1))
+          Enum.reduce(txus, %{}, fn(txu, batch_state)->
+              case TXPool.validate_tx(txu, %{epoch: chain_epoch, segment_vr_hash: segment_vr_hash, diff_bits: diff_bits, batch_state: batch_state}) do
+                %{error: :ok, batch_state: batch_state} -> batch_state
+                %{error: error} when error in [:invalid_tx_nonce, :not_enough_tx_exec_balance] -> throw %{error: error}
+                _ -> batch_state
+              end
+          end)
+        end
 
         %{error: :ok}
         catch
@@ -243,26 +243,53 @@ defmodule Entry do
         end
     end
 
-    def build_next(sk, cur_entry) do
-        pk = BlsEx.get_public_key!(sk)
+    def build_next(seed, cur_entry, txs, validators, validators_last_change_height) do
+        pk = BlsEx.get_public_key!(seed)
 
-        dr = if cur_entry.header.height >= (@forkheight - 1) do
-          dr = :crypto.hash(:sha256, cur_entry.header.dr)
+        dr = :crypto.hash(:sha256, cur_entry.header.dr)
+        vr = BlsEx.sign!(seed, cur_entry.header.vr, BLS12AggSig.dst_vrf())
+
+        if (cur_entry.header.height+1) >= forkheight() do
+          %{
+              header: %{
+                  slot: cur_entry.header.slot + 1,
+                  height: cur_entry.header.height + 1,
+                  prev_slot: cur_entry.header.slot,
+                  prev_hash: cur_entry.hash,
+                  dr: dr,
+                  vr: vr,
+                  signer: pk,
+                  root_tx: root_tx(Enum.map(Enum.map(txs, & TX.unpack(&1)), & &1.hash)),
+                  root_validator: root_validator(validators, validators_last_change_height)
+              },
+              #txs: Enum.map(txs, & TX.unpack(&1))
+              txs: txs
+          }
         else
-          dr = Blake3.hash(cur_entry.header.dr)
+          %{
+              header: %{
+                  slot: cur_entry.header.slot + 1,
+                  height: cur_entry.header.height + 1,
+                  prev_slot: cur_entry.header.slot,
+                  prev_hash: cur_entry.hash,
+                  dr: dr,
+                  vr: vr,
+                  signer: pk,
+                  txs_hash: :crypto.hash(:sha256, Enum.join(txs))
+              },
+              txs: txs
+          }
         end
-        vr = BlsEx.sign!(sk, cur_entry.header.vr, BLS12AggSig.dst_vrf())
+    end
 
+    def sign(seed, entry) do
+        hash = :crypto.hash(:sha256, RDB.vecpak_encode(entry.header))
+        signature = BlsEx.sign!(seed, hash, BLS12AggSig.dst_entry())
         %{
-            header: %{
-                slot: cur_entry.header.slot + 1,
-                height: cur_entry.header.height + 1,
-                prev_slot: cur_entry.header.slot,
-                prev_hash: cur_entry.hash,
-                dr: dr,
-                vr: vr,
-                signer: pk,
-            }
+            header: entry.header,
+            hash: hash,
+            signature: signature,
+            txs: entry.txs,
         }
     end
 
@@ -274,11 +301,33 @@ defmodule Entry do
         entry.header.height
     end
 
-    def contains_tx(entry, txfunction) do
-        !!Enum.find(entry.txs, fn(txp)->
-            txu = TX.unpack(txp)
-            action = List.first(txu.tx.actions)
-            action["function"] == txfunction
-        end)
+    def root_tx(tx_hashes) do
+      kvs = root_build(tx_hashes)
+      RDB.bintree_root(kvs)
+    end
+
+    def root_validator(validator_pks, last_change_height) do
+      kvs = root_build(validator_pks)
+      kvs = kvs ++ [{"hash", :crypto.hash(:sha256, Enum.join(validator_pks))}, {"last_change_height", "#{last_change_height}"}]
+      RDB.bintree_root(kvs)
+    end
+
+    def root_block() do
+      #TODO for future
+      #proof of inclusion for previous blocks
+    end
+
+    def root_build(hashes) do
+      by_index_hash = Enum.flat_map(Enum.with_index(hashes), fn{hash, index}->
+        [{"#{index}", hash}, {hash, ""}]
+      end)
+      by_index_hash ++ [{"count", "#{length(hashes)}"}]
+    end
+
+    def proof_tx(entry_hash, tx_hash) do
+      entry = DB.Entry.by_hash(entry_hash)
+      tx_hashes = Enum.map(Enum.map(entry.txs, & TX.unpack(&1)), & &1.hash)
+      root_build(tx_hashes)
+      |> RDB.bintree_root_prove(tx_hash)
     end
 end

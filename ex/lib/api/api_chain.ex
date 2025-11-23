@@ -106,6 +106,8 @@ defmodule API.Chain do
         entry = Map.put(entry, :tx_count, length(entry.txs))
         entry = Map.drop(entry, [:signature, :txs])
         {_, entry} = pop_in(entry, [:header, :txs_hash])
+        {_, entry} = pop_in(entry, [:header, :root_tx])
+        {_, entry} = pop_in(entry, [:header, :root_validator])
         entry = put_in(entry, [:hash], Base58.encode(entry.hash))
         entry = if !entry[:mask] do entry else
           put_in(entry, [:mask], Base58.encode(entry.mask))

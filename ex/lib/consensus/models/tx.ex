@@ -64,7 +64,7 @@ defmodule TX do
       end
    end
 
-   def validate(tx_packed, is_special_meeting_block \\ false) do
+   def validate(tx_packed, txu, is_special_meeting_block \\ false) do
       try do
          tx_size = Application.fetch_env!(:ama, :tx_size)
        if byte_size(tx_packed) >= tx_size, do: throw(%{error: :too_large})
@@ -152,28 +152,6 @@ defmodule TX do
       hash = Blake3.hash(tx_encoded)
       signature = BlsEx.sign!(sk, hash, BLS12AggSig.dst_tx())
       VanillaSer.encode(%{tx_encoded: tx_encoded, hash: hash, signature: signature})
-   end
-
-   def chain_valid(tx_packed) when is_binary(tx_packed) do chain_valid(TX.unpack(tx_packed)) end
-   def chain_valid(txu) do
-      #TODO: once more than 1 tx allowed per entry fix this
-      chainNonce = DB.Chain.nonce(txu.tx.signer)
-      chainEpoch = DB.Chain.epoch()
-      nonceValid = !chainNonce or txu.tx.nonce > chainNonce
-      hasBalance = BIC.Base.exec_cost(chainEpoch, txu) <= DB.Chain.balance(txu.tx.signer)
-
-      hasSol = Enum.find_value(txu.tx.actions, fn(a)-> a.function == "submit_sol" and hd(a.args) end)
-      epochSolValid = if !hasSol do true else
-         <<sol_epoch::32-little, _::binary>> = hasSol
-         chainEpoch == sol_epoch
-      end
-
-      cond do
-         !epochSolValid -> false
-         !nonceValid -> false
-         !hasBalance -> false
-         true -> true
-      end
    end
 
    def valid_pk(pk) do

@@ -92,22 +92,40 @@ defmodule DB.Entry do
     RocksDB.put("entry:#{entry.hash}:muts_hash", muts_hash, db_handle(db_opts, :entry_meta, %{}))
     RocksDB.put("entry:#{entry.hash}:muts_rev", RDB.vecpak_encode(muts_rev), db_handle(db_opts, :entry_meta, %{}))
 
-    Enum.each(Enum.zip(entry.txs, receipts), fn({tx_packed, result})->
-        txu = TX.unpack(tx_packed)
-        case :binary.match(entry_packed, tx_packed) do
-          {index_start, index_size} ->
-            tx_ptr = %{entry_hash: entry.hash, result: result, index_start: index_start, index_size: index_size}
-            |> RDB.vecpak_encode()
-            RocksDB.put(txu.hash, tx_ptr, db_handle(db_opts, :tx, %{}))
+    if entry.header.height >= Entry.forkheight2() do
+      Enum.each(Enum.zip(entry.txs, receipts), fn({txu, result})->
+        case :binary.match(entry_packed, TX.pack(txu)) do
+            {index_start, index_size} ->
+              tx_ptr = %{entry_hash: entry.hash, result: result, index_start: index_start, index_size: index_size}
+              |> RDB.vecpak_encode()
+              RocksDB.put(txu.hash, tx_ptr, db_handle(db_opts, :tx, %{}))
 
-            nonce_padded = pad_integer_20(txu.tx.nonce)
-            RocksDB.put("#{txu.tx.signer}:#{nonce_padded}", txu.hash, db_handle(db_opts, :tx_account_nonce, %{}))
-            TX.known_receivers(txu)
-            |> Enum.each(fn(receiver)->
-                RocksDB.put("#{receiver}:#{nonce_padded}", txu.hash, db_handle(db_opts, :tx_receiver_nonce, %{}))
-            end)
-        end
-    end)
+              nonce_padded = pad_integer_20(txu.tx.nonce)
+              RocksDB.put("#{txu.tx.signer}:#{nonce_padded}", txu.hash, db_handle(db_opts, :tx_account_nonce, %{}))
+              TX.known_receivers(txu)
+              |> Enum.each(fn(receiver)->
+                  RocksDB.put("#{receiver}:#{nonce_padded}", txu.hash, db_handle(db_opts, :tx_receiver_nonce, %{}))
+              end)
+          end
+      end)
+    else
+      Enum.each(Enum.zip(entry.txs, receipts), fn({tx_packed, result})->
+          txu = TX.unpack(tx_packed)
+          case :binary.match(entry_packed, tx_packed) do
+            {index_start, index_size} ->
+              tx_ptr = %{entry_hash: entry.hash, result: result, index_start: index_start, index_size: index_size}
+              |> RDB.vecpak_encode()
+              RocksDB.put(txu.hash, tx_ptr, db_handle(db_opts, :tx, %{}))
+
+              nonce_padded = pad_integer_20(txu.tx.nonce)
+              RocksDB.put("#{txu.tx.signer}:#{nonce_padded}", txu.hash, db_handle(db_opts, :tx_account_nonce, %{}))
+              TX.known_receivers(txu)
+              |> Enum.each(fn(receiver)->
+                  RocksDB.put("#{receiver}:#{nonce_padded}", txu.hash, db_handle(db_opts, :tx_receiver_nonce, %{}))
+              end)
+          end
+      end)
+    end
   end
 
   def apply_into_main_chain_muts(hash, muts, db_opts = %{rtx: _}) do
@@ -142,17 +160,30 @@ defmodule DB.Entry do
     RocksDB.delete_prefix("consensus:#{hash}:", db_handle(db_opts, :attestation, %{}))
     RocksDB.delete_prefix("attestation:#{height_padded}:#{hash}:", db_handle(db_opts, :attestation, %{}))
 
-    Enum.each(entry.txs, fn(tx_packed)->
-        txu = TX.unpack(tx_packed)
-        RocksDB.delete(txu.hash, db_handle(db_opts, :tx, %{}))
+    if entry.header.height >= Entry.forkheight2() do
+      Enum.each(entry.txs, fn(txu)->
+          RocksDB.delete(txu.hash, db_handle(db_opts, :tx, %{}))
 
-        nonce_padded = pad_integer_20(txu.tx.nonce)
-        RocksDB.delete("#{txu.tx.signer}:#{nonce_padded}", db_handle(db_opts, :tx_account_nonce, %{}))
-        TX.known_receivers(txu)
-        |> Enum.each(fn(receiver)->
-            RocksDB.delete("#{receiver}:#{nonce_padded}", db_handle(db_opts, :tx_receiver_nonce, %{}))
-        end)
-    end)
+          nonce_padded = pad_integer_20(txu.tx.nonce)
+          RocksDB.delete("#{txu.tx.signer}:#{nonce_padded}", db_handle(db_opts, :tx_account_nonce, %{}))
+          TX.known_receivers(txu)
+          |> Enum.each(fn(receiver)->
+              RocksDB.delete("#{receiver}:#{nonce_padded}", db_handle(db_opts, :tx_receiver_nonce, %{}))
+          end)
+      end)
+    else
+      Enum.each(entry.txs, fn(tx_packed)->
+          txu = TX.unpack(tx_packed)
+          RocksDB.delete(txu.hash, db_handle(db_opts, :tx, %{}))
+
+          nonce_padded = pad_integer_20(txu.tx.nonce)
+          RocksDB.delete("#{txu.tx.signer}:#{nonce_padded}", db_handle(db_opts, :tx_account_nonce, %{}))
+          TX.known_receivers(txu)
+          |> Enum.each(fn(receiver)->
+              RocksDB.delete("#{receiver}:#{nonce_padded}", db_handle(db_opts, :tx_receiver_nonce, %{}))
+          end)
+      end)
+    end
   end
 
 end
