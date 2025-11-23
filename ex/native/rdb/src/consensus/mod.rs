@@ -1,6 +1,7 @@
 pub mod bic;
 
 pub mod aggsig;
+pub mod bintree;
 pub mod bls12_381;
 
 pub mod consensus_apply;

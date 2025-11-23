@@ -44,5 +44,11 @@ rustler::atoms! {
     function,
     args,
     attached_symbol,
-    attached_amount
+    attached_amount,
+
+    member,
+    nonmember,
+    missing_subindex,
+    missing_stem_empty_subtree,
+    missing_stem_other_stem,
 }

@@ -25,6 +25,7 @@ blst = "0.3.16"
 thiserror = "2.0.17"
 group = "0.13.0"
 eetf = "0.11.0"
+rayon = "1"
 serde = { version = "1.0", features = ["derive"] }
 vecpak = { git = "https://github.com/amadeusprotocol/chain", package = "vecpak" }
 vecpak_ex = { git = "https://github.com/amadeusprotocol/chain", package = "vecpak_ex" }

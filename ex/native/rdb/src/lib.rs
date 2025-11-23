@@ -727,4 +727,56 @@ fn freivalds(tensor: Binary, vr_b3: Binary) -> bool {
     crate::consensus::bic::sol_freivalds::freivalds(tensor.as_slice(), vr_b3.as_slice())
 }
 
+#[rustler::nif]
+fn bintree_root<'a>(env: Env<'a>, proplist: Vec<(Binary<'a>, Binary<'a>)>) -> Term<'a> {
+    let mut ops = Vec::with_capacity(100);
+    for (k_bin, v_bin) in &proplist {
+        //let k: [u8; 32] = k_bin.as_slice().try_into().unwrap();
+        //let v: [u8; 32] = v_bin.as_slice().try_into().unwrap();
+        ops.push(crate::consensus::bintree::Op::Insert(k_bin.to_vec(), v_bin.to_vec()));
+    }
+
+    let mut hubt = crate::consensus::bintree::Hubt::new();
+    hubt.batch_update(ops);
+    let root = hubt.root();
+
+    let mut ob = OwnedBinary::new(root.len()).ok_or_else(|| Error::Term(Box::new("alloc failed"))).unwrap();
+    ob.as_mut_slice().copy_from_slice(&root);
+    Binary::from_owned(ob, env).encode(env)
+}
+/*
+#[rustler::nif]
+fn bintree_root_prove<'a>(env: Env<'a>, proplist: Vec<(Binary<'a>, Binary<'a>)>, key: Binary<'a>) -> Term<'a> {
+    let mut initial = Vec::with_capacity(100);
+    for (k_bin, v_bin) in &proplist {
+        let k: [u8; 32] = k_bin.as_slice().try_into().unwrap();
+        let v: [u8; 32] = v_bin.as_slice().try_into().unwrap();
+        initial.push((k, v));
+    }
+    let tree = crate::consensus::bintree::BinaryStateTree::from_entries(&initial);
+    let root = tree.state_root();
+
+    let key2: [u8; 32] = key.as_slice().try_into().unwrap();
+    if let Some((v, sibs256, path)) = tree.prove_for_key(&key2) {
+        let mut ob1 = OwnedBinary::new(root.len()).ok_or_else(|| Error::Term(Box::new("alloc failed"))).unwrap();
+        ob1.as_mut_slice().copy_from_slice(&v);
+
+        let mut stem = Vec::new();
+        for (_j, s) in sibs256.iter().enumerate() {
+            let mut ob2 = OwnedBinary::new(root.len()).ok_or_else(|| Error::Term(Box::new("alloc failed"))).unwrap();
+            ob2.as_mut_slice().copy_from_slice(s);
+            stem.push(Binary::from_owned(ob2, env));
+        }
+        let mut path_out = Vec::new();
+        for (_j, s) in path.iter().enumerate() {
+            let mut ob3 = OwnedBinary::new(root.len()).ok_or_else(|| Error::Term(Box::new("alloc failed"))).unwrap();
+            ob3.as_mut_slice().copy_from_slice(s);
+            path_out.push(Binary::from_owned(ob3, env));
+        }
+        (stem, path_out, Binary::from_owned(ob1, env)).encode(env)
+    } else {
+        (atoms::nil()).encode(env)
+    }
+}
+ */
 rustler::init!("Elixir.RDB", load = on_load);
