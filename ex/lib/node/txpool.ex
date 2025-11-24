@@ -1,27 +1,24 @@
 defmodule TXPool do
-    def insert(tx_packed) when is_binary(tx_packed) do insert([tx_packed]) end
+    def insert(tx) when is_map(tx) do insert([tx]) end
     def insert([]) do :ok end
-    def insert(txs_packed) do
-        txus = Enum.map(txs_packed, fn(tx_packed)->
-            txu = TX.unpack(tx_packed)
+    def insert(txs) do
+        txus = Enum.map(txs, fn(txu)->
             {{txu.tx.nonce, txu.hash}, txu}
         end)
         :ets.insert(TXPool, txus)
     end
 
-    def delete_packed(tx_packed) when is_binary(tx_packed) do delete_packed([tx_packed]) end
+    def delete_packed(txu) when is_map(txu) do delete_packed([txu]) end
     def delete_packed([]) do :ok end
-    def delete_packed(txs_packed) do
-        Enum.each(txs_packed, fn(tx_packed)->
-            txu = TX.unpack(tx_packed)
+    def delete_packed(txus) do
+        Enum.each(txus, fn(txu)->
             :ets.delete(TXPool, {txu.tx.nonce, txu.hash})
         end)
     end
 
-    def insert_and_broadcast(tx_packed, opts \\ %{}) do
-      TXPool.insert(tx_packed)
-      NodeGen.broadcast(NodeProto.event_tx(tx_packed), opts)
-      NodeGen.broadcast(NodeProto.event_tx2(tx_packed), opts)
+    def insert_and_broadcast(txu, opts \\ %{}) do
+      TXPool.insert(txu)
+      NodeGen.broadcast(NodeProto.event_tx(txu), opts)
     end
 
     def purge_stale() do
@@ -32,6 +29,23 @@ defmodule TXPool do
                 :ets.delete(TXPool, key)
             end
         end)
+    end
+
+    def is_stale(txu, cur_epoch) do
+        chainNonce = DB.Chain.nonce(txu.tx.signer)
+        nonceValid = !chainNonce or txu.tx.nonce > chainNonce
+
+        hasSol = Enum.find_value(txu.tx.actions, fn(a)-> a.function == "submit_sol" and hd(a.args) end)
+        epochSolValid = if !hasSol do true else
+            <<sol_epoch::32-little, _::binary>> = hasSol
+            cur_epoch == sol_epoch
+        end
+
+        cond do
+            !epochSolValid -> true
+            !nonceValid -> true
+            true -> false
+        end
     end
 
     def validate_tx(txu, args \\ %{}) do
@@ -68,17 +82,17 @@ defmodule TXPool do
       end
     end
 
-    def validate_tx_batch(tx_packed) when is_binary(tx_packed) do validate_tx_batch([tx_packed]) end
-    def validate_tx_batch(txs_packed) when is_list(txs_packed) do
+    def event_tx_validate(txu) when is_map(txu) do event_tx_validate([txu]) end
+    def event_tx_validate(txus) when is_list(txus) do
       chain_epoch = DB.Chain.epoch()
       segment_vr_hash = DB.Chain.segment_vr_hash()
       diff_bits = DB.Chain.diff_bits()
 
-      {good, _} = Enum.reduce(txs_packed, {[], %{}}, fn(tx_packed, {acc, batch_state})->
-        case TX.validate(tx_packed, TX.unpack(tx_packed)) do
+      {good, _} = Enum.reduce(txus, {[], %{}}, fn(txu, {acc, batch_state})->
+        case TX.validate(txu) do
           %{error: :ok, txu: txu} ->
             case TXPool.validate_tx(txu, %{epoch: chain_epoch, segment_vr_hash: segment_vr_hash, diff_bits: diff_bits, batch_state: batch_state}) do
-              %{error: :ok, batch_state: batch_state} -> {acc ++ [tx_packed], batch_state}
+              %{error: :ok, batch_state: batch_state} -> {acc ++ [txu], batch_state}
               %{error: error} -> {acc, batch_state}
             end
           _ -> {acc, batch_state}
@@ -113,23 +127,6 @@ defmodule TXPool do
             acc
         catch
             :throw,{:choose, txs_packed} -> txs_packed
-        end
-    end
-
-    def is_stale(txu, cur_epoch) do
-        chainNonce = DB.Chain.nonce(txu.tx.signer)
-        nonceValid = !chainNonce or txu.tx.nonce > chainNonce
-
-        hasSol = Enum.find_value(txu.tx.actions, fn(a)-> a.function == "submit_sol" and hd(a.args) end)
-        epochSolValid = if !hasSol do true else
-            <<sol_epoch::32-little, _::binary>> = hasSol
-            cur_epoch == sol_epoch
-        end
-
-        cond do
-            !epochSolValid -> true
-            !nonceValid -> true
-            true -> false
         end
     end
 

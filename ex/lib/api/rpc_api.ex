@@ -14,8 +14,8 @@ defmodule RPC.API do
         IO.inspect {"sending #{amount_float} AMA to invalid public key", receiver_b58}
         %{error: :invalid_public_key, pk: receiver_b58}
       else
-        tx_packed = API.Wallet.transfer(seed64, receiver, amount_float, symbol, false)
-        RPC.API.get("/api/tx/submit/#{Base58.encode(tx_packed)}")
+        txu = API.Wallet.transfer(seed64, receiver, amount_float, symbol, false)
+        RPC.API.get("/api/tx/submit/#{Base58.encode(txu |> TX.pack())}")
       end
     end
 
@@ -29,8 +29,8 @@ defmodule RPC.API do
             %{error: :invalid_public_key, pk: receiver_b58}
           else
             IO.inspect {"sending #{amount_float} AMA to ", receiver_b58}
-            tx_packed = API.Wallet.transfer(seed64, receiver, amount_float, "AMA", false)
-            RPC.API.get("/api/tx/submit/#{Base58.encode(tx_packed)}")
+            txu = API.Wallet.transfer(seed64, receiver, amount_float, "AMA", false)
+            RPC.API.get("/api/tx/submit/#{Base58.encode(txu |> TX.pack())}")
           end
 
         {receiver, amount_float, symbol} ->
@@ -41,8 +41,8 @@ defmodule RPC.API do
             %{error: :invalid_public_key, pk: receiver_b58}
           else
             IO.inspect {"sending #{amount_float} #{symbol} to ", receiver_b58}
-            tx_packed = API.Wallet.transfer(seed64, receiver, amount_float, symbol, false)
-            RPC.API.get("/api/tx/submit/#{Base58.encode(tx_packed)}")
+            txu = API.Wallet.transfer(seed64, receiver, amount_float, symbol, false)
+            RPC.API.get("/api/tx/submit/#{Base58.encode(txu |> TX.pack())}")
           end
       end)
     end

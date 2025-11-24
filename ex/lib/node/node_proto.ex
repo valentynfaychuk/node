@@ -30,15 +30,9 @@ defmodule NodeProto do
     %{op: :event_tip, temporal: temporal, rooted: rooted, ts_m: :os.system_time(1000)}
   end
 
-  def event_tx(tx_packed) when is_binary(tx_packed) do event_tx([tx_packed]) end
-  def event_tx(txs_packed) when is_list(txs_packed) do
-    %{op: :event_tx, txs_packed: txs_packed}
-  end
-
-  def event_tx2(tx_packed) when is_binary(tx_packed) do event_tx2([tx_packed]) end
-  def event_tx2(txs_packed) when is_list(txs_packed) do
-    txus = Enum.map(txs_packed, & TX.unpack(&1))
-    %{op: :event_tx, txs: txus, txs_packed: []}
+  def event_tx(tx) when is_map(tx) do event_tx([tx]) end
+  def event_tx(txus) when is_list(txus) do
+    %{op: :event_tx, txs: txus}
   end
 
   def event_entry(entry_packed) do

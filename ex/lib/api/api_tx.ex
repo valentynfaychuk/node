@@ -107,24 +107,24 @@ defmodule API.TX do
     end
 
     def submit(tx_packed) do
-        result = TX.validate(tx_packed, TX.unpack(tx_packed))
+        result = TX.validate(tx_packed |> TX.unpack())
         if result[:error] == :ok do
+            txu = result.txu
             if tx_packed =~ "deploy" do
-                txu = TX.unpack(tx_packed)
                 action = hd(txu.tx.actions)
                 if action.contract == "Contract" and action.function == "deploy" do
                     case BIC.Contract.validate(List.first(action.args)) do
                         %{error: :ok} ->
-                            TXPool.insert_and_broadcast(tx_packed)
+                            TXPool.insert_and_broadcast(txu)
                             %{error: :ok, hash: Base58.encode(result.txu.hash)}
                         error -> error
                     end
                 else
-                    TXPool.insert_and_broadcast(tx_packed)
+                    TXPool.insert_and_broadcast(txu)
                     %{error: :ok, hash: Base58.encode(result.txu.hash)}
                 end
             else
-                TXPool.insert_and_broadcast(tx_packed)
+                TXPool.insert_and_broadcast(txu)
                 %{error: :ok, hash: Base58.encode(result.txu.hash)}
             end
         else
@@ -133,26 +133,26 @@ defmodule API.TX do
     end
 
     def submit_and_wait(tx_packed, broadcast \\ true) do
-      result = TX.validate(tx_packed, TX.unpack(tx_packed))
+      result = TX.validate(tx_packed |> TX.unpack())
       if result[:error] == :ok do
-          txu = TX.unpack(tx_packed)
+          txu = result.txu
           if tx_packed =~ "deploy" do
               action = hd(txu.tx.actions)
               if action.contract == "Contract" and action.function == "deploy" do
                   case BIC.Contract.validate(List.first(action.args)) do
                       %{error: :ok} ->
-                          if broadcast do TXPool.insert_and_broadcast(tx_packed) else TXPool.insert(tx_packed) end
+                          if broadcast do TXPool.insert_and_broadcast(txu) else TXPool.insert(txu) end
                           txres = submit_and_wait_1(result.txu.hash)
                           %{error: :ok, hash: Base58.encode(result.txu.hash), entry_hash: txres.metadata.entry_hash, result: txres[:result]}
                       error -> error
                   end
               else
-                  if broadcast do TXPool.insert_and_broadcast(tx_packed) else TXPool.insert(tx_packed) end
+                  if broadcast do TXPool.insert_and_broadcast(txu) else TXPool.insert(txu) end
                   txres = submit_and_wait_1(result.txu.hash)
                   %{error: :ok, hash: Base58.encode(result.txu.hash), entry_hash: txres.metadata.entry_hash, result: txres[:result]}
               end
           else
-              if broadcast do TXPool.insert_and_broadcast(tx_packed) else TXPool.insert(tx_packed) end
+              if broadcast do TXPool.insert_and_broadcast(txu) else TXPool.insert(txu) end
               txres = submit_and_wait_1(result.txu.hash)
               %{error: :ok, hash: Base58.encode(result.txu.hash), entry_hash: txres.metadata.entry_hash, result: txres[:result]}
           end

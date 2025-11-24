@@ -64,10 +64,11 @@ defmodule TX do
       end
    end
 
-   def validate(tx_packed, txu, is_special_meeting_block \\ false) do
+   def validate(txu, is_special_meeting_block \\ false) do
       try do
-         tx_size = Application.fetch_env!(:ama, :tx_size)
-       if byte_size(tx_packed) >= tx_size, do: throw(%{error: :too_large})
+      tx_packed = TX.pack(txu)
+      tx_size = Application.fetch_env!(:ama, :tx_size)
+      if byte_size(tx_packed) >= tx_size, do: throw(%{error: :too_large})
 
       txu = VanillaSer.decode!(tx_packed)
       txu = Map.take(txu, ["tx_encoded", "hash", "signature"])
@@ -132,7 +133,7 @@ defmodule TX do
          :throw,r -> r
          e,r ->
              IO.inspect {TX, :validate, e, r}
-            %{error: :unknown}
+            %{error: :unknown, txu: nil}
       end
    end
 
@@ -151,7 +152,7 @@ defmodule TX do
       |> VanillaSer.encode()
       hash = Blake3.hash(tx_encoded)
       signature = BlsEx.sign!(sk, hash, BLS12AggSig.dst_tx())
-      VanillaSer.encode(%{tx_encoded: tx_encoded, hash: hash, signature: signature})
+      %{tx_encoded: tx_encoded, hash: hash, signature: signature}
    end
 
    def valid_pk(pk) do

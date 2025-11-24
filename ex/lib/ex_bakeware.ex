@@ -20,8 +20,8 @@ defmodule Ama.Bakeware do
             [attach_symbol, attach_amount] = if length(rest) != 2 do [nil,nil] else
               [attach_symbol, attach_amount] = rest
             end
-            packed_tx = TX.build(sk, contract, func, args, nil, attach_symbol, attach_amount)
-            IO.puts Base58.encode(packed_tx)
+            txu = TX.build(sk, contract, func, args, nil, attach_symbol, attach_amount)
+            IO.puts Base58.encode(txu |> TX.pack())
             :erlang.halt()
 
           arg0 == "build_and_broadcasttx" ->
@@ -32,8 +32,8 @@ defmodule Ama.Bakeware do
             [attach_symbol, attach_amount] = if length(rest) != 2 do [nil,nil] else
               [attach_symbol, attach_amount] = rest
             end
-            packed_tx = TX.build(sk, contract, func, args, nil, attach_symbol, attach_amount)
-            result = RPC.API.get("/api/tx/submit/#{Base58.encode(packed_tx)}")
+            txu = TX.build(sk, contract, func, args, nil, attach_symbol, attach_amount)
+            result = RPC.API.get("/api/tx/submit/#{Base58.encode(txu |> TX.pack())}")
             #IO.puts Base58.encode(packed_tx)
             if result[:error] == "ok" do
               IO.puts(result.hash)
@@ -49,8 +49,8 @@ defmodule Ama.Bakeware do
               IO.puts(:stderr, inspect(error))
               :erlang.halt()
             end
-            packed_tx = TX.build(sk, "Contract", "deploy", [wasmbytes])
-            IO.puts Base58.encode(packed_tx)
+            txu = TX.build(sk, "Contract", "deploy", [wasmbytes])
+            IO.puts Base58.encode(txu |> TX.pack())
             :erlang.halt()
 
           arg0 == "getpk" ->

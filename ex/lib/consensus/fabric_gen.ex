@@ -188,7 +188,7 @@ defmodule FabricGen do
         end
 
         FabricEventGen.event_applied(entry, m_hash, m, l)
-        TXPool.delete_packed(entry.txs)
+        TXPool.delete_packed(Enum.map(entry.txs, & TX.unpack(&1)))
 
         proc_entries()
     end
@@ -251,10 +251,7 @@ defmodule FabricGen do
 
   def produce_entry(seed, cur_entry) do
     txs = TXPool.grab_next_valid(100)
-    validators = DB.Chain.validators_for_height(Entry.height(cur_entry)+1)
-    validators_last_change_height = DB.Chain.validators_last_change_height(Entry.height(cur_entry)+1)
-
-    next_entry = Entry.build_next(seed, cur_entry, txs, validators, validators_last_change_height)
+    next_entry = Entry.build_next(seed, cur_entry, txs)
     next_entry = Entry.sign(seed, next_entry)
     next_entry
   end

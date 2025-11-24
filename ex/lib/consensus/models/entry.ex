@@ -137,35 +137,19 @@ defmodule Entry do
         if !is_list(e.txs), do: throw(%{error: :txs_not_list})
         if length(e.txs) > 100, do: throw(%{error: :TEMPORARY_txs_only_100_per_entry})
 
-        if eh.height >= forkheight() do
-          if !is_binary(eh.root_tx), do: throw(%{error: :root_tx_not_binary})
-          if byte_size(eh.root_tx) != 32, do: throw(%{error: :root_tx_not_256_bits})
-          if eh.root_tx != root_tx(Enum.map(Enum.map(e.txs, & TX.unpack(&1)), & &1.hash)), do: throw(%{error: :root_tx_invalid})
+        if !is_binary(eh.root_tx), do: throw(%{error: :root_tx_not_binary})
+        if byte_size(eh.root_tx) != 32, do: throw(%{error: :root_tx_not_256_bits})
+        if eh.root_tx != root_tx(Enum.map(Enum.map(e.txs, & TX.unpack(&1)), & &1.hash)), do: throw(%{error: :root_tx_invalid})
 
-          if !is_binary(eh.root_validator), do: throw(%{error: :root_validator_not_binary})
-          if byte_size(eh.root_validator) != 32, do: throw(%{error: :root_validator_not_256_bits})
-          validators = DB.Chain.validators_for_height(eh.height)
-          validators_last_change_height = DB.Chain.validators_last_change_height(eh.height)
-          if eh.root_validator != root_validator(validators, validators_last_change_height), do: throw(%{error: :root_validator_invalid})
-
-          #is_special_meeting_block = !!e[:mask]
-          #steam = Task.async_stream(e.txs, fn txu ->
-          #  %{error: err} = TX.validate(TX.pack(txu), txu, is_special_meeting_block)
-          #  err
-          #end)
-          #err = Enum.find_value(steam, fn {:ok, result} -> result != :ok && result end)
-          #if err, do: throw(err)
-
-        else
-          if !is_binary(eh.txs_hash), do: throw(%{error: :txs_hash_not_binary})
-          if byte_size(eh.txs_hash) != 32, do: throw(%{error: :txs_hash_not_256_bits})
-          if eh.txs_hash != :crypto.hash(:sha256, Enum.join(e.txs)), do: throw(%{error: :txs_hash_invalid})
-
-        end
+        if !is_binary(eh.root_validator), do: throw(%{error: :root_validator_not_binary})
+        if byte_size(eh.root_validator) != 32, do: throw(%{error: :root_validator_not_256_bits})
+        validators = DB.Chain.validators_for_height(eh.height)
+        validators_last_change_height = DB.Chain.validators_last_change_height(eh.height)
+        if eh.root_validator != root_validator(validators, validators_last_change_height), do: throw(%{error: :root_validator_invalid})
 
         is_special_meeting_block = !!e[:mask]
         steam = Task.async_stream(e.txs, fn tx_packed ->
-          %{error: err} = TX.validate(tx_packed, TX.unpack(tx_packed), is_special_meeting_block)
+          %{error: err} = TX.validate(TX.unpack(tx_packed), is_special_meeting_block)
             err
         end)
         err = Enum.find_value(steam, fn {:ok, result} -> result != :ok && result end)
@@ -243,43 +227,31 @@ defmodule Entry do
         end
     end
 
-    def build_next(seed, cur_entry, txs, validators, validators_last_change_height) do
+    def build_next(seed, cur_entry, txs) do
+        next_height = cur_entry.header.height + 1
         pk = BlsEx.get_public_key!(seed)
 
         dr = :crypto.hash(:sha256, cur_entry.header.dr)
         vr = BlsEx.sign!(seed, cur_entry.header.vr, BLS12AggSig.dst_vrf())
 
-        if (cur_entry.header.height+1) >= forkheight() do
-          %{
-              header: %{
-                  slot: cur_entry.header.slot + 1,
-                  height: cur_entry.header.height + 1,
-                  prev_slot: cur_entry.header.slot,
-                  prev_hash: cur_entry.hash,
-                  dr: dr,
-                  vr: vr,
-                  signer: pk,
-                  root_tx: root_tx(Enum.map(Enum.map(txs, & TX.unpack(&1)), & &1.hash)),
-                  root_validator: root_validator(validators, validators_last_change_height)
-              },
-              #txs: Enum.map(txs, & TX.unpack(&1))
-              txs: txs
-          }
-        else
-          %{
-              header: %{
-                  slot: cur_entry.header.slot + 1,
-                  height: cur_entry.header.height + 1,
-                  prev_slot: cur_entry.header.slot,
-                  prev_hash: cur_entry.hash,
-                  dr: dr,
-                  vr: vr,
-                  signer: pk,
-                  txs_hash: :crypto.hash(:sha256, Enum.join(txs))
-              },
-              txs: txs
-          }
-        end
+        validators = DB.Chain.validators_for_height(next_height)
+        validators_last_change_height = DB.Chain.validators_last_change_height(next_height)
+
+        %{
+            header: %{
+                slot: cur_entry.header.slot + 1,
+                height: next_height,
+                prev_slot: cur_entry.header.slot,
+                prev_hash: cur_entry.hash,
+                dr: dr,
+                vr: vr,
+                signer: pk,
+                root_tx: root_tx(Enum.map(Enum.map(txs, & TX.unpack(&1)), & &1.hash)),
+                root_validator: root_validator(validators, validators_last_change_height)
+            },
+            #txs: Enum.map(txs, & TX.unpack(&1))
+            txs: txs
+        }
     end
 
     def sign(seed, entry) do

@@ -131,9 +131,9 @@ defmodule SpecialMeetingGen do
       st.attempts > 3 -> Map.delete(state, :slash_trainer)
 
       st.type == :tx and (st.tx.aggsig.mask_set_size / st.tx.aggsig.mask_size) >= 0.67 ->
-        tx_packed = build_slash_tx(st.epoch, st.mpk, st.tx.aggsig.aggsig, st.tx.aggsig.mask, st.tx.aggsig.mask_size)
-        IO.inspect tx_packed
-        TXPool.insert_and_broadcast(tx_packed, %{peers: 0})
+        txu = build_slash_tx(st.epoch, st.mpk, st.tx.aggsig.aggsig, st.tx.aggsig.mask, st.tx.aggsig.mask_size)
+        IO.inspect txu
+        TXPool.insert_and_broadcast(txu, %{peers: 0})
         Map.delete(state, :slash_trainer)
 
       st.type == :entry and st.state == :gather_tx_sigs and (st.tx.aggsig.mask_set_size / st.tx.aggsig.mask_size) >= 0.67 ->
@@ -179,10 +179,8 @@ defmodule SpecialMeetingGen do
     cur_height = cur_entry.header.height
     cur_slot = cur_entry.header.slot
 
-    txs = [build_slash_tx(st.epoch, st.mpk, st.tx.aggsig.aggsig, st.tx.aggsig.mask, st.tx.aggsig.mask_size)]
-    validators = DB.Chain.validators_for_height(Entry.height(cur_entry)+1)
-    validators_last_change_height = DB.Chain.validators_last_change_height(Entry.height(cur_entry)+1)
-    next_entry = Entry.build_next(sk, cur_entry, txs, validators, validators_last_change_height)
+    txs = [build_slash_tx(st.epoch, st.mpk, st.tx.aggsig.aggsig, st.tx.aggsig.mask, st.tx.aggsig.mask_size) |> TX.pack()]
+    next_entry = Entry.build_next(sk, cur_entry, txs)
     next_entry = Entry.sign(sk, next_entry)
 
     aggsig = Enum.reduce(st.my_validators, st.entry.aggsig, fn(%{pk: pk, seed: seed}, aggsig)->

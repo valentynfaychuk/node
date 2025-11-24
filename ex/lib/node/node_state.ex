@@ -83,13 +83,12 @@ defmodule NodeState do
   end
 
   def handle(:event_tx, istate, term) do
-    if term[:txs] do
-      txs_packed = Enum.map(term.txs, & TX.pack(&1))
-      good = TXPool.validate_tx_batch(txs_packed)
+    if term[:txus] do
+      good = TXPool.event_tx_validate(term.txus)
       TXPool.insert(good)
     else
-      good = TXPool.validate_tx_batch(term.txs_packed)
-      TXPool.insert(good)
+    good = TXPool.event_tx_validate(term.txs)
+    TXPool.insert(good)
     end
   end
 

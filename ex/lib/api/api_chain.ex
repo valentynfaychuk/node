@@ -105,9 +105,7 @@ defmodule API.Chain do
         hash = entry.hash
         entry = Map.put(entry, :tx_count, length(entry.txs))
         entry = Map.drop(entry, [:signature, :txs])
-        {_, entry} = pop_in(entry, [:header, :txs_hash])
-        {_, entry} = pop_in(entry, [:header, :root_tx])
-        {_, entry} = pop_in(entry, [:header, :root_validator])
+        {_, entry} = pop_in(entry, [:header, :txs_hash]) #old format; keep for backwards compat
         entry = put_in(entry, [:hash], Base58.encode(entry.hash))
         entry = if !entry[:mask] do entry else
           put_in(entry, [:mask], Base58.encode(entry.mask))
@@ -117,7 +115,12 @@ defmodule API.Chain do
         entry = put_in(entry, [:header, :vr], Base58.encode(entry.header.vr))
         entry = put_in(entry, [:header, :prev_hash], Base58.encode(entry.header.prev_hash))
         entry = put_in(entry, [:header, :signer], Base58.encode(entry.header.signer))
+        #new additions
+        entry = if !entry.header[:root_tx] do entry else put_in(entry, [:header, :root_tx], Base58.encode(entry.header.root_tx)) end
+        entry = if !entry.header[:root_validator] do entry else put_in(entry, [:header, :root_validator], Base58.encode(entry.header.root_validator)) end
+
         entry = put_in(entry, [:header_unpacked], entry.header)
+        entry = put_in(entry, [:header], entry.header)
         {mut_hash, score} = DB.Attestation.best_consensus_by_entryhash(hash)
         if !mut_hash do entry else
             entry = put_in(entry, [:consensus], %{})
