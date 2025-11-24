@@ -67,4 +67,23 @@ defmodule API.Epoch do
       score = RocksDB.get("bic:epoch:solutions_count:#{pk}", %{db: db, cf: cf.contractstate, to_integer: true}) || 0
       %{error: :ok, score: score}
     end
+
+    def sol_in_epoch(epoch, hash) do
+      hash = if byte_size(hash) != 32, do: Base58.decode(hash), else: hash
+      cond do
+        epoch != DB.Chain.epoch() -> %{error: :invalid_epoch}
+        true ->
+          %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+          bloom_results = SolBloom.segs(hash)
+          |> Enum.map(fn %{page: page, bit_offset: off} ->
+            RocksDB.get_bit("bic:epoch:solbloom:#{page}", off, %{db: db, cf: cf.contractstate})
+          end)
+          |> Enum.filter(& &1 == 1)
+          if length(bloom_results) >= 2 do
+            %{error: :ok}
+          else
+            %{error: :sol_not_found}
+          end
+      end
+    end
 end

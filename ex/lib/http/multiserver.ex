@@ -138,6 +138,12 @@ defmodule Ama.MultiServer do
                 result = API.Epoch.get_emission_address(pk)
                 quick_reply(state, %{error: :ok, emission_address: result})
 
+            r.method == "GET" and String.starts_with?(r.path, "/api/epoch/sol_in_epoch/") ->
+                [sol_epoch, sol_hash] = String.replace(r.path, "/api/epoch/sol_in_epoch/", "")
+                |> :binary.split("/")
+                result = API.Epoch.sol_in_epoch(:erlang.binary_to_integer(sol_epoch), Base58.decode(sol_hash))
+                quick_reply(state, result)
+
             r.method == "POST" and String.starts_with?(r.path, "/api/contract/validate_bytecode") ->
                 {r, bytecode} = Photon.HTTP.read_body_all(state.socket, r)
                 result = API.Contract.validate_bytecode(bytecode)
