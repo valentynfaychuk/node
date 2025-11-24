@@ -1,20 +1,21 @@
 use std::panic::panic_any;
 use crate::{bcat};
 use crate::consensus::{bic::{coin::{balance,mint, to_flat}, epoch::TREASURY_DONATION_ADDRESS, lockup::{create_lock}}, consensus_kv::{kv_get, kv_increment, kv_put, kv_delete}};
+use vecpak::{encode, Term};
 
 pub fn call_lock(env: &mut crate::consensus::consensus_apply::ApplyEnv, args: Vec<Vec<u8>>) {
     if !crate::consensus::bic::coin::exists(env, b"PRIME") {
-        kv_increment(env, &bcat(&[b"bic:coin:totalSupply:PRIME"]), 0);
+        kv_increment(env, &bcat(&[b"coin:PRIME:totalSupply"]), 0);
 
         let mut admin = Vec::new();
         let v0 = &[149, 216, 55, 255, 29, 8, 239, 251, 139, 112, 30, 29, 199, 57, 90, 67, 198, 220, 101, 18, 228, 100, 100, 241, 43, 213, 221, 230, 253, 58, 231, 1, 102, 166, 54, 66, 245, 148, 140, 44, 78, 56, 84, 12, 222, 205, 57, 210];
-        admin.push(v0.to_vec());
-        let term_admins = crate::consensus::bic::eetf_list_of_binaries(admin).unwrap();
-        kv_put(env, &bcat(&[b"bic:coin:permission:PRIME"]), &term_admins);
+        admin.push(Term::Binary(v0.to_vec()));
+        let term_admins = encode(Term::List(admin));
+        kv_put(env, &bcat(&[b"coin:PRIME:permission"]), &term_admins);
 
-        kv_put(env, &bcat(&[b"bic:coin:mintable:PRIME"]), b"true");
-        kv_put(env, &bcat(&[b"bic:coin:pausable:PRIME"]), b"true");
-        kv_put(env, &bcat(&[b"bic:coin:soulbound:PRIME"]), b"true");
+        kv_put(env, &bcat(&[b"coin:PRIME:mintable"]), b"true");
+        kv_put(env, &bcat(&[b"coin:PRIME:pausable"]), b"true");
+        kv_put(env, &bcat(&[b"coin:PRIME:soulbound"]), b"true");
     }
 
     if args.len() != 2 { panic_any("invalid_args") }
