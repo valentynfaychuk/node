@@ -207,7 +207,7 @@ defmodule SpecialMeetingAttestGen do
 
     1 = length(entry.txs)
     txu = TX.unpack(hd(entry.txs))
-    %{contract: "Epoch", function: "slash_trainer", args: args} = hd(txu.tx.actions)
+    %{contract: "Epoch", function: "slash_trainer", args: args} = TX.action(txu)
     [epoch, malicious_pk, signature, mask_size, mask] = args
     epoch = if is_binary(epoch) do :erlang.binary_to_integer(epoch) else epoch end
     mask_size = if is_binary(mask_size) do :erlang.binary_to_integer(mask_size) else mask_size end

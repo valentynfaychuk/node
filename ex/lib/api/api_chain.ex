@@ -19,7 +19,7 @@ defmodule API.Chain do
             end
             entry = if !filter_on_function do entry else
               txs_filtered = API.TX.get_by_entry(entry.hash)
-              |> Enum.filter(& List.first(&1.tx.actions)[:function] == filter_on_function)
+              |> Enum.filter(& TX.action(&1)[:function] == filter_on_function)
               put_in(entry, [:txs_filtered], txs_filtered)
             end
             %{error: :ok, entry: entry}

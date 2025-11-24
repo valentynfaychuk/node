@@ -35,7 +35,8 @@ defmodule TXPool do
         chainNonce = DB.Chain.nonce(txu.tx.signer)
         nonceValid = !chainNonce or txu.tx.nonce > chainNonce
 
-        hasSol = Enum.find_value(txu.tx.actions, fn(a)-> a.function == "submit_sol" and hd(a.args) end)
+        action = TX.action(txu)
+        hasSol = action.function == "submit_sol" and hd(action.args)
         epochSolValid = if !hasSol do true else
             <<sol_epoch::32-little, _::binary>> = hasSol
             cur_epoch == sol_epoch
@@ -61,12 +62,13 @@ defmodule TXPool do
         batch_state = Map.put(batch_state, {:chain_nonce, txu.tx.signer}, txu.tx.nonce)
 
         balance = Map.get_lazy(batch_state, {:balance, txu.tx.signer}, fn()-> DB.Chain.balance(txu.tx.signer) end)
-        balance = balance - BIC.Base.exec_cost(chain_epoch, txu)
+        balance = balance - TX.exec_cost(chain_epoch, txu)
         balance = balance - BIC.Coin.to_cents(1)
         if balance < 0, do: throw(%{error: :not_enough_tx_exec_balance, key: {txu.tx.nonce, txu.hash}})
         batch_state = Map.put(batch_state, {:balance, txu.tx.signer}, balance)
 
-        hasSol = Enum.find_value(txu.tx.actions, fn(a)-> a.function == "submit_sol" and hd(a.args) end)
+        action = TX.action(txu)
+        hasSol = action.function == "submit_sol" and hd(action.args)
         epochSolValid = if !hasSol do true else
           <<sol_epoch::32-little, sol_svrh::32-binary, _::binary>> = hasSol
 

@@ -137,7 +137,7 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
         let tx = txu.map_get(crate::atoms::tx()).unwrap();
         let tx_signer = crate::fixed::<48>(tx.map_get(crate::atoms::signer()).unwrap()).unwrap();
         let tx_nonce = tx.map_get(crate::atoms::nonce()).unwrap().decode::<u64>().unwrap();
-        let action = tx.map_get(crate::atoms::actions()).unwrap().decode::<Vec<rustler::Term<'a>>>().unwrap();
+        let action = tx.map_get(crate::atoms::action()).unwrap().decode::<rustler::Term<'a>>().unwrap();
 
         applyenv.caller_env.tx_index = i as u64;
         applyenv.caller_env.tx_hash = tx_hash;
@@ -146,78 +146,69 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
         applyenv.caller_env.account_origin = tx_signer.to_vec();
         applyenv.caller_env.account_caller = tx_signer.to_vec();
 
-        match action.first() {
-            None => {
-                let mut m: HashMap<&'static str, &'static str> = HashMap::new();
-                m.insert("error", "no_actions");
-                applyenv.result_log.push(m);
+        //let op = action.map_get(crate::atoms::op()).unwrap().decode::<rustler::Binary>().unwrap().as_slice();
+        let contract = action.map_get(crate::atoms::contract()).unwrap().decode::<rustler::Binary>().unwrap().to_vec();
+        let function = action.map_get(crate::atoms::function()).unwrap().decode::<rustler::Binary>().unwrap().to_vec();
+        let args = action.map_get(crate::atoms::args()).unwrap().decode::<Vec<rustler::Binary>>().unwrap().into_iter().map(|b| b.as_slice().to_vec()).collect();
+        let attached_symbol = match action.map_get(crate::atoms::attached_symbol()).ok() {
+            None => None,
+            Some(t) => match t.decode::<Option<rustler::Binary>>().ok().flatten() {
+                None => None,
+                Some(bin) => Some(bin.as_slice().to_vec()),
             },
-            Some(action) => {
-                //let op = action.map_get(crate::atoms::op()).unwrap().decode::<rustler::Binary>().unwrap().as_slice();
-                let contract = action.map_get(crate::atoms::contract()).unwrap().decode::<rustler::Binary>().unwrap().to_vec();
-                let function = action.map_get(crate::atoms::function()).unwrap().decode::<rustler::Binary>().unwrap().to_vec();
-                let args = action.map_get(crate::atoms::args()).unwrap().decode::<Vec<rustler::Binary>>().unwrap().into_iter().map(|b| b.as_slice().to_vec()).collect();
-                let attached_symbol = match action.map_get(crate::atoms::attached_symbol()).ok() {
-                    None => None,
-                    Some(t) => match t.decode::<Option<rustler::Binary>>().ok().flatten() {
-                        None => None,
-                        Some(bin) => Some(bin.as_slice().to_vec()),
-                    },
-                };
-                let attached_amount = match action.map_get(crate::atoms::attached_amount()).ok() {
-                    None => None,
-                    Some(t) => match t.decode::<Option<rustler::Binary>>().ok().flatten() {
-                        None => None,
-                        Some(bin) => Some(bin.as_slice().to_vec()),
-                    },
-                };
+        };
+        let attached_amount = match action.map_get(crate::atoms::attached_amount()).ok() {
+            None => None,
+            Some(t) => match t.decode::<Option<rustler::Binary>>().ok().flatten() {
+                None => None,
+                Some(bin) => Some(bin.as_slice().to_vec()),
+            },
+        };
 
-                applyenv.caller_env.account_current = contract.to_vec();
-                applyenv.muts = Vec::new();
-                applyenv.muts_rev = Vec::new();
-                applyenv.muts_gas = Vec::new();
-                applyenv.muts_rev_gas = Vec::new();
+        applyenv.caller_env.account_current = contract.to_vec();
+        applyenv.muts = Vec::new();
+        applyenv.muts_rev = Vec::new();
+        applyenv.muts_gas = Vec::new();
+        applyenv.muts_rev_gas = Vec::new();
 
-                std::panic::set_hook(Box::new(|_| {}));
-                let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    match consensus::bls12_381::validate_public_key(contract.as_slice()) {
-                        false => {
-                            //println!("{:?}->{:?} {:?} {:?}", String::from_utf8_lossy(&contract), String::from_utf8_lossy(&function), attached_amount, attached_symbol);
-                            call_bic(&mut applyenv, contract, function, args, attached_symbol, attached_amount);
-                        }
-                        true => {
-                            //println!("{:?}->{:?} {:?} {:?}", bs58::encode(&contract).into_string(), String::from_utf8_lossy(&function), attached_amount, attached_symbol);
-                            call_wasmvm(&mut applyenv, contract, function, args, attached_symbol, attached_amount);
-                        }
-                    }
-                }));
-                match res {
-                    Ok(_) => {
-                        applyenv.muts_final.append(&mut applyenv.muts);
-                        applyenv.muts_final.append(&mut applyenv.muts_gas);
-                        applyenv.muts_final_rev.append(&mut applyenv.muts_rev);
-                        applyenv.muts_final_rev.append(&mut applyenv.muts_rev_gas);
+        std::panic::set_hook(Box::new(|_| {}));
+        let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            match consensus::bls12_381::validate_public_key(contract.as_slice()) {
+                false => {
+                    //println!("{:?}->{:?} {:?} {:?}", String::from_utf8_lossy(&contract), String::from_utf8_lossy(&function), attached_amount, attached_symbol);
+                    call_bic(&mut applyenv, contract, function, args, attached_symbol, attached_amount);
+                }
+                true => {
+                    //println!("{:?}->{:?} {:?} {:?}", bs58::encode(&contract).into_string(), String::from_utf8_lossy(&function), attached_amount, attached_symbol);
+                    call_wasmvm(&mut applyenv, contract, function, args, attached_symbol, attached_amount);
+                }
+            }
+        }));
+        match res {
+            Ok(_) => {
+                applyenv.muts_final.append(&mut applyenv.muts);
+                applyenv.muts_final.append(&mut applyenv.muts_gas);
+                applyenv.muts_final_rev.append(&mut applyenv.muts_rev);
+                applyenv.muts_final_rev.append(&mut applyenv.muts_rev_gas);
 
-                        let mut m = std::collections::HashMap::new();
-                        m.insert("error", "ok");
-                        applyenv.result_log.push(m);
-                    }
-                    Err(payload) => {
-                        applyenv.muts_final.append(&mut applyenv.muts_gas);
-                        applyenv.muts_final_rev.append(&mut applyenv.muts_rev_gas);
+                let mut m = std::collections::HashMap::new();
+                m.insert("error", "ok");
+                applyenv.result_log.push(m);
+            }
+            Err(payload) => {
+                applyenv.muts_final.append(&mut applyenv.muts_gas);
+                applyenv.muts_final_rev.append(&mut applyenv.muts_rev_gas);
 
-                        consensus_kv::revert(&mut applyenv);
+                consensus_kv::revert(&mut applyenv);
 
-                        if let Some(&s) = payload.downcast_ref::<&'static str>() {
-                            let mut m: HashMap<&'static str, &'static str> = HashMap::new();
-                            m.insert("error", s);
-                            applyenv.result_log.push(m);
-                        } else {
-                            let mut m: HashMap<&'static str, &'static str> = HashMap::new();
-                            m.insert("error", "unknown");
-                            applyenv.result_log.push(m);
-                        }
-                    }
+                if let Some(&s) = payload.downcast_ref::<&'static str>() {
+                    let mut m: HashMap<&'static str, &'static str> = HashMap::new();
+                    m.insert("error", s);
+                    applyenv.result_log.push(m);
+                } else {
+                    let mut m: HashMap<&'static str, &'static str> = HashMap::new();
+                    m.insert("error", "unknown");
+                    applyenv.result_log.push(m);
                 }
             }
         }

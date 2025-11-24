@@ -31,37 +31,19 @@ defmodule TX do
 
    """
 
+   @fields [:tx_encoded, :hash, :signature] #,    :tx
+   @fields_tx [:actions, :signer, :nonce, :action]
+   @fields_action [:op, :contract, :function, :args, :attached_symbol, :attached_amount]
+
    def pack(txu) do
-     txu = Map.take(txu, [:tx_encoded, :hash, :signature])
+     txu = Map.take(txu, @fields)
      VanillaSer.encode(txu)
    end
 
    def unpack(tx_packed) do
      txu = VanillaSer.decode!(tx_packed)
-     tx = VanillaSer.decode!(Map.fetch!(txu, "tx_encoded"))
-     txu = Map.put(txu, "tx", tx)
-     normalize_atoms(txu)
-   end
-
-   def normalize_atoms(txu) do
-      t = %{
-         tx_encoded: Map.fetch!(txu, "tx_encoded"),
-         hash: Map.fetch!(txu, "hash"),
-         signature: Map.fetch!(txu, "signature")
-      }
-      if !txu["tx"] do t else
-          tx = Map.fetch!(txu, "tx")
-          actions = Map.fetch!(tx, "actions")
-          actions = Enum.map(actions, fn action = %{"op"=> o, "contract"=> c, "function"=> f, "args"=> a} ->
-            if !!action["attached_symbol"] and !!action["attached_amount"] do
-              %{op: o, contract: c, function: f, attached_symbol: action["attached_symbol"], attached_amount: action["attached_amount"], args: a}
-            else
-              %{op: o, contract: c, function: f, args: a}
-            end
-          end)
-          tx = %{signer: Map.fetch!(tx, "signer"), nonce: Map.fetch!(tx, "nonce"), actions: actions}
-          Map.put(t, :tx, tx)
-      end
+     tx = VanillaSer.decode!(Map.fetch!(txu, :tx_encoded))
+     txu = Map.put(txu, :tx, tx)
    end
 
    def validate(txu, is_special_meeting_block \\ false) do
@@ -71,16 +53,15 @@ defmodule TX do
       if byte_size(tx_packed) >= tx_size, do: throw(%{error: :too_large})
 
       txu = VanillaSer.decode!(tx_packed)
-      txu = Map.take(txu, ["tx_encoded", "hash", "signature"])
-      tx_encoded = Map.fetch!(txu, "tx_encoded")
+      txu = Map.take(txu, @fields)
+      tx_encoded = Map.fetch!(txu, :tx_encoded)
       tx = VanillaSer.decode!(tx_encoded)
-      tx = Map.take(tx, ["signer", "nonce", "actions"])
-      actions = Enum.map(Map.fetch!(tx, "actions"), & Map.take(&1, ["op", "contract", "function", "args", "attached_symbol", "attached_amount"]))
-      tx = Map.put(tx, "actions", actions)
-      txu = Map.put(txu, "tx", tx)
-      hash = Map.fetch!(txu, "hash")
-      signature = Map.fetch!(txu, "signature")
-      txu = normalize_atoms(txu)
+      tx = Map.take(tx, @fields_tx)
+      actions = Enum.map(Map.fetch!(tx, :actions), & Map.take(&1, @fields_action))
+      tx = Map.put(tx, :actions, actions)
+      txu = Map.put(txu, :tx, tx)
+      hash = Map.fetch!(txu, :hash)
+      signature = Map.fetch!(txu, :signature)
 
       canonical = VanillaSer.encode(%{tx_encoded: VanillaSer.encode(tx), hash: hash, signature: signature})
       if tx_packed != canonical, do: throw(%{error: :tx_not_canonical})
@@ -100,14 +81,8 @@ defmodule TX do
 
       epoch = DB.Chain.epoch()
       Enum.each(action.args, fn(arg)->
-            if !is_binary(arg), do: throw(%{error: :arg_must_be_binary})
+        if !is_binary(arg), do: throw(%{error: :arg_must_be_binary})
       end)
-
-      cond do
-        BIC.Base.valid_bic_action(action.contract, action.function) -> :ok
-        BlsEx.validate_public_key(action.contract) -> :ok
-        true -> throw %{error: :invalid_contract_or_function}
-      end
 
       if is_special_meeting_block do
          if !:lists.member(action.contract, ["Epoch"]), do: throw %{error: :invalid_module_for_special_meeting}
@@ -160,7 +135,7 @@ defmodule TX do
    end
 
    def known_receivers(txu) do
-      action = hd(txu.tx.actions)
+      action = action(txu)
       c = action.contract
       f = action.function
       a = action.args
@@ -170,4 +145,17 @@ defmodule TX do
          _ -> nil
       end || []
    end
+
+   def exec_cost(epoch, txu) do
+      if txu[:tx_encoded] do
+        bytes = byte_size(txu.tx_encoded) + 32 + 96
+        BIC.Coin.to_cents( 1 + div(bytes, 1024) * 1 )
+      else
+        bytes = byte_size(TX.pack(txu.tx)) + 32 + 96
+        BIC.Coin.to_cents( 1 + div(bytes, 1024) * 1 )
+      end
+   end
+
+   def action(%{tx: %{actions: [action|_]}}), do: action
+   def action(%{tx: %{action: action}}), do: action
 end

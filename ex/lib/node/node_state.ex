@@ -87,8 +87,8 @@ defmodule NodeState do
       good = TXPool.event_tx_validate(term.txus)
       TXPool.insert(good)
     else
-    good = TXPool.event_tx_validate(term.txs)
-    TXPool.insert(good)
+      good = TXPool.event_tx_validate(term.txs)
+      TXPool.insert(good)
     end
   end
 

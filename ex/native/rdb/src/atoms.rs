@@ -38,7 +38,7 @@ rustler::atoms! {
     tx_encoded,
     signer,
     nonce,
-    actions,
+    action,
     op,
     contract,
     function,

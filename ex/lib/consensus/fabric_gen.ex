@@ -310,6 +310,11 @@ defmodule FabricGen do
           entry_epoch: div(entry.header.height,100_000),
       }
       txus = Enum.map(entry.txs, & TX.unpack(&1))
+      txus = Enum.map(txus, fn(txu)->
+        action = TX.action(txu)
+        {_, txu} = Map.pop(txu, [:tx, :actions])
+        put_in(txu, [:tx, :action], action)
+      end)
 
       {rtx, m, m_rev, l} = RDB.apply_entry(db, next_entry_trimmed_map, Application.fetch_env!(:ama, :trainer_pk), Application.fetch_env!(:ama, :trainer_sk), entry.txs, txus)
       rebuild_m_fn = fn(m)->

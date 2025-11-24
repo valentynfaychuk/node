@@ -88,7 +88,7 @@ defmodule VanillaSer do
                     Enum.reduce(1..int, {%{}, rest}, fn(_, {acc, rest})->
                         {k, rest} = decode(rest)
                         {v, rest} = decode(rest)
-                        {Map.put(acc, k, v), rest}
+                        {Map.put(acc, String.to_atom(k), v), rest}
                     end)
                 end
         end

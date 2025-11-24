@@ -56,7 +56,7 @@ defmodule API.TX do
             if !next_key do {:halt, {next_key, acc}} else
                 txu = API.TX.get(value)
                 |> put_in([:metadata, :tx_event], :sent)
-                action = hd(txu.tx.actions)
+                action = TX.action(txu)
                 cond do
                     !!filters[:contract] and filters.contract != action.contract -> {:cont, {next_key, acc}}
                     !!filters[:function] and filters.function != action.function -> {:cont, {next_key, acc}}
@@ -90,7 +90,7 @@ defmodule API.TX do
             if !next_key do {:halt, {next_key, acc}} else
                 txu = API.TX.get(value)
                 |> put_in([:metadata, :tx_event], :recv)
-                action = hd(txu.tx.actions)
+                action = TX.action(txu)
                 cond do
                     !!filters[:contract] and filters.contract != action.contract -> {:cont, {next_key, acc}}
                     !!filters[:function] and filters.function != action.function -> {:cont, {next_key, acc}}
@@ -111,7 +111,7 @@ defmodule API.TX do
         if result[:error] == :ok do
             txu = result.txu
             if tx_packed =~ "deploy" do
-                action = hd(txu.tx.actions)
+                action = TX.action(txu)
                 if action.contract == "Contract" and action.function == "deploy" do
                     case BIC.Contract.validate(List.first(action.args)) do
                         %{error: :ok} ->
@@ -137,7 +137,7 @@ defmodule API.TX do
       if result[:error] == :ok do
           txu = result.txu
           if tx_packed =~ "deploy" do
-              action = hd(txu.tx.actions)
+              action = TX.action(txu)
               if action.contract == "Contract" and action.function == "deploy" do
                   case BIC.Contract.validate(List.first(action.args)) do
                       %{error: :ok} ->
@@ -177,16 +177,19 @@ defmodule API.TX do
         tx = Map.put(tx, :signature, Base58.encode(tx.signature))
         tx = Map.put(tx, :hash, Base58.encode(tx.hash))
         tx = put_in(tx, [:tx, :signer], Base58.encode(tx.tx.signer))
-        actions = Enum.map(tx.tx.actions, fn(a)->
-            args = Enum.map(a.args, fn(arg)->
-                cond do
-                    !is_binary(arg) or Util.ascii?(arg) -> arg
-                    true -> Base58.encode(arg)
-                end
-            end)
-            Map.put(a, :args, args)
+
+        action = TX.action(tx)
+        args = Enum.map(action.args, fn(arg)->
+            cond do
+                !is_binary(arg) or Util.ascii?(arg) -> arg
+                true -> Base58.encode(arg)
+            end
         end)
-        tx = put_in(tx, [:tx, :actions], actions)
+        Map.put(action, :args, args)
+
+        tx = put_in(tx, [:tx, :actions], [action])
+        tx = put_in(tx, [:tx, :action], action)
+
         if !Map.has_key?(tx, :metadata) do tx else
             put_in(tx, [:metadata, :entry_hash], Base58.encode(tx.metadata.entry_hash))
         end
