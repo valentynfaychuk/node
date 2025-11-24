@@ -107,12 +107,13 @@ defmodule TXPool do
     def grab_next_valid(amt \\ 1) do
         try do
             chain_epoch = DB.Chain.epoch()
+            chain_height = DB.Chain.height()
             segment_vr_hash = DB.Chain.segment_vr_hash()
             {acc, state} = :ets.foldl(fn({key, txu}, {acc, state_old})->
                 try do
                   case validate_tx(txu, %{epoch: chain_epoch, segment_vr_hash: segment_vr_hash, batch_state: state_old}) do
                     %{error: :ok, batch_state: batch_state} ->
-                      acc = acc ++ [TX.pack(txu)]
+                      acc = acc ++ [TX.pack(txu, chain_height+1)]
                       if length(acc) == amt do
                           throw {:choose, acc}
                       end

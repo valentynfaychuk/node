@@ -35,18 +35,92 @@ defmodule TX do
    @fields_tx [:actions, :signer, :nonce, :action]
    @fields_action [:op, :contract, :function, :args, :attached_symbol, :attached_amount]
 
-   def pack(txu) do
-     txu = Map.take(txu, @fields)
-     VanillaSer.encode(txu)
+   def pack(txu, height \\ nil) do
+     height = if height do height else DB.Chain.height() end
+     if height >= Entry.forkheight() do
+      txu = Map.take(txu, @fields)
+      RDB.vecpak_encode(txu)
+     else
+      txu = Map.take(txu, @fields)
+      VanillaSer.encode(txu)
+     end
    end
 
    def unpack(tx_packed) do
+     try do
      txu = VanillaSer.decode!(tx_packed)
      tx = VanillaSer.decode!(Map.fetch!(txu, :tx_encoded))
      txu = Map.put(txu, :tx, tx)
+     catch
+     _,_ ->
+      txu = RDB.vecpak_decode(tx_packed)
+      tx = RDB.vecpak_decode(Map.fetch!(txu, :tx_encoded))
+      txu = Map.put(txu, :tx, tx)
+     end
    end
 
    def validate(txu, is_special_meeting_block \\ false) do
+    height = Process.get(:height_for_tx, DB.Chain.height())
+    if height >= Entry.forkheight() do
+      try do
+      tx_packed = TX.pack(txu, height)
+      tx_size = Application.fetch_env!(:ama, :tx_size)
+      if byte_size(tx_packed) >= tx_size, do: throw(%{error: :too_large})
+
+      txu = RDB.vecpak_decode(tx_packed)
+      txu = Map.take(txu, @fields)
+      tx_encoded = Map.fetch!(txu, :tx_encoded)
+      tx = RDB.vecpak_decode(tx_encoded)
+      tx = Map.take(tx, @fields_tx)
+      tx = put_in(tx, [:action], Map.take(tx.action, @fields_action))
+      txu = Map.put(txu, :tx, tx)
+      hash = Map.fetch!(txu, :hash)
+      signature = Map.fetch!(txu, :signature)
+
+      if hash != :crypto.hash(:sha256, tx_encoded), do: throw(%{error: :invalid_hash})
+      if !BlsEx.verify?(txu.tx.signer, signature, hash, BLS12AggSig.dst_tx()), do: throw(%{error: :invalid_signature})
+
+      if !is_integer(txu.tx.nonce), do: throw(%{error: :nonce_not_integer})
+      if txu.tx.nonce > 99_999_999_999_999_999_999, do: throw(%{error: :nonce_too_high})
+
+      if !is_map(txu.tx.action), do: throw(%{error: :action_must_be_map})
+      action = txu.tx.action
+      if action[:op] != "call", do: throw %{error: :op_must_be_call}
+      if !is_binary(action[:contract]), do: throw %{error: :contract_must_be_binary}
+      if !is_binary(action[:function]), do: throw %{error: :function_must_be_binary}
+      if !is_list(action[:args]), do: throw %{error: :args_must_be_list}
+      Enum.each(action.args, fn(arg)->
+        if !is_binary(arg), do: throw(%{error: :arg_must_be_binary})
+      end)
+
+      if is_special_meeting_block do
+         if !:lists.member(action.contract, ["Epoch"]), do: throw %{error: :invalid_module_for_special_meeting}
+         if !:lists.member(action.function, ["slash_trainer"]), do: throw %{error: :invalid_function_for_special_meeting}
+      end
+
+      #attachment
+      if !!action[:attached_symbol] and !is_binary(action.attached_symbol), do: throw %{error: :attached_symbol_must_be_binary}
+      if !!action[:attached_symbol] and (byte_size(action.attached_symbol) < 1 or byte_size(action.attached_symbol) > 32),
+        do: throw %{error: :attached_symbol_wrong_size}
+
+      if !!action[:attached_amount] and !is_binary(action.attached_amount), do: throw %{error: :attached_amount_must_be_binary}
+
+      if !!action[:attached_symbol] and !action[:attached_amount], do: throw %{error: :attached_amount_must_be_included}
+      if !!action[:attached_amount] and !action[:attached_symbol], do: throw %{error: :attached_symbol_must_be_included}
+
+      #if !!txp.tx[:delay] and !is_integer(txp.tx.delay), do: throw %{error: :delay_not_integer}
+      #if !!txp.tx[:delay] and txp.tx.delay <= 0, do: throw %{error: :delay_too_low}
+      #if !!txp.tx[:delay] and txp.tx.delay > 100_000, do: throw %{error: :delay_too_hi}
+
+      throw %{error: :ok, txu: txu}
+      catch
+         :throw,r -> r
+         e,r ->
+             IO.inspect {TX, :validate, e, r}
+            %{error: :unknown, txu: nil}
+      end
+
+    else
       try do
       tx_packed = TX.pack(txu)
       tx_size = Application.fetch_env!(:ama, :tx_size)
@@ -110,9 +184,28 @@ defmodule TX do
              IO.inspect {TX, :validate, e, r}
             %{error: :unknown, txu: nil}
       end
+    end
    end
 
    def build(sk, contract, function, args, nonce \\ nil, attached_symbol \\ nil, attached_amount \\ nil) do
+     height = DB.Chain.height()
+     if height >= Entry.forkheight() do
+       pk = BlsEx.get_public_key!(sk)
+       nonce = if !nonce do :os.system_time(:nanosecond) else nonce end
+       action = %{op: "call", contract: contract, function: function, args: args}
+       action = if is_binary(attached_symbol) and is_binary(attached_amount) do
+         Map.merge(action, %{attached_symbol: attached_symbol, attached_amount: attached_amount})
+       else action end
+       tx_encoded = %{
+          signer: pk,
+          nonce: nonce,
+          action: action
+       }
+       |> RDB.vecpak_encode()
+       hash = :crypto.hash(:sha256, tx_encoded)
+       signature = BlsEx.sign!(sk, hash, BLS12AggSig.dst_tx())
+       %{tx_encoded: tx_encoded, hash: hash, signature: signature}
+      else
       pk = BlsEx.get_public_key!(sk)
       nonce = if !nonce do :os.system_time(:nanosecond) else nonce end
       action = %{op: "call", contract: contract, function: function, args: args}
@@ -128,6 +221,7 @@ defmodule TX do
       hash = Blake3.hash(tx_encoded)
       signature = BlsEx.sign!(sk, hash, BLS12AggSig.dst_tx())
       %{tx_encoded: tx_encoded, hash: hash, signature: signature}
+     end
    end
 
    def valid_pk(pk) do
