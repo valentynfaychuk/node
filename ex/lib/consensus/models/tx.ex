@@ -57,7 +57,7 @@ defmodule TX do
     height = Process.get(:height_for_tx, DB.Chain.height())
     if height >= Entry.forkheight() do
       try do
-      tx_packed = TX.pack(txu, height)
+      tx_packed = TX.pack(txu)
       tx_size = Application.fetch_env!(:ama, :tx_size)
       if byte_size(tx_packed) >= tx_size, do: throw(%{error: :too_large})
 
