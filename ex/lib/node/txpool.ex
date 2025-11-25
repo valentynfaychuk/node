@@ -1,8 +1,8 @@
 defmodule TXPool do
     def insert(tx) when is_map(tx) do insert([tx]) end
     def insert([]) do :ok end
-    def insert(txs) do
-        txus = Enum.map(txs, fn(txu)->
+    def insert(txus) do
+        txus = Enum.map(txus, fn(txu)->
             {{txu.tx.nonce, txu.hash}, txu}
         end)
         :ets.insert(TXPool, txus)
@@ -113,7 +113,7 @@ defmodule TXPool do
                 try do
                   case validate_tx(txu, %{epoch: chain_epoch, segment_vr_hash: segment_vr_hash, batch_state: state_old}) do
                     %{error: :ok, batch_state: batch_state} ->
-                      acc = acc ++ [TX.pack(txu, chain_height+1)]
+                      acc = acc ++ [TX.pack(txu)]
                       if length(acc) == amt do
                           throw {:choose, acc}
                       end

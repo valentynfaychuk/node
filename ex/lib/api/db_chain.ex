@@ -40,7 +40,7 @@ defmodule DB.Chain do
   end
 
   def nonce(pk, db_opts \\ %{}) do
-    if RocksDB.exists("account:#{pk}:attribute:nonce") do
+    if RocksDB.exists("account:#{pk}:attribute:nonce", db_handle(db_opts, :contractstate, %{to_integer: true})) do
       RocksDB.get("account:#{pk}:attribute:nonce", db_handle(db_opts, :contractstate, %{to_integer: true}))
     else
       RocksDB.get("bic:base:nonce:#{pk}", db_handle(db_opts, :contractstate, %{to_integer: true}))
@@ -48,7 +48,7 @@ defmodule DB.Chain do
   end
 
   def balance(pk, symbol \\ "AMA", db_opts \\ %{}) do
-    if RocksDB.exists("account:#{pk}:balance:#{symbol}") do
+    if RocksDB.exists("account:#{pk}:balance:#{symbol}", db_handle(db_opts, :contractstate, %{to_integer: true})) do
       RocksDB.get("account:#{pk}:balance:#{symbol}", db_handle(db_opts, :contractstate, %{to_integer: true})) || 0
     else
       RocksDB.get("bic:coin:balance:#{pk}:#{symbol}", db_handle(db_opts, :contractstate, %{to_integer: true})) || 0

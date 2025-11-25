@@ -27,9 +27,14 @@ pub fn balance_burnt(env: &crate::consensus::consensus_apply::ApplyEnv, symbol: 
 }
 
 pub fn balance(env: &crate::consensus::consensus_apply::ApplyEnv, address: &[u8], symbol: &[u8]) -> i128 {
-    match kv_get(env, &bcat(&[b"bic:coin:balance:", address, b":", symbol])) {
+    match kv_get(env, &bcat(&[b"account:", address, b":balance:", symbol])) {
         Some(amount) => std::str::from_utf8(&amount).unwrap().parse::<i128>().unwrap_or_else(|_| panic_any("invalid_balance")),
-        None => 0
+        None => {
+            match kv_get(env, &bcat(&[b"bic:coin:balance:", address, b":", symbol])) {
+                Some(amount) => std::str::from_utf8(&amount).unwrap().parse::<i128>().unwrap_or_else(|_| panic_any("invalid_balance")),
+                None => 0
+            }
+        }
     }
 }
 

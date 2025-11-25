@@ -54,7 +54,7 @@ defmodule Entry do
     """
 
     @fields [:header, :hash, :signature, :txs, :mask, :mask_size, :mask_set_size]
-    @fields_header [:height, :prev_hash, :slot, :prev_slot, :signer, :dr, :vr, :txs_hash, :root_tx, :root_validator]
+    @fields_header [:height, :prev_hash, :slot, :prev_slot, :signer, :dr, :vr, :root_tx, :root_validator]
     @forkheight 412_00000
 
     def forkheight() do
@@ -149,11 +149,10 @@ defmodule Entry do
 
         is_special_meeting_block = !!e[:mask]
         steam = Task.async_stream(e.txs, fn tx_packed ->
-          Process.put(:height_for_tx, eh.height)
           %{error: err} = TX.validate(TX.unpack(tx_packed), is_special_meeting_block)
-            err
+          err
         end)
-        Process.delete(:height_for_tx)
+
         err = Enum.find_value(steam, fn {:ok, result} -> result != :ok && result end)
         if err, do: throw(err)
 
