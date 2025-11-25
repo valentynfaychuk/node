@@ -40,11 +40,19 @@ defmodule DB.Chain do
   end
 
   def nonce(pk, db_opts \\ %{}) do
-    RocksDB.get("bic:base:nonce:#{pk}", db_handle(db_opts, :contractstate, %{to_integer: true}))
+    if RocksDB.exists("account:#{pk}:attribute:nonce") do
+      RocksDB.get("account:#{pk}:attribute:nonce", db_handle(db_opts, :contractstate, %{to_integer: true}))
+    else
+      RocksDB.get("bic:base:nonce:#{pk}", db_handle(db_opts, :contractstate, %{to_integer: true}))
+    end
   end
 
   def balance(pk, symbol \\ "AMA", db_opts \\ %{}) do
-    RocksDB.get("bic:coin:balance:#{pk}:#{symbol}", db_handle(db_opts, :contractstate, %{to_integer: true})) || 0
+    if RocksDB.exists("account:#{pk}:balance:#{symbol}") do
+      RocksDB.get("account:#{pk}:balance:#{symbol}", db_handle(db_opts, :contractstate, %{to_integer: true})) || 0
+    else
+      RocksDB.get("bic:coin:balance:#{pk}:#{symbol}", db_handle(db_opts, :contractstate, %{to_integer: true})) || 0
+    end
   end
 
   def tx(tx_hash, db_opts \\ %{}) do
@@ -74,10 +82,14 @@ defmodule DB.Chain do
     opts = db_handle(db_opts, :contractstate, %{term: true})
     cond do
         height in 3195570..3195575 ->
-            RocksDB.get("bic:epoch:trainers:height:000000319557", opts)
+            RocksDB.get("bic:epoch:validators:height:000000319557", opts)
         true ->
-            {_, value} = RocksDB.get_prev_or_first("bic:epoch:trainers:height:", pad_integer(height), opts)
-            value
+            case RocksDB.get_prev_or_first("bic:epoch:validators:height:", pad_integer(height), opts) do
+              {nil, nil} ->
+                {_, value} = RocksDB.get_prev_or_first("bic:epoch:trainers:height:", pad_integer(height), opts)
+                value
+              {_, value} -> value
+            end
     end
   end
 

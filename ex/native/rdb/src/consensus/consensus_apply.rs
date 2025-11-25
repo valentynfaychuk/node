@@ -260,10 +260,87 @@ fn call_exit(env: &mut ApplyEnv) {
     if env.caller_env.entry_height % 100_000 == 99_999 {
         consensus::bic::epoch::next(env);
     }
+    if env.caller_env.entry_height == 410_00000 {
+        //migrate_db(env);
+    }
 
     env.muts_final.append(&mut env.muts);
     env.muts_final_rev.append(&mut env.muts_rev);
 }
+
+fn migrate_db(env: &mut ApplyEnv) {
+    // Key: bic:contract:account:<pub_key>:bytecode
+    let key_bytecode: [u8; 78] = [
+        98, 105, 99, 58, 99, 111, 110, 116, 114, 97, 99, 116, 58, 97, 99, 99, 111,
+          117, 110, 116, 58, 166, 112, 134, 96, 188, 113, 89, 66, 210, 222, 166, 166,
+          244, 194, 43, 73, 91, 160, 1, 2, 191, 60, 106, 30, 203, 157, 253, 32, 193, 44,
+          143, 47, 139, 145, 54, 246, 234, 89, 164, 178, 122, 246, 243, 251, 81, 35, 2,
+          15, 58, 98, 121, 116, 101, 99, 111, 100, 101
+    ];
+    consensus_kv::kv_delete(env, &key_bytecode);
+
+    // Key: c:<pub_key>:vault:<text_address>:AMA
+    let key_vault_text: [u8; 127] = [
+        99, 58, 166, 112, 134, 96, 188, 113, 89, 66, 210, 222, 166, 166, 244, 194, 43,
+          73, 91, 160, 1, 2, 191, 60, 106, 30, 203, 157, 253, 32, 193, 44, 143, 47, 139,
+          145, 54, 246, 234, 89, 164, 178, 122, 246, 243, 251, 81, 35, 2, 15, 58, 118,
+          97, 117, 108, 116, 58, 55, 55, 55, 100, 54, 90, 57, 87, 77, 77, 53, 87, 118,
+          75, 82, 97, 69, 117, 74, 72, 53, 97, 98, 69, 66, 83, 77, 117, 117, 111, 81,
+          122, 111, 116, 78, 68, 56, 50, 106, 53, 81, 112, 109, 120, 87, 66, 78, 102,
+          121, 117, 115, 103, 81, 117, 52, 54, 90, 121, 72, 121, 57, 107, 103, 89, 84,
+          56, 58, 65, 77, 65
+    ];
+    consensus_kv::kv_delete(env, &key_vault_text);
+
+    // Key: c:<pub_key>:vault:<pub_key>:AMA
+    let key_vault_binary: [u8; 109] = [
+        99, 58, 166, 112, 134, 96, 188, 113, 89, 66, 210, 222, 166, 166, 244, 194, 43,
+          73, 91, 160, 1, 2, 191, 60, 106, 30, 203, 157, 253, 32, 193, 44, 143, 47, 139,
+          145, 54, 246, 234, 89, 164, 178, 122, 246, 243, 251, 81, 35, 2, 15, 58, 118,
+          97, 117, 108, 116, 58, 166, 112, 134, 96, 188, 113, 89, 66, 210, 222, 166,
+          166, 244, 194, 43, 73, 91, 160, 1, 2, 191, 60, 106, 30, 203, 157, 253, 32,
+          193, 44, 143, 47, 139, 145, 54, 246, 234, 89, 164, 178, 122, 246, 243, 251,
+          81, 35, 2, 15, 58, 65, 77, 65
+    ];
+    consensus_kv::kv_delete(env, &key_vault_binary);
+
+    //"bic:epoch:trainers:85"
+    //"bic:epoch:trainers:height:000039625024"
+    //"bic:epoch:trainers:removed:
+    let mut cursor: Vec<u8> = Vec::new();
+    while let Some((next_key_wo_prefix, _val)) = crate::consensus::consensus_kv::kv_get_next(env, b"bic:epoch:trainers:height:", &cursor) {
+        let trainers: Vec<vecpak::Term> = consensus::bic::epoch::kv_get_trainers(env, &crate::bcat(&[b"bic:epoch:trainers:height:", &next_key_wo_prefix]))
+            .into_iter()
+            .map(vecpak::Term::Binary)
+            .collect();
+        let buf = vecpak::encode(vecpak::Term::List(trainers));
+        crate::consensus::consensus_kv::kv_put(env, &crate::bcat(&[b"bic:epoch:validators:height:", &next_key_wo_prefix]), &buf);
+        cursor = next_key_wo_prefix;
+    }
+    cursor = Vec::new();
+    while let Some((next_key_wo_prefix, _val)) = crate::consensus::consensus_kv::kv_get_next(env, b"bic:epoch:trainers:", &cursor) {
+        let full_key = [b"bic:epoch:trainers:" as &[u8], &next_key_wo_prefix].concat();
+        crate::consensus::consensus_kv::kv_delete(env, &full_key);
+        cursor = next_key_wo_prefix;
+    }
+
+    //"bic:coin:balance:???ii?????d???K\\?????c??[??y????)?o??{=?;????n?9:AMA"
+    cursor = Vec::new();
+    while let Some((next_key_wo_prefix, val)) = crate::consensus::consensus_kv::kv_get_next(env, b"bic:coin:balance:", &cursor) {
+        let pk = &next_key_wo_prefix[..48];
+        crate::consensus::consensus_kv::kv_put(env, &crate::bcat(&[b"account:", &pk, b":balance:AMA"]), &val);
+        cursor = next_key_wo_prefix;
+    }
+
+    //"bic:base:nonce:????GH??D?ss???????dT??14o?P??nA?I&??6?????e3I??"
+    cursor = Vec::new();
+    while let Some((next_key_wo_prefix, val)) = crate::consensus::consensus_kv::kv_get_next(env, b"bic:base:nonce:", &cursor) {
+        let pk = &next_key_wo_prefix[..48];
+        crate::consensus::consensus_kv::kv_put(env, &crate::bcat(&[b"account:", &pk, b":attribute:nonce"]), &val);
+        cursor = next_key_wo_prefix;
+    }
+}
+
 
 pub fn valid_bic_action(contract: Vec<u8>, function: Vec<u8>) -> bool {
     let c = contract.as_slice();

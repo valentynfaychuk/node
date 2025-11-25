@@ -202,16 +202,29 @@ defmodule RocksDB do
     def dump(cf) do
         {:ok, it} = RDB.iterator_cf(cf)
         res = RDB.iterator_move(it, :first)
-        dump_1(it, res)
+        dump_1(it, res, [])
     end
-    defp dump_1(it, res) do
+    defp dump_1(it, res, acc) do
         case res do
             {:ok, key, value} ->
-                IO.inspect {key, value}
                 res = RDB.iterator_move(it, :next)
-                dump_1(it, res)
-            {:error, :invalid_iterator} -> nil
-            _ -> nil
+                dump_1(it, res, acc ++ [{ascii_dump(key), ascii_dump(value)}])
+            {:error, :invalid_iterator} -> acc
+            _ -> acc
+        end
+    end
+
+    def ascii_dump(string) do
+        for <<c <- string>>, into: "" do
+            if c == 32
+            or c in 123..126
+            or c in ?!..?@
+            or c in ?[..?_
+            or c in ?0..?9
+            or c in ?A..?Z
+            or c in ?a..?z do <<c>> else
+              <<"?">>
+            end
         end
     end
 

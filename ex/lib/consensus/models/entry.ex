@@ -62,7 +62,7 @@ defmodule Entry do
     end
 
     def forkheight2() do
-      @forkheight+@forkheight
+      @forkheight+@forkheight+111000
     end
 
     def unpack_from_db(nil), do: nil

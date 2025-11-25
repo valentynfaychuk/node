@@ -32,7 +32,7 @@ defmodule NodeProto do
 
   def event_tx(tx) when is_map(tx) do event_tx([tx]) end
   def event_tx(txus) when is_list(txus) do
-    %{op: :event_tx, txs: txus}
+    %{op: :event_tx, txus: txus}
   end
 
   def event_entry(entry_packed) do

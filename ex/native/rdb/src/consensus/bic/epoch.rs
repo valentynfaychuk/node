@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use crate::consensus::aggsig::DST_MOTION;
 use crate::{bcat, consensus};
 
-use crate::consensus::consensus_kv::{kv_get, kv_get_next, kv_put, kv_exists, kv_delete, kv_set_bit, kv_increment};
+use crate::consensus::consensus_kv::{kv_get, kv_get_next, kv_put, kv_exists, kv_delete, kv_set_bit, kv_increment, kv_get_prev_or_first};
 use crate::consensus::consensus_apply::ApplyEnv;
 
 pub const EPOCH_EMISSION_BASE: i128 = 1_000_000_000_000_000;
@@ -236,6 +236,44 @@ pub fn kv_get_trainers(env: &crate::consensus::consensus_apply::ApplyEnv, key: &
     }
 }
 
+pub fn kv_get_trainers2(env: &crate::consensus::consensus_apply::ApplyEnv, prefix: &[u8], key: &[u8]) -> Vec<Vec<u8>> {
+    match kv_get_prev_or_first(env, prefix, key) {
+        None => Vec::new(),
+        Some((_key_suffix, trainer_list)) => {
+            let cursor = std::io::Cursor::new(trainer_list.as_slice());
+            let term_trainer_list = eetf::Term::decode(cursor).unwrap();
+            match term_trainer_list {
+                eetf::Term::List(term_permission_list) => {
+                    let mut out = Vec::with_capacity(term_permission_list.elements.len());
+                    for el in term_permission_list.elements {
+                        if let eetf::Term::Binary(b) = el {
+                            out.push(b.bytes); // move, no clone
+                        } else {
+                            panic_any("invalid_trainer_list_term");
+                        }
+                    }
+                    out
+                },
+                _ => panic_any("invalid_trainer_list_term")
+            }
+        }
+    }
+}
+
+pub fn kv_get_trainers_removed(env: &crate::consensus::consensus_apply::ApplyEnv) -> Vec<Vec<u8>> {
+    let height_start_epoch = format!("{:012}", env.caller_env.entry_epoch * 100_000).into_bytes();
+    let height = format!("{:012}", env.caller_env.entry_height).into_bytes();
+
+    let trainers_start = kv_get_trainers2(env, b"bic:epoch:trainers:height:", &height_start_epoch);
+    let trainers_now = kv_get_trainers2(env, b"bic:epoch:trainers:height:", &height);
+
+    let trainers_now_set: HashSet<Vec<u8>> = trainers_now.into_iter().collect();
+    trainers_start
+        .into_iter()
+        .filter(|t| !trainers_now_set.contains(t))
+        .collect()
+}
+
 pub fn call_slash_trainer(env: &mut crate::consensus::consensus_apply::ApplyEnv, args: Vec<Vec<u8>>) {
     if args.len() != 5 { panic_any("invalid_args") }
     let epoch = args[0].as_slice();
@@ -246,9 +284,12 @@ pub fn call_slash_trainer(env: &mut crate::consensus::consensus_apply::ApplyEnv,
     let mask_size = std::str::from_utf8(&mask_size).ok().and_then(|s| s.parse::<u64>().ok()).unwrap_or_else(|| panic_any("invalid_mask_size"));
     let mask = args[4].to_vec();
 
+    let height = format!("{:012}", env.caller_env.entry_height).into_bytes();
+    let height_next = format!("{:012}", env.caller_env.entry_height.saturating_add(1)).into_bytes();
+
     if epoch != env.caller_env.entry_epoch { panic_any("invalid_epoch") }
 
-    let mut trainers = kv_get_trainers(env, &bcat(&[b"bic:epoch:trainers:", epoch.to_string().as_bytes()]));
+    let mut trainers = kv_get_trainers2(env, b"bic:epoch:trainers:height:", &height);
     if !trainers.iter().any(|v| v.as_slice() == malicious_pk) { panic_any("invalid_trainer_pk") }
 
     let signers = consensus::aggsig::unmask_trainers(&trainers, &mask, mask_size as usize);
@@ -272,19 +313,26 @@ pub fn call_slash_trainer(env: &mut crate::consensus::consensus_apply::ApplyEnv,
     let term_trainers = consensus::bic::eetf_list_of_binaries(trainers).unwrap();
     kv_put(env, &bcat(&[b"bic:epoch:trainers:", epoch.to_string().as_bytes()]), term_trainers.as_slice());
 
-    let height = format!("{:012}", env.caller_env.entry_height.saturating_add(1)).into_bytes();
-    kv_put(env, &bcat(&[b"bic:epoch:trainers:height:", &height]), term_trainers.as_slice());
+    kv_put(env, &bcat(&[b"bic:epoch:trainers:height:", &height_next]), term_trainers.as_slice());
+/*
+    trainers.retain(|pk| pk.as_slice() != malicious_pk);
+    let term_trainers = consensus::bic::list_of_binaries_to_vecpak(trainers);
+    kv_put(env, &bcat(&[b"bic:epoch:trainers:height:", &height_next]), term_trainers.as_slice());
+*/
 }
 
 pub fn next(env: &mut ApplyEnv) {
     let epoch_cur = env.caller_env.entry_epoch;
     let epoch_next = env.caller_env.entry_epoch + 1;
+    let height = format!("{:012}", env.caller_env.entry_height).into_bytes();
+    let height_next = format!("{:012}", env.caller_env.entry_height.saturating_add(1)).into_bytes();
     let peddlebike67_map: HashSet<Vec<u8>> = PEDDLEBIKE67.iter().map(|pk| pk.to_vec()).collect();
 
     // slash sols for malicious trainers
-    let trainers = kv_get_trainers(env, &bcat(&[b"bic:epoch:trainers:", epoch_cur.to_string().as_bytes()]));
+    //let trainers = kv_get_trainers(env, &bcat(&[b"bic:epoch:trainers:", epoch_cur.to_string().as_bytes()]));
+    let trainers = kv_get_trainers2(env, b"bic:epoch:trainers:height:", &height);
     let trainers_map: HashSet<Vec<u8>> = trainers.into_iter().collect();
-    let trainers_removed = kv_get_trainers(env, &bcat(&[b"bic:epoch:trainers:removed:", epoch_cur.to_string().as_bytes()]));
+    let trainers_removed = kv_get_trainers_removed(env);
     let trainers_removed_map: HashSet<Vec<u8>> = trainers_removed.into_iter().collect();
     let mut leaders: Vec<(Vec<u8>, i128)> = Vec::new();
     let mut cursor: Vec<u8> = Vec::new();
@@ -322,8 +370,7 @@ pub fn next(env: &mut ApplyEnv) {
     let new_validators = build_and_shuffle_new_validators(env, &leaders);
     let new_validators = consensus::bic::eetf_list_of_binaries(new_validators).unwrap();
     let _ = kv_put(env, &bcat(&[b"bic:epoch:trainers:", &epoch_next.to_string().as_bytes()]), &new_validators);
-    let height = format!("{:012}", env.caller_env.entry_height + 1);
-    let _ = kv_put(env, &bcat(&[b"bic:epoch:trainers:height:", height.as_bytes()]), &new_validators);
+    let _ = kv_put(env, &bcat(&[b"bic:epoch:trainers:height:", &height_next]), &new_validators);
 
     update_difficulty_and_log_sols(env, epoch_cur, epoch_next, total_sols);
     clear_epoch_data(env);

@@ -82,9 +82,7 @@ pub fn kv_get(env: &ApplyEnv, key: &[u8]) -> Option<Vec<u8>> {
 }
 
 pub fn kv_get_next(env: &mut ApplyEnv, prefix: &[u8], key: &[u8]) -> Option<(Vec<u8>, Vec<u8>)> {
-    let mut seek = Vec::with_capacity(prefix.len() + key.len());
-    seek.extend_from_slice(prefix);
-    seek.extend_from_slice(key);
+    let seek = [prefix, key].concat();
 
     let mut it = env.txn.raw_iterator_cf(&env.cf);
     it.seek(&seek);
@@ -106,9 +104,7 @@ pub fn kv_get_next(env: &mut ApplyEnv, prefix: &[u8], key: &[u8]) -> Option<(Vec
 }
 
 pub fn kv_get_prev(env: &mut ApplyEnv, prefix: &[u8], key: &[u8]) -> Option<(Vec<u8>, Vec<u8>)> {
-    let mut seek = Vec::with_capacity(prefix.len() + key.len());
-    seek.extend_from_slice(prefix);
-    seek.extend_from_slice(key);
+    let seek = [prefix, key].concat();
 
     let mut it = env.txn.raw_iterator_cf(&env.cf);
     it.seek_for_prev(&seek);
@@ -126,6 +122,25 @@ pub fn kv_get_prev(env: &mut ApplyEnv, prefix: &[u8], key: &[u8]) -> Option<(Vec
             Some((next_key_wo_prefix, v.to_vec()))
         },
         _ => None
+    }
+}
+
+pub fn kv_get_prev_or_first(env: &ApplyEnv, prefix: &[u8], key: &[u8]) -> Option<(Vec<u8>, Vec<u8>)> {
+    let seek = [prefix, key].concat();
+
+    let mut it = env.txn.raw_iterator_cf(&env.cf);
+    it.seek_for_prev(&seek);
+
+    match it.item() {
+        Some((k, v)) => {
+            if k.starts_with(prefix) {
+                let next_key_wo_prefix = k[prefix.len()..].to_vec();
+                Some((next_key_wo_prefix, v.to_vec()))
+            } else {
+                None
+            }
+        },
+        None => None,
     }
 }
 
