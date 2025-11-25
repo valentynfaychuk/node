@@ -55,7 +55,7 @@ defmodule Entry do
 
     @fields [:header, :hash, :signature, :txs, :mask, :mask_size, :mask_set_size]
     @fields_header [:height, :prev_hash, :slot, :prev_slot, :signer, :dr, :vr, :root_tx, :root_validator]
-    @forkheight 412_00000
+    @forkheight 412_00010
 
     def forkheight() do
       @forkheight
