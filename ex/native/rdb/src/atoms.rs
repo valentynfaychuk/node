@@ -51,4 +51,6 @@ rustler::atoms! {
     missing_subindex,
     missing_stem_empty_subtree,
     missing_stem_other_stem,
+
+    tx_cost,
 }

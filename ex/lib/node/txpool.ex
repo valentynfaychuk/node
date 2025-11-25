@@ -113,7 +113,7 @@ defmodule TXPool do
                 try do
                   case validate_tx(txu, %{epoch: chain_epoch, segment_vr_hash: segment_vr_hash, batch_state: state_old}) do
                     %{error: :ok, batch_state: batch_state} ->
-                      acc = acc ++ [TX.pack(txu)]
+                      acc = acc ++ [txu]
                       if length(acc) == amt do
                           throw {:choose, acc}
                       end
@@ -137,9 +137,7 @@ defmodule TXPool do
         :ets.tab2list(TXPool)
         |> case do
             [] -> nil
-            txs ->
-                Enum.take(txs, amount)
-                |> Enum.map(fn{_, txu}-> TX.pack(txu) end)
+            txus -> Enum.take(txus, amount)
         end
     end
 

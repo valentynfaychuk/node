@@ -206,7 +206,7 @@ defmodule SpecialMeetingAttestGen do
     %{error: :ok, entry: entry} = Entry.unpack_and_validate_from_net(entry_packed)
 
     1 = length(entry.txs)
-    txu = TX.unpack(hd(entry.txs))
+    txu = hd(entry.txs)
     %{contract: "Epoch", function: "slash_trainer", args: args} = TX.action(txu)
     [epoch, malicious_pk, signature, mask_size, mask] = args
     epoch = if is_binary(epoch) do :erlang.binary_to_integer(epoch) else epoch end

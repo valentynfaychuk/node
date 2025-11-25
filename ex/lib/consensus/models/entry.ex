@@ -139,7 +139,7 @@ defmodule Entry do
 
         if !is_binary(eh.root_tx), do: throw(%{error: :root_tx_not_binary})
         if byte_size(eh.root_tx) != 32, do: throw(%{error: :root_tx_not_256_bits})
-        if eh.root_tx != root_tx(Enum.map(Enum.map(e.txs, & TX.unpack(&1)), & &1.hash)), do: throw(%{error: :root_tx_invalid})
+        if eh.root_tx != root_tx(Enum.map(e.txs, & &1.hash)), do: throw(%{error: :root_tx_invalid})
 
         if !is_binary(eh.root_validator), do: throw(%{error: :root_validator_not_binary})
         if byte_size(eh.root_validator) != 32, do: throw(%{error: :root_validator_not_256_bits})
@@ -148,8 +148,8 @@ defmodule Entry do
         if eh.root_validator != root_validator(validators, validators_last_change_height), do: throw(%{error: :root_validator_invalid})
 
         is_special_meeting_block = !!e[:mask]
-        steam = Task.async_stream(e.txs, fn tx_packed ->
-          %{error: err} = TX.validate(TX.unpack(tx_packed), is_special_meeting_block)
+        steam = Task.async_stream(e.txs, fn txu ->
+          %{error: err} = TX.validate(txu, is_special_meeting_block)
           err
         end)
 
@@ -200,24 +200,13 @@ defmodule Entry do
         segment_vr_hash = DB.Chain.segment_vr_hash()
         diff_bits = DB.Chain.diff_bits()
 
-        if neh.height >= forkheight2() do
-          Enum.reduce(next_entry.txs, %{}, fn(txu, batch_state)->
-              case TXPool.validate_tx(txu, %{epoch: chain_epoch, segment_vr_hash: segment_vr_hash, diff_bits: diff_bits, batch_state: batch_state}) do
-                %{error: :ok, batch_state: batch_state} -> batch_state
-                %{error: error} when error in [:invalid_tx_nonce, :not_enough_tx_exec_balance] -> throw %{error: error}
-                _ -> batch_state
-              end
-          end)
-        else
-          txus = Enum.map(next_entry.txs, & TX.unpack(&1))
-          Enum.reduce(txus, %{}, fn(txu, batch_state)->
-              case TXPool.validate_tx(txu, %{epoch: chain_epoch, segment_vr_hash: segment_vr_hash, diff_bits: diff_bits, batch_state: batch_state}) do
-                %{error: :ok, batch_state: batch_state} -> batch_state
-                %{error: error} when error in [:invalid_tx_nonce, :not_enough_tx_exec_balance] -> throw %{error: error}
-                _ -> batch_state
-              end
-          end)
-        end
+        Enum.reduce(next_entry.txs, %{}, fn(txu, batch_state)->
+            case TXPool.validate_tx(txu, %{epoch: chain_epoch, segment_vr_hash: segment_vr_hash, diff_bits: diff_bits, batch_state: batch_state}) do
+              %{error: :ok, batch_state: batch_state} -> batch_state
+              %{error: error} when error in [:invalid_tx_nonce, :not_enough_tx_exec_balance] -> throw %{error: error}
+              _ -> batch_state
+            end
+        end)
 
         %{error: :ok}
         catch
@@ -228,7 +217,7 @@ defmodule Entry do
         end
     end
 
-    def build_next(seed, cur_entry, txs) do
+    def build_next(seed, cur_entry, txus) do
         next_height = cur_entry.header.height + 1
         pk = BlsEx.get_public_key!(seed)
 
@@ -247,11 +236,10 @@ defmodule Entry do
                 dr: dr,
                 vr: vr,
                 signer: pk,
-                root_tx: root_tx(Enum.map(Enum.map(txs, & TX.unpack(&1)), & &1.hash)),
+                root_tx: root_tx(Enum.map(txus, & &1.hash)),
                 root_validator: root_validator(validators, validators_last_change_height)
             },
-            #txs: Enum.map(txs, & TX.unpack(&1))
-            txs: txs
+            txs: txus
         }
     end
 
@@ -299,7 +287,7 @@ defmodule Entry do
 
     def proof_tx(entry_hash, tx_hash) do
       entry = DB.Entry.by_hash(entry_hash)
-      tx_hashes = Enum.map(Enum.map(entry.txs, & TX.unpack(&1)), & &1.hash)
+      tx_hashes = Enum.map(entry.txs, & &1.hash)
       root_build(tx_hashes)
       |> RDB.bintree_root_prove(tx_hash)
     end

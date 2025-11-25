@@ -52,8 +52,8 @@ defmodule FabricEventGen do
 
     #IO.inspect API.Chain.format_entry_for_client(entry), limit: 11111
     entry_b58 = API.Chain.format_entry_for_client(entry)
-    txs = Enum.map(entry.txs, fn(tx)->
-      API.TX.format_tx_for_client(TX.unpack(tx))
+    txs = Enum.map(entry.txs, fn(txu)->
+      API.TX.format_tx_for_client(txu)
     end)
     broadcast({:update_stats_entry_tx, API.Chain.stats(), entry_b58, txs})
 

@@ -10,9 +10,9 @@ defmodule API.TX do
         case DB.Entry.by_hash(entry_hash) do
             nil -> nil
             %{hash: entry_hash, header: %{slot: slot}, txs: txs} ->
-                Enum.map(txs, fn(tx_packed)->
-                    txu = TX.unpack(tx_packed)
-                    |> Map.put(:metadata, %{entry_hash: entry_hash, entry_slot: slot})
+                Enum.map(txs, fn(txu)->
+                    txu = TX.unpack(txu)
+                    |> Map.put(txu, :metadata, %{entry_hash: entry_hash, entry_slot: slot})
                     format_tx_for_client(txu)
                 end)
         end
@@ -187,7 +187,6 @@ defmodule API.TX do
         end)
         Map.put(action, :args, args)
 
-        tx = put_in(tx, [:tx, :actions], [action])
         tx = put_in(tx, [:tx, :action], action)
 
         if !Map.has_key?(tx, :metadata) do tx else

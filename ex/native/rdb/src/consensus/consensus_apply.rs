@@ -124,7 +124,7 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
     entry_signer: &[u8; 48], entry_prev_hash: &[u8; 32],
     entry_slot: u64, entry_prev_slot: u64, entry_height: u64, entry_epoch: u64,
     entry_vr: &[u8; 96], entry_vr_b3: &[u8; 32], entry_dr: &[u8; 32],
-    txs_packed: Vec<Vec<u8>>, txus: Vec<rustler::Term<'a>>, txn: Transaction<'db, TransactionDB<MultiThreaded>>
+    txus: Vec<rustler::Term<'a>>, txn: Transaction<'db, TransactionDB<MultiThreaded>>
 ) -> (Transaction<'db, TransactionDB<MultiThreaded>>, Vec<consensus_muts::Mutation>, Vec<consensus_muts::Mutation>, Vec<HashMap<&'static str, &'static str>>) {
     let cf_h = db.cf_handle("contractstate").unwrap();
 
@@ -223,7 +223,6 @@ fn call_txs_pre_upfront_cost<'a>(env: &mut ApplyEnv, txus: &[rustler::Term<'a>])
     env.muts = Vec::new();
     env.muts_rev = Vec::new();
     for txu in txus {
-        let tx_encoded = txu.map_get(crate::atoms::tx_encoded()).unwrap().decode::<rustler::Binary>().unwrap().as_slice();
         let tx_hash = crate::fixed::<32>(txu.map_get(crate::atoms::hash()).unwrap()).unwrap();
         let tx = txu.map_get(crate::atoms::tx()).unwrap();
         let tx_signer = crate::fixed::<48>(tx.map_get(crate::atoms::signer()).unwrap()).unwrap();
@@ -234,7 +233,7 @@ fn call_txs_pre_upfront_cost<'a>(env: &mut ApplyEnv, txus: &[rustler::Term<'a>])
         // Update nonce
         consensus_kv::kv_put(env, &crate::bcat(&[b"bic:base:nonce:", &tx_signer]), &tx_nonce.to_string().into_bytes());
         // Deduct tx cost
-        let tx_cost = protocol::tx_cost_per_byte(env.caller_env.entry_epoch, tx_encoded.len());
+        let tx_cost = txu.map_get(crate::atoms::tx_cost()).unwrap().decode::<i128>().unwrap();
         protocol::pay_cost(env, tx_cost);
     }
     env.muts_final.append(&mut env.muts);

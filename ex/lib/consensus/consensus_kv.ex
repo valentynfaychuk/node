@@ -208,7 +208,7 @@ defmodule ConsensusKV do
     end
 
     def hash_mutations(m) do
-        :erlang.term_to_binary(m, [:deterministic])
+        RDB.vecpak_encode(m)
         |> Blake3.hash()
     end
 

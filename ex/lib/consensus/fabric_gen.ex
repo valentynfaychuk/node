@@ -188,7 +188,7 @@ defmodule FabricGen do
         end
 
         FabricEventGen.event_applied(entry, m_hash, m, l)
-        TXPool.delete_packed(Enum.map(entry.txs, & TX.unpack(&1)))
+        TXPool.delete_packed(entry.txs)
 
         proc_entries()
     end
@@ -309,14 +309,9 @@ defmodule FabricGen do
           entry_height: entry.header.height,
           entry_epoch: div(entry.header.height,100_000),
       }
-      txus = Enum.map(entry.txs, & TX.unpack(&1))
-      txus = Enum.map(txus, fn(txu)->
-        action = TX.action(txu)
-        {_, txu} = Map.pop(txu, [:tx, :actions])
-        put_in(txu, [:tx, :action], action)
-      end)
 
-      {rtx, m, m_rev, l} = RDB.apply_entry(db, next_entry_trimmed_map, Application.fetch_env!(:ama, :trainer_pk), Application.fetch_env!(:ama, :trainer_sk), entry.txs, txus)
+      txus = Enum.map(entry.txs, & Map.put(&1, :tx_cost, TX.exec_cost(0, &1)))
+      {rtx, m, m_rev, l} = RDB.apply_entry(db, next_entry_trimmed_map, Application.fetch_env!(:ama, :trainer_pk), Application.fetch_env!(:ama, :trainer_sk), txus)
       rebuild_m_fn = fn(m)->
         Enum.map(m, fn(inner)->
           op = :"#{IO.iodata_to_binary(inner[~c"op"])}"

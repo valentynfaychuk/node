@@ -179,7 +179,7 @@ defmodule SpecialMeetingGen do
     cur_height = cur_entry.header.height
     cur_slot = cur_entry.header.slot
 
-    txs = [TX.pack( build_slash_tx(st.epoch, st.mpk, st.tx.aggsig.aggsig, st.tx.aggsig.mask, st.tx.aggsig.mask_size) )]
+    txs = [build_slash_tx(st.epoch, st.mpk, st.tx.aggsig.aggsig, st.tx.aggsig.mask, st.tx.aggsig.mask_size)]
     next_entry = Entry.build_next(sk, cur_entry, txs)
     next_entry = Entry.sign(sk, next_entry)
 

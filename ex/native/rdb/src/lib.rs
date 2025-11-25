@@ -674,7 +674,7 @@ pub fn fixed<const N: usize>(t: Term<'_>) -> Result<[u8; N], Error> {
 }
 
 #[rustler::nif(schedule = "DirtyCpu")]
-fn apply_entry<'a>(env: Env<'a>, db: ResourceArc<DbResource>, next_entry_trimmed_map: Term<'a>, pk: Binary, sk: Binary, txs_packed2: Vec<Binary>, txus: Vec<Term<'a>>) -> Result<Term<'a>, Error> {
+fn apply_entry<'a>(env: Env<'a>, db: ResourceArc<DbResource>, next_entry_trimmed_map: Term<'a>, pk: Binary, sk: Binary, txus: Vec<Term<'a>>) -> Result<Term<'a>, Error> {
     let entry_signer = fixed::<48>(next_entry_trimmed_map.map_get(atoms::entry_signer())?)?;
     let entry_prev_hash = fixed::<32>(next_entry_trimmed_map.map_get(atoms::entry_prev_hash())?)?;
     let entry_vr = fixed::<96>(next_entry_trimmed_map.map_get(atoms::entry_vr())?)?;
@@ -686,15 +686,13 @@ fn apply_entry<'a>(env: Env<'a>, db: ResourceArc<DbResource>, next_entry_trimmed
     let entry_height = next_entry_trimmed_map.map_get(atoms::entry_height())?.decode::<u64>()?;
     let entry_epoch = next_entry_trimmed_map.map_get(atoms::entry_epoch())?.decode::<u64>()?;
 
-    let txs_packed = txs_packed2.into_iter().map(|b| b.as_slice().to_vec()).collect();
-
     let txn_opts = TransactionOptions::default();
     let write_opts = WriteOptions::default();
     let txn = db.db.transaction_opt(&write_opts, &txn_opts);
 
     let (txn, muts, muts_rev, result_log) =
         consensus::consensus_apply::apply_entry(&db.db, pk.as_slice(), sk.as_slice(), &entry_signer, &entry_prev_hash,
-            entry_slot, entry_prev_slot, entry_height, entry_epoch, &entry_vr, &entry_vr_b3, &entry_dr, txs_packed, txus, txn);
+            entry_slot, entry_prev_slot, entry_height, entry_epoch, &entry_vr, &entry_vr_b3, &entry_dr, txus, txn);
 
     let tx_static: Tx<'static> = unsafe { std::mem::transmute::<Tx<'_>, Tx<'static>>(txn) };
     let term_txn = ResourceArc::new(TxResource {
