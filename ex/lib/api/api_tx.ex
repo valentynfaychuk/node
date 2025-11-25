@@ -12,7 +12,7 @@ defmodule API.TX do
             %{hash: entry_hash, header: %{slot: slot}, txs: txs} ->
                 Enum.map(txs, fn(txu)->
                     txu = TX.unpack(txu)
-                    |> Map.put(txu, :metadata, %{entry_hash: entry_hash, entry_slot: slot})
+                    |> Map.put(:metadata, %{entry_hash: entry_hash, entry_slot: slot})
                     format_tx_for_client(txu)
                 end)
         end

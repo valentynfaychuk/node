@@ -44,6 +44,9 @@ defmodule TX do
    def unpack(tx_packed) do
      try do
       txu = RDB.vecpak_decode(tx_packed)
+      txu = if !txu[:tx_encoded] do txu else
+        Map.put(txu, :tx, VanillaSer.decode!(txu.tx_encoded))
+      end
       Map.take(txu, @fields)
      catch
      _,_ ->
