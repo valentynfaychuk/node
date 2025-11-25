@@ -15,7 +15,7 @@ config :ama, :work_folder, work_folder
 
 #load env
 #Envvar.load(Path.join([work_folder, ".env"]))
-config :ama, :snapshot_height, (System.get_env("SNAPSHOT_HEIGHT") || "39434469") |> :erlang.binary_to_integer()
+config :ama, :snapshot_height, (System.get_env("SNAPSHOT_HEIGHT") || "41200016") |> :erlang.binary_to_integer()
 
 # zip -0 -r 000037454455.zip db/
 # aws s3 cp --checksum-algorithm=CRC32 --endpoint-url https://20bf2f5d11d26a322e389687896a6601.r2.cloudflarestorage.com 000039434469.zip s3://ama-snapshot
