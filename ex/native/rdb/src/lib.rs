@@ -742,39 +742,112 @@ fn bintree_root<'a>(env: Env<'a>, proplist: Vec<(Binary<'a>, Binary<'a>)>) -> Te
     ob.as_mut_slice().copy_from_slice(&root);
     Binary::from_owned(ob, env).encode(env)
 }
-/*
+
+// Helper to convert &[u8] -> Elixir Binary (<<...>>)
+fn to_binary2<'a>(env: Env<'a>, data: &[u8]) -> Binary<'a> {
+    let mut binary = OwnedBinary::new(data.len()).unwrap();
+    binary.as_mut_slice().copy_from_slice(data);
+    binary.release(env)
+}
+
 #[rustler::nif]
 fn bintree_root_prove<'a>(env: Env<'a>, proplist: Vec<(Binary<'a>, Binary<'a>)>, key: Binary<'a>) -> Term<'a> {
-    let mut initial = Vec::with_capacity(100);
+    let mut ops = Vec::with_capacity(100);
     for (k_bin, v_bin) in &proplist {
-        let k: [u8; 32] = k_bin.as_slice().try_into().unwrap();
-        let v: [u8; 32] = v_bin.as_slice().try_into().unwrap();
-        initial.push((k, v));
+        //let k: [u8; 32] = k_bin.as_slice().try_into().unwrap();
+        //let v: [u8; 32] = v_bin.as_slice().try_into().unwrap();
+        ops.push(crate::consensus::bintree::Op::Insert(k_bin.to_vec(), v_bin.to_vec()));
     }
-    let tree = crate::consensus::bintree::BinaryStateTree::from_entries(&initial);
-    let root = tree.state_root();
 
-    let key2: [u8; 32] = key.as_slice().try_into().unwrap();
-    if let Some((v, sibs256, path)) = tree.prove_for_key(&key2) {
-        let mut ob1 = OwnedBinary::new(root.len()).ok_or_else(|| Error::Term(Box::new("alloc failed"))).unwrap();
-        ob1.as_mut_slice().copy_from_slice(&v);
+    let mut hubt = crate::consensus::bintree::Hubt::new();
+    hubt.batch_update(ops);
+    let proof = hubt.prove(key.to_vec());
 
-        let mut stem = Vec::new();
-        for (_j, s) in sibs256.iter().enumerate() {
-            let mut ob2 = OwnedBinary::new(root.len()).ok_or_else(|| Error::Term(Box::new("alloc failed"))).unwrap();
-            ob2.as_mut_slice().copy_from_slice(s);
-            stem.push(Binary::from_owned(ob2, env));
-        }
-        let mut path_out = Vec::new();
-        for (_j, s) in path.iter().enumerate() {
-            let mut ob3 = OwnedBinary::new(root.len()).ok_or_else(|| Error::Term(Box::new("alloc failed"))).unwrap();
-            ob3.as_mut_slice().copy_from_slice(s);
-            path_out.push(Binary::from_owned(ob3, env));
-        }
-        (stem, path_out, Binary::from_owned(ob1, env)).encode(env)
-    } else {
-        (atoms::nil()).encode(env)
+    let nodes_list: Vec<Term> = proof.nodes.iter().map(|node| {
+        let mut map = Term::map_new(env);
+
+        let hash_term = to_binary2(env, &node.hash);
+        let dir_term = node.direction.encode(env);
+
+        map = map.map_put(atoms::hash(), hash_term).ok().unwrap();
+        map = map.map_put(atoms::direction(), dir_term).ok().unwrap();
+        map
+    }).collect();
+
+    let mut proof_map = Term::map_new(env);
+
+    let root_term = to_binary2(env, &proof.root);
+    let path_term = to_binary2(env, &proof.path);
+    let hash_term = to_binary2(env, &proof.hash);
+
+    proof_map = proof_map.map_put(atoms::root(), root_term).ok().unwrap();
+    proof_map = proof_map.map_put(atoms::path(), path_term).ok().unwrap();
+    proof_map = proof_map.map_put(atoms::hash(), hash_term).ok().unwrap();
+    proof_map = proof_map.map_put(atoms::nodes(), nodes_list.encode(env)).ok().unwrap();
+
+    (proof_map).encode(env)
+}
+
+fn term_to_fixed_array(term: Term) -> Result<[u8; 32], Error> {
+    // 1. Decode term to a Binary view (zero-copy wrapper)
+    let binary: Binary = term.decode()?;
+
+    // 2. Check length strictly
+    if binary.len() != 32 {
+        return Err(Error::BadArg);
+    }
+
+    // 3. Copy bytes to fixed array
+    let mut array = [0u8; 32];
+    array.copy_from_slice(binary.as_slice());
+    Ok(array)
+}
+
+fn term_to_proof(term: Term) -> Result<crate::consensus::bintree::Proof, Error> {
+    // 1. Extract Top-Level Fields
+    let root_term = term.map_get(atoms::root())?;
+    let path_term = term.map_get(atoms::path())?;
+    let hash_term = term.map_get(atoms::hash())?;
+    let nodes_term = term.map_get(atoms::nodes())?;
+
+    // 2. Convert Top-Level Binaries
+    let root = term_to_fixed_array(root_term)?;
+    let path = term_to_fixed_array(path_term)?;
+    let hash = term_to_fixed_array(hash_term)?;
+
+    // 3. Decode List of Maps -> Vec<ProofNode>
+    let nodes_list: Vec<Term> = nodes_term.decode()?;
+
+    let nodes: Result<Vec<crate::consensus::bintree::ProofNode>, Error> = nodes_list.into_iter().map(|node_term| {
+        // Extract fields from the inner map
+        let n_hash_term = node_term.map_get(atoms::hash())?;
+        let n_dir_term = node_term.map_get(atoms::direction())?;
+
+        Ok(crate::consensus::bintree::ProofNode {
+            hash: term_to_fixed_array(n_hash_term)?,
+            direction: n_dir_term.decode::<u8>()?
+        })
+    }).collect();
+
+    // 4. Construct the final struct
+    Ok(crate::consensus::bintree::Proof {
+        root,
+        nodes: nodes?, // Unwraps the Result from the iterator
+        path,
+        hash
+    })
+}
+
+#[rustler::nif]
+fn bintree_root_verify<'a>(env: Env<'a>, proof_ex: Term<'a>, key: Binary<'a>, value: Binary<'a>) -> Term<'a> {
+    let proof = term_to_proof(proof_ex).unwrap();
+    let result = crate::consensus::bintree::Hubt::verify(&proof, key.to_vec(), value.to_vec());
+    match result {
+        crate::consensus::bintree::VerifyStatus::Invalid => (atoms::invalid()).encode(env),
+        crate::consensus::bintree::VerifyStatus::Included => (atoms::included()).encode(env),
+        crate::consensus::bintree::VerifyStatus::Mismatch => (atoms::mismatch()).encode(env),
+        crate::consensus::bintree::VerifyStatus::NonExistence => (atoms::nonexistance()).encode(env),
     }
 }
- */
+
 rustler::init!("Elixir.RDB", load = on_load);

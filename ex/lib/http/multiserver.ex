@@ -217,6 +217,11 @@ defmodule Ama.MultiServer do
                 result = API.TX.submit_and_wait(Base58.decode(tx_packed))
                 quick_reply(state, result)
 
+            r.method == "GET" and String.starts_with?(r.path, "/api/proof/validators/") ->
+                entry_hash = String.replace(r.path, "/api/proof/validators/", "")
+                result = API.Proof.proof_validators(entry_hash)
+                quick_reply(state, result)
+
             #r.method == "GET" ->
             #    bin = build_dashboard(state)
             #    quick_reply(state, bin)

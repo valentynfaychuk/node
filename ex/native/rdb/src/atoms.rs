@@ -53,4 +53,14 @@ rustler::atoms! {
     missing_stem_other_stem,
 
     tx_cost,
+
+    direction,
+    root,
+    path,
+    nodes,
+
+    invalid,
+    included,
+    mismatch,
+    nonexistance,
 }

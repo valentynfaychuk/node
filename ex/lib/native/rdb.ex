@@ -52,4 +52,5 @@ defmodule RDB do
 
   def bintree_root(_propslist), do: :erlang.nif_error(:nif_not_loaded)
   def bintree_root_prove(_propslist, _key), do: :erlang.nif_error(:nif_not_loaded)
+  def bintree_root_verify(_proof, _key, _value), do: :erlang.nif_error(:nif_not_loaded)
 end

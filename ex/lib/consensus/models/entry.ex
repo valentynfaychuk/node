@@ -262,15 +262,25 @@ defmodule Entry do
         entry.header.height
     end
 
-    def root_tx(tx_hashes) do
-      kvs = root_build(tx_hashes)
-      RDB.bintree_root(kvs)
+    def root_tx(hashes) do
+      RDB.bintree_root(root_tx_build(hashes))
+    end
+    def root_tx_build(hashes) do
+      by_index_hash = Enum.flat_map(Enum.with_index(hashes), fn{hash, index}->
+        [{"#{index}", hash}, {hash, ""}]
+      end)
+      by_index_hash ++ [{"count", "#{length(hashes)}"}]
     end
 
     def root_validator(validator_pks, last_change_height) do
-      kvs = root_build(validator_pks)
-      kvs = kvs ++ [{"hash", :crypto.hash(:sha256, Enum.join(validator_pks))}, {"last_change_height", "#{last_change_height}"}]
-      RDB.bintree_root(kvs)
+      RDB.bintree_root(root_validator_build(validator_pks, last_change_height))
+    end
+    def root_validator_build(validator_pks, last_change_height) do
+      by_index_hash = Enum.flat_map(Enum.with_index(validator_pks), fn{hash, index}->
+        [{"#{index}", hash}, {hash, ""}]
+      end)
+      kvs = by_index_hash ++ [{"count", "#{length(validator_pks)}"}]
+      kvs ++ [{"hash", :crypto.hash(:sha256, Enum.join(validator_pks))}, {"last_change_height", "#{last_change_height}"}]
     end
 
     def root_block() do
@@ -278,17 +288,23 @@ defmodule Entry do
       #proof of inclusion for previous blocks
     end
 
-    def root_build(hashes) do
-      by_index_hash = Enum.flat_map(Enum.with_index(hashes), fn{hash, index}->
-        [{"#{index}", hash}, {hash, ""}]
-      end)
-      by_index_hash ++ [{"count", "#{length(hashes)}"}]
-    end
-
-    def proof_tx(entry_hash, tx_hash) do
+    def proof_tx_included(entry_hash, tx_hash) do
       entry = DB.Entry.by_hash(entry_hash)
       tx_hashes = Enum.map(entry.txs, & &1.hash)
-      root_build(tx_hashes)
-      |> RDB.bintree_root_prove(tx_hash)
+      kvs = root_tx_build(tx_hashes)
+      RDB.bintree_root_prove(kvs, tx_hash)
+    end
+
+    def proof_validators(entry_hash) do
+      entry = DB.Entry.by_hash(entry_hash)
+
+      validators = DB.Chain.validators_for_height(entry.header.height)
+      validators_last_change_height = DB.Chain.validators_last_change_height(entry.header.height)
+
+      hash = :crypto.hash(:sha256, Enum.join(validators))
+
+      kvs = root_validator_build(validators, validators_last_change_height)
+      proof = RDB.bintree_root_prove(kvs, "hash")
+      %{proof: proof, key: "hash", value: hash, validators: validators}
     end
 end
