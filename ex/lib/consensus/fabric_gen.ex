@@ -50,7 +50,7 @@ defmodule FabricGen do
 
   def tick_slot(state) do
     #IO.inspect "tick_slot"
-    Application.fetch_env!(:ama, :testnet) && Process.sleep(500)
+    Application.fetch_env!(:ama, :testnet) && Process.sleep(350)
 
     if proc_if_my_slot() do
       proc_entries()
@@ -206,6 +206,7 @@ defmodule FabricGen do
     lastSlot = :persistent_term.get(:last_made_entry_slot, nil)
 
     rooted_tip = DB.Chain.rooted_tip()
+
     emptyHeight = DB.Entry.by_height(next_height)
     emptyHeight = emptyHeight == []
 

@@ -58,6 +58,8 @@ defmodule TX do
 
    def validate(txu, is_special_meeting_block \\ false) do
     try do
+      true = !txu[:tx_encoded]
+
       txu = Map.take(txu, @fields)
       tx_encoded = RDB.vecpak_encode(txu.tx)
 
