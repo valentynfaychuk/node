@@ -259,8 +259,9 @@ fn call_exit(env: &mut ApplyEnv) {
     if env.caller_env.entry_height % 100_000 == 99_999 {
         consensus::bic::epoch::next(env);
     }
-    if env.caller_env.entry_height == 410_00000 {
-        //migrate_db(env);
+
+    if env.caller_env.entry_height == 412_99999 {
+        migrate_db(env);
     }
 
     env.muts_final.append(&mut env.muts);
@@ -328,6 +329,10 @@ fn migrate_db(env: &mut ApplyEnv) {
     while let Some((next_key_wo_prefix, val)) = crate::consensus::consensus_kv::kv_get_next(env, b"bic:coin:balance:", &cursor) {
         let pk = &next_key_wo_prefix[..48];
         crate::consensus::consensus_kv::kv_put(env, &crate::bcat(&[b"account:", &pk, b":balance:AMA"]), &val);
+
+        let full_key = [b"bic:coin:balance:" as &[u8], &next_key_wo_prefix].concat();
+        crate::consensus::consensus_kv::kv_delete(env, &full_key);
+
         cursor = next_key_wo_prefix;
     }
 
@@ -336,6 +341,34 @@ fn migrate_db(env: &mut ApplyEnv) {
     while let Some((next_key_wo_prefix, val)) = crate::consensus::consensus_kv::kv_get_next(env, b"bic:base:nonce:", &cursor) {
         let pk = &next_key_wo_prefix[..48];
         crate::consensus::consensus_kv::kv_put(env, &crate::bcat(&[b"account:", &pk, b":attribute:nonce"]), &val);
+
+        let full_key = [b"bic:base:nonce:" as &[u8], &next_key_wo_prefix].concat();
+        crate::consensus::consensus_kv::kv_delete(env, &full_key);
+
+        cursor = next_key_wo_prefix;
+    }
+
+    //"bic:epoch:emission_address:????GH??D?ss???????dT??14o?P??nA?I&??6?????e3I??"
+    cursor = Vec::new();
+    while let Some((next_key_wo_prefix, val)) = crate::consensus::consensus_kv::kv_get_next(env, b"bic:epoch:emission_address:", &cursor) {
+        let pk = &next_key_wo_prefix[..48];
+        crate::consensus::consensus_kv::kv_put(env, &crate::bcat(&[b"account:", &pk, b":attribute:emission_address"]), &val);
+
+        let full_key = [b"bic:epoch:emission_address:" as &[u8], &next_key_wo_prefix].concat();
+        crate::consensus::consensus_kv::kv_delete(env, &full_key);
+
+        cursor = next_key_wo_prefix;
+    }
+
+    //"bic:epoch:pop:????GH??D?ss???????dT??14o?P??nA?I&??6?????e3I??"
+    cursor = Vec::new();
+    while let Some((next_key_wo_prefix, val)) = crate::consensus::consensus_kv::kv_get_next(env, b"bic:epoch:pop:", &cursor) {
+        let pk = &next_key_wo_prefix[..48];
+        crate::consensus::consensus_kv::kv_put(env, &crate::bcat(&[b"account:", &pk, b":attribute:pop"]), &val);
+
+        let full_key = [b"bic:epoch:pop:" as &[u8], &next_key_wo_prefix].concat();
+        crate::consensus::consensus_kv::kv_delete(env, &full_key);
+
         cursor = next_key_wo_prefix;
     }
 }

@@ -176,7 +176,12 @@ pub fn call_set_emission_address(env: &mut crate::consensus::consensus_apply::Ap
     if args.len() != 1 { panic_any("invalid_args") }
     let address = args[0].as_slice();
     if address.len() != 48 { panic_any("invalid_address_pk") }
-    kv_put(env, &bcat(&[b"bic:epoch:emission_address:", env.caller_env.account_caller.as_slice()]), address);
+
+    if kv_exists(env, &crate::bcat(&[b"account:", &crate::consensus::bic::coin::BURN_ADDRESS, b":balance:AMA"])) {
+        kv_put(env, &bcat(&[b"account:", &env.caller_env.account_caller, b":attribute:emission_address"]), address);
+    } else {
+        kv_put(env, &bcat(&[b"bic:epoch:emission_address:", env.caller_env.account_caller.as_slice()]), address);
+    }
 }
 
 pub fn call_submit_sol(env: &mut crate::consensus::consensus_apply::ApplyEnv, args: Vec<Vec<u8>>) {
@@ -203,10 +208,19 @@ pub fn call_submit_sol(env: &mut crate::consensus::consensus_apply::ApplyEnv, ar
         panic_any("invalid_sol");
     }
 
-    if !kv_exists(env, &bcat(&[b"bic:epoch:pop:", usol.pk.as_slice()])) {
-        match consensus::bls12_381::verify(&usol.pk, &usol.pop, &usol.pk, consensus::aggsig::DST_POP) {
-            Ok(()) => kv_put(env, &bcat(&[b"bic:epoch:pop:", usol.pk.as_slice()]), &usol.pop),
-            Err(_) => panic_any("invalid_pop")
+    if kv_exists(env, &crate::bcat(&[b"account:", &crate::consensus::bic::coin::BURN_ADDRESS, b":balance:AMA"])) {
+        if !kv_exists(env, &bcat(&[b"account:", &usol.pk, b":attribute:pop"])) {
+            match consensus::bls12_381::verify(&usol.pk, &usol.pop, &usol.pk, consensus::aggsig::DST_POP) {
+                Ok(()) => kv_put(env, &bcat(&[b"account:", &usol.pk, b":attribute:pop"]), &usol.pop),
+                Err(_) => panic_any("invalid_pop")
+            }
+        }
+    } else {
+        if !kv_exists(env, &bcat(&[b"bic:epoch:pop:", usol.pk.as_slice()])) {
+            match consensus::bls12_381::verify(&usol.pk, &usol.pop, &usol.pk, consensus::aggsig::DST_POP) {
+                Ok(()) => kv_put(env, &bcat(&[b"bic:epoch:pop:", usol.pk.as_slice()]), &usol.pop),
+                Err(_) => panic_any("invalid_pop")
+            }
         }
     }
     kv_increment(env, &bcat(&[b"bic:epoch:solutions_count:", usol.pk.as_slice()]), 1);
@@ -304,21 +318,20 @@ pub fn call_slash_trainer(env: &mut crate::consensus::consensus_apply::ApplyEnv,
     };
     if !signature_valid { panic_any("invalid_signature") }
 
-    let mut trainers_removed = kv_get_trainers(env, &bcat(&[b"bic:epoch:trainers:removed:", epoch.to_string().as_bytes()]));
-    trainers_removed.push(malicious_pk.to_vec());
-    let term_trainers_removed = consensus::bic::eetf_list_of_binaries(trainers_removed).unwrap();
-    kv_put(env, &bcat(&[b"bic:epoch:trainers:removed:", epoch.to_string().as_bytes()]), term_trainers_removed.as_slice());
-
     trainers.retain(|pk| pk.as_slice() != malicious_pk);
-    let term_trainers = consensus::bic::eetf_list_of_binaries(trainers).unwrap();
-    kv_put(env, &bcat(&[b"bic:epoch:trainers:", epoch.to_string().as_bytes()]), term_trainers.as_slice());
+    if env.caller_env.entry_height >= 413_00000 {
+        let term_trainers = consensus::bic::list_of_binaries_to_vecpak(trainers);
+        kv_put(env, &bcat(&[b"bic:epoch:validators:height:", &height_next]), term_trainers.as_slice());
+    } else {
+        let mut trainers_removed = kv_get_trainers(env, &bcat(&[b"bic:epoch:trainers:removed:", epoch.to_string().as_bytes()]));
+        trainers_removed.push(malicious_pk.to_vec());
+        let term_trainers_removed = consensus::bic::eetf_list_of_binaries(trainers_removed).unwrap();
+        kv_put(env, &bcat(&[b"bic:epoch:trainers:removed:", epoch.to_string().as_bytes()]), term_trainers_removed.as_slice());
 
-    kv_put(env, &bcat(&[b"bic:epoch:trainers:height:", &height_next]), term_trainers.as_slice());
-/*
-    trainers.retain(|pk| pk.as_slice() != malicious_pk);
-    let term_trainers = consensus::bic::list_of_binaries_to_vecpak(trainers);
-    kv_put(env, &bcat(&[b"bic:epoch:trainers:height:", &height_next]), term_trainers.as_slice());
-*/
+        let term_trainers = consensus::bic::eetf_list_of_binaries(trainers).unwrap();
+        kv_put(env, &bcat(&[b"bic:epoch:trainers:", epoch.to_string().as_bytes()]), term_trainers.as_slice());
+        kv_put(env, &bcat(&[b"bic:epoch:trainers:height:", &height_next]), term_trainers.as_slice());
+    }
 }
 
 pub fn next(env: &mut ApplyEnv) {

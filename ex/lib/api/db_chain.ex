@@ -84,11 +84,11 @@ defmodule DB.Chain do
         height in 3195570..3195575 ->
             RocksDB.get("bic:epoch:validators:height:000000319557", opts)
         true ->
-            case RocksDB.get_prev_or_first("bic:epoch:validators:height:", pad_integer(height), opts) do
+            case RocksDB.get_prev_or_first("bic:epoch:validators:height:", pad_integer(height), db_handle(db_opts, :contractstate, %{})) do
               {nil, nil} ->
                 {_, value} = RocksDB.get_prev_or_first("bic:epoch:trainers:height:", pad_integer(height), opts)
                 value
-              {_, value} -> value
+              {_, value} -> RDB.vecpak_decode(value)
             end
     end
   end

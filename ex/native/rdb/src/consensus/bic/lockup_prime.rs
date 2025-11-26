@@ -35,7 +35,7 @@ pub fn call_lock(env: &mut crate::consensus::consensus_apply::ApplyEnv, args: Ve
 
     if amount <= to_flat(1) { panic_any("invalid_amount") }
     if amount > balance(env, env.caller_env.account_caller.as_slice(), b"AMA") { panic_any("insufficient_funds") }
-    kv_increment(env, &bcat(&[b"bic:coin:balance:", &env.caller_env.account_caller, b":AMA"]), -amount);
+    kv_increment(env, &bcat(&[b"account:", &env.caller_env.account_caller, b":balance:AMA"]), -amount);
 
     let vault_index = kv_increment(env, &bcat(&[b"bic:lockup_prime:unique_index"]), 1);
     let vault_value = bcat(&[
@@ -69,13 +69,13 @@ pub fn call_unlock(env: &mut crate::consensus::consensus_apply::ApplyEnv, args: 
         let penalty = unlock_amount / 4;
         let disbursement = unlock_amount - penalty;
 
-        kv_increment(env, &bcat(&[b"bic:coin:balance:", TREASURY_DONATION_ADDRESS, b":AMA"]), penalty as i128);
+        kv_increment(env, &bcat(&[b"account:", TREASURY_DONATION_ADDRESS, b":balance:AMA"]), penalty as i128);
         //Lockup for 5 epochs
         create_lock(env, env.caller_env.account_caller.to_vec().as_slice(), b"AMA", disbursement as i128, env.caller_env.entry_epoch.saturating_add(5));
     } else {
         let prime_points = unlock_amount * multiplier;
         mint(env, b"PRIME", prime_points as i128, env.caller_env.account_caller.to_vec().as_slice());
-        kv_increment(env, &bcat(&[b"bic:coin:balance:", &env.caller_env.account_caller, b":AMA"]), unlock_amount as i128);
+        kv_increment(env, &bcat(&[b"account:", &env.caller_env.account_caller, b":balance:AMA"]), unlock_amount as i128);
     }
 
     kv_delete(env, vault_key);

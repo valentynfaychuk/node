@@ -186,6 +186,16 @@ defmodule RocksDB do
         end
     end
 
+    def seek_next(key, opts) do
+        {:ok, it} = iterator(opts)
+
+        seek_res = RDB.iterator_move(it, {:seek, key})
+        seek_res = case seek_res do
+            {:ok, next_key, value} -> {next_key, value}
+            other -> {nil, nil}
+        end
+    end
+
     def transaction(db) do
       {:ok, rtx} = RDB.transaction(db)
       rtx

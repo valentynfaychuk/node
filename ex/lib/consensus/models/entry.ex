@@ -152,7 +152,6 @@ defmodule Entry do
           %{error: err} = TX.validate(txu, is_special_meeting_block)
           err
         end)
-
         err = Enum.find_value(steam, fn {:ok, result} -> result != :ok && result end)
         if err, do: throw(err)
 

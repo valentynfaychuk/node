@@ -1,6 +1,6 @@
 use std::panic::panic_any;
 use crate::{bcat, consensus};
-use crate::consensus::consensus_kv::{kv_get, kv_put, kv_increment};
+use crate::consensus::consensus_kv::{kv_get, kv_put, kv_increment, kv_exists};
 use vecpak::{encode, decode, Term};
 
 pub const DECIMALS: u32 = 9;
@@ -110,24 +110,24 @@ pub fn call_transfer(env: &mut crate::consensus::consensus_apply::ApplyEnv, args
     if paused(env, symbol) { panic_any("paused") }
     if soulbound(env, symbol) { panic_any("soulbound") }
 
-    kv_increment(env, &bcat(&[b"bic:coin:balance:", env.caller_env.account_caller.as_slice(), b":", symbol]), -amount);
-    kv_increment(env, &bcat(&[b"bic:coin:balance:", receiver, b":", symbol]), amount);
+     if kv_exists(env, &bcat(&[b"account:", &BURN_ADDRESS, b":balance:AMA"])) {
+        kv_increment(env, &bcat(&[b"account:", &env.caller_env.account_caller, b":balance:", symbol]), -amount);
+        kv_increment(env, &bcat(&[b"account:", receiver, b":balance:", symbol]), amount);
 
-    //Account burnt coins
-    if symbol != b"AMA" && receiver == &BURN_ADDRESS {
-        kv_increment(env, &bcat(&[b"bic:coin:totalSupply:", symbol]), -amount);
+        //Account burnt coins
+        if symbol != b"AMA" && receiver == &BURN_ADDRESS {
+            kv_increment(env, &bcat(&[b"coin:", symbol, b":totalSupply"]), -amount);
+        }
+    } else {
+        kv_increment(env, &bcat(&[b"bic:coin:balance:", env.caller_env.account_caller.as_slice(), b":", symbol]), -amount);
+        kv_increment(env, &bcat(&[b"bic:coin:balance:", receiver, b":", symbol]), amount);
+
+        //Account burnt coins
+        if symbol != b"AMA" && receiver == &BURN_ADDRESS {
+            kv_increment(env, &bcat(&[b"bic:coin:totalSupply:", symbol]), -amount);
+        }
     }
 }
-
-/*
-kv_increment(env, &bcat(&[b"account:", &env.caller_env.account_caller, b":balance:", &symbol]), -amount);
-kv_increment(env, &bcat(&[b"account:", receiver, b":balance:", symbol]), amount);
-
-//Account burnt coins
-if symbol != b"AMA" && receiver == &BURN_ADDRESS {
-    kv_increment(env, &bcat(&[b"coin:", symbol, b":totalSupply"]), -amount);
-}
- */
 
 pub fn call_create_and_mint(env: &mut crate::consensus::consensus_apply::ApplyEnv, args: Vec<Vec<u8>>) {
     if args.len() < 2 { panic_any("invalid_args") }

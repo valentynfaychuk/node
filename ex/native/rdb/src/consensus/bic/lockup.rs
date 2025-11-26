@@ -35,7 +35,7 @@ pub fn call_unlock(env: &mut crate::consensus::consensus_apply::ApplyEnv, args: 
     if env.caller_env.entry_epoch < unlock_epoch {
         panic_any("vault_is_locked")
     } else {
-        kv_increment(env, &bcat(&[b"bic:coin:balance:", &env.caller_env.account_caller, &symbol]), amount as i128);
+        kv_increment(env, &bcat(&[b"account:", &env.caller_env.account_caller, b":balance:", symbol]), amount as i128);
         kv_delete(env, vault_key);
     }
 }
