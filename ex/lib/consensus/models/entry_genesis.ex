@@ -187,16 +187,14 @@ defmodule EntryGenesis do
         RocksDB.put("rooted_tip", entry_signed.hash, %{rtx: rtx, cf: cf.sysconf})
 
         validator_pks = Application.fetch_env!(:ama, :keys) |> Enum.map(& &1.pk)
-        RocksDB.put("bic:epoch:trainers:0",
-          :erlang.term_to_binary(validator_pks), %{rtx: rtx, cf: cf.contractstate})
-        RocksDB.put("bic:epoch:trainers:height:#{String.pad_leading("0", 12, "0")}",
-          :erlang.term_to_binary(validator_pks), %{rtx: rtx, cf: cf.contractstate})
+        RocksDB.put("bic:epoch:validators:height:#{String.pad_leading("0", 12, "0")}",
+          RDB.vecpak_encode(validator_pks), %{rtx: rtx, cf: cf.contractstate})
         RocksDB.put("bic:epoch:diff_bits", "8", %{rtx: rtx, cf: cf.contractstate})
         RocksDB.put("bic:epoch:segment_vr_hash", Blake3.hash(vr), %{rtx: rtx, cf: cf.contractstate})
 
         Enum.each(Application.fetch_env!(:ama, :keys), fn(key)->
-          RocksDB.put("bic:coin:balance:#{key.pk}:AMA", "1001000000000", %{rtx: rtx, cf: cf.contractstate})
-          RocksDB.put("bic:epoch:pop:#{key.pk}", key.pop, %{rtx: rtx, cf: cf.contractstate})
+          RocksDB.put("account:#{key.pk}:balance:AMA", "1001000000000", %{rtx: rtx, cf: cf.contractstate})
+          RocksDB.put("account:#{key.pk}:attribute:pop", key.pop, %{rtx: rtx, cf: cf.contractstate})
         end)
         rtx = RocksDB.transaction_commit(rtx)
       end

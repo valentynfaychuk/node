@@ -29,12 +29,7 @@ pub fn balance_burnt(env: &crate::consensus::consensus_apply::ApplyEnv, symbol: 
 pub fn balance(env: &crate::consensus::consensus_apply::ApplyEnv, address: &[u8], symbol: &[u8]) -> i128 {
     match kv_get(env, &bcat(&[b"account:", address, b":balance:", symbol])) {
         Some(amount) => std::str::from_utf8(&amount).unwrap().parse::<i128>().unwrap_or_else(|_| panic_any("invalid_balance")),
-        None => {
-            match kv_get(env, &bcat(&[b"bic:coin:balance:", address, b":", symbol])) {
-                Some(amount) => std::str::from_utf8(&amount).unwrap().parse::<i128>().unwrap_or_else(|_| panic_any("invalid_balance")),
-                None => 0
-            }
-        }
+        None => 0
     }
 }
 
@@ -110,22 +105,12 @@ pub fn call_transfer(env: &mut crate::consensus::consensus_apply::ApplyEnv, args
     if paused(env, symbol) { panic_any("paused") }
     if soulbound(env, symbol) { panic_any("soulbound") }
 
-     if kv_exists(env, &bcat(&[b"account:", &BURN_ADDRESS, b":balance:AMA"])) {
-        kv_increment(env, &bcat(&[b"account:", &env.caller_env.account_caller, b":balance:", symbol]), -amount);
-        kv_increment(env, &bcat(&[b"account:", receiver, b":balance:", symbol]), amount);
+    kv_increment(env, &bcat(&[b"account:", &env.caller_env.account_caller, b":balance:", symbol]), -amount);
+    kv_increment(env, &bcat(&[b"account:", receiver, b":balance:", symbol]), amount);
 
-        //Account burnt coins
-        if symbol != b"AMA" && receiver == &BURN_ADDRESS {
-            kv_increment(env, &bcat(&[b"coin:", symbol, b":totalSupply"]), -amount);
-        }
-    } else {
-        kv_increment(env, &bcat(&[b"bic:coin:balance:", env.caller_env.account_caller.as_slice(), b":", symbol]), -amount);
-        kv_increment(env, &bcat(&[b"bic:coin:balance:", receiver, b":", symbol]), amount);
-
-        //Account burnt coins
-        if symbol != b"AMA" && receiver == &BURN_ADDRESS {
-            kv_increment(env, &bcat(&[b"bic:coin:totalSupply:", symbol]), -amount);
-        }
+    //Account burnt coins
+    if symbol != b"AMA" && receiver == &BURN_ADDRESS {
+        kv_increment(env, &bcat(&[b"coin:", symbol, b":totalSupply"]), -amount);
     }
 }
 

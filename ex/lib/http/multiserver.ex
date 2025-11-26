@@ -157,7 +157,7 @@ defmodule Ama.MultiServer do
                 result = API.Contract.get_prefix(key)
                 quick_reply(%{state|request: r}, RDB.vecpak_encode(result))
             r.method == "GET" and String.starts_with?(r.path, "/api/contract/richlist") ->
-                result = API.Contract.richlist()
+                {result, _count} = API.Contract.richlist()
                 quick_reply(state, JSX.encode!(%{error: :ok, richlist: result}))
 
             r.method == "GET" and String.starts_with?(r.path, "/api/chain/tx_events_by_account/") ->

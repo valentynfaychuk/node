@@ -13,7 +13,7 @@ defmodule API.Epoch do
 
     def get_emission_address(pk) do
       pk = if byte_size(pk) != 48, do: Base58.decode(pk), else: pk
-      API.Contract.get("bic:epoch:emission_address:#{pk}")
+      API.Contract.get("account:#{pk}:attribute:emission_address")
       |> case do
         nil -> nil
         addr -> Base58.encode(addr)

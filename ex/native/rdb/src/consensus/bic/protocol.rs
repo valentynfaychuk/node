@@ -10,17 +10,8 @@ pub fn tx_cost_per_byte(_epoch: u64, tx_encoded_len: usize) -> i128 {
 }
 
 pub fn pay_cost(env: &mut crate::consensus::consensus_apply::ApplyEnv, cost: i128) {
-    if consensus_kv::kv_exists(env, &crate::bcat(&[b"account:", &coin::BURN_ADDRESS, b":balance:AMA"])) {
-        consensus_kv::kv_increment(env, &crate::bcat(&[b"account:", &env.caller_env.account_origin, b":balance:AMA"]), -cost);
-        // Increment validator / burn
-        consensus_kv::kv_increment(env, &crate::bcat(&[b"account:", &env.caller_env.entry_signer, b":balance:AMA"]), cost/2);
-        consensus_kv::kv_increment(env, &crate::bcat(&[b"account:", &coin::BURN_ADDRESS, b":balance:AMA"]), cost/2);
-    } else {
-
-    // Deduct tx cost
-    consensus_kv::kv_increment(env, &crate::bcat(&[b"bic:coin:balance:", env.caller_env.account_origin.as_slice(), b":AMA"]), -cost);
+    consensus_kv::kv_increment(env, &crate::bcat(&[b"account:", &env.caller_env.account_origin, b":balance:AMA"]), -cost);
     // Increment validator / burn
-    consensus_kv::kv_increment(env, &crate::bcat(&[b"bic:coin:balance:", env.caller_env.entry_signer.as_slice(), b":AMA"]), cost/2);
-    consensus_kv::kv_increment(env, &crate::bcat(&[b"bic:coin:balance:", &coin::BURN_ADDRESS, b":AMA"]), cost/2);
-    }
+    consensus_kv::kv_increment(env, &crate::bcat(&[b"account:", &env.caller_env.entry_signer, b":balance:AMA"]), cost/2);
+    consensus_kv::kv_increment(env, &crate::bcat(&[b"account:", &coin::BURN_ADDRESS, b":balance:AMA"]), cost/2);
 }

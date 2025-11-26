@@ -231,7 +231,7 @@ fn call_txs_pre_upfront_cost<'a>(env: &mut ApplyEnv, txus: &[rustler::Term<'a>])
         set_apply_env_tx(env, &tx_hash, &tx_signer, tx_nonce);
 
         // Update nonce
-        consensus_kv::kv_put(env, &crate::bcat(&[b"bic:base:nonce:", &tx_signer]), &tx_nonce.to_string().into_bytes());
+        consensus_kv::kv_put(env, &crate::bcat(&[b"account:", &tx_signer, b":attribute:nonce"]), &tx_nonce.to_string().into_bytes());
         // Deduct tx cost
         let tx_cost = txu.map_get(crate::atoms::tx_cost()).unwrap().decode::<i128>().unwrap();
         protocol::pay_cost(env, tx_cost);
@@ -309,7 +309,8 @@ fn migrate_db(env: &mut ApplyEnv) {
     //"bic:epoch:trainers:removed:
     let mut cursor: Vec<u8> = Vec::new();
     while let Some((next_key_wo_prefix, _val)) = crate::consensus::consensus_kv::kv_get_next(env, b"bic:epoch:trainers:height:", &cursor) {
-        let trainers: Vec<vecpak::Term> = consensus::bic::epoch::kv_get_trainers(env, &crate::bcat(&[b"bic:epoch:trainers:height:", &next_key_wo_prefix]))
+        let height = std::str::from_utf8(&next_key_wo_prefix).ok().and_then(|s| s.parse::<u64>().ok()).unwrap_or_else(|| panic_any("invalid_epoch"));
+        let trainers: Vec<vecpak::Term> = consensus::bic::epoch::kv_get_trainers(env, height)
             .into_iter()
             .map(vecpak::Term::Binary)
             .collect();
@@ -421,8 +422,8 @@ fn call_wasmvm(env: &mut ApplyEnv, contract: Vec<u8>, function: Vec<u8>, args: V
             if amount <= 0 { panic_any("invalid_attached_amount") }
             if amount > consensus::bic::coin::balance(env, &env.caller_env.account_caller, &attached_symbol) { panic_any("attached_amount_insufficient_funds") }
 
-            consensus_kv::kv_increment(env, &crate::bcat(&[b"bic:coin:balance:", &contract, &attached_symbol]), amount);
-            consensus_kv::kv_increment(env, &crate::bcat(&[b"bic:coin:balance:", &env.caller_env.account_caller, &attached_symbol]), -amount);
+            consensus_kv::kv_increment(env, &crate::bcat(&[b"account:", &contract, b":balance:", &attached_symbol]), amount);
+            consensus_kv::kv_increment(env, &crate::bcat(&[b"account:", &env.caller_env.account_caller, b":balance:", &attached_symbol]), -amount);
 
             env.caller_env.attached_symbol = attached_symbol;
             env.caller_env.attached_amount = attached_amount;

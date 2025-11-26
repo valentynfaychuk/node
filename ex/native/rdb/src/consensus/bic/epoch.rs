@@ -177,11 +177,7 @@ pub fn call_set_emission_address(env: &mut crate::consensus::consensus_apply::Ap
     let address = args[0].as_slice();
     if address.len() != 48 { panic_any("invalid_address_pk") }
 
-    if kv_exists(env, &crate::bcat(&[b"account:", &crate::consensus::bic::coin::BURN_ADDRESS, b":balance:AMA"])) {
-        kv_put(env, &bcat(&[b"account:", &env.caller_env.account_caller, b":attribute:emission_address"]), address);
-    } else {
-        kv_put(env, &bcat(&[b"bic:epoch:emission_address:", env.caller_env.account_caller.as_slice()]), address);
-    }
+    kv_put(env, &bcat(&[b"account:", &env.caller_env.account_caller, b":attribute:emission_address"]), address);
 }
 
 pub fn call_submit_sol(env: &mut crate::consensus::consensus_apply::ApplyEnv, args: Vec<Vec<u8>>) {
@@ -208,66 +204,33 @@ pub fn call_submit_sol(env: &mut crate::consensus::consensus_apply::ApplyEnv, ar
         panic_any("invalid_sol");
     }
 
-    if kv_exists(env, &crate::bcat(&[b"account:", &crate::consensus::bic::coin::BURN_ADDRESS, b":balance:AMA"])) {
-        if !kv_exists(env, &bcat(&[b"account:", &usol.pk, b":attribute:pop"])) {
-            match consensus::bls12_381::verify(&usol.pk, &usol.pop, &usol.pk, consensus::aggsig::DST_POP) {
-                Ok(()) => kv_put(env, &bcat(&[b"account:", &usol.pk, b":attribute:pop"]), &usol.pop),
-                Err(_) => panic_any("invalid_pop")
-            }
-        }
-    } else {
-        if !kv_exists(env, &bcat(&[b"bic:epoch:pop:", usol.pk.as_slice()])) {
-            match consensus::bls12_381::verify(&usol.pk, &usol.pop, &usol.pk, consensus::aggsig::DST_POP) {
-                Ok(()) => kv_put(env, &bcat(&[b"bic:epoch:pop:", usol.pk.as_slice()]), &usol.pop),
-                Err(_) => panic_any("invalid_pop")
-            }
+    if !kv_exists(env, &bcat(&[b"account:", &usol.pk, b":attribute:pop"])) {
+        match consensus::bls12_381::verify(&usol.pk, &usol.pop, &usol.pk, consensus::aggsig::DST_POP) {
+            Ok(()) => kv_put(env, &bcat(&[b"account:", &usol.pk, b":attribute:pop"]), &usol.pop),
+            Err(_) => panic_any("invalid_pop")
         }
     }
     kv_increment(env, &bcat(&[b"bic:epoch:solutions_count:", usol.pk.as_slice()]), 1);
 }
 
-pub fn kv_get_trainers(env: &crate::consensus::consensus_apply::ApplyEnv, key: &[u8]) -> Vec<Vec<u8>> {
-    match kv_get(env, key) {
-        None => Vec::new(),
-        Some(trainer_list) => {
-            let cursor = std::io::Cursor::new(trainer_list.as_slice());
-            let term_trainer_list = eetf::Term::decode(cursor).unwrap();
-            match term_trainer_list {
-                eetf::Term::List(term_permission_list) => {
-                    let mut out = Vec::with_capacity(term_permission_list.elements.len());
-                    for el in term_permission_list.elements {
-                        if let eetf::Term::Binary(b) = el {
-                            out.push(b.bytes); // move, no clone
-                        } else {
-                            panic_any("invalid_trainer_list_term");
-                        }
-                    }
-                    out
-                },
-                _ => panic_any("invalid_trainer_list_term")
-            }
-        }
-    }
-}
-
-pub fn kv_get_trainers2(env: &crate::consensus::consensus_apply::ApplyEnv, prefix: &[u8], key: &[u8]) -> Vec<Vec<u8>> {
-    match kv_get_prev_or_first(env, prefix, key) {
+pub fn kv_get_trainers(env: &crate::consensus::consensus_apply::ApplyEnv, height: u64) -> Vec<Vec<u8>> {
+    let height_padded = format!("{:012}", height).into_bytes();
+    match kv_get_prev_or_first(env, b"bic:epoch:validators:height:", &height_padded) {
         None => Vec::new(),
         Some((_key_suffix, trainer_list)) => {
-            let cursor = std::io::Cursor::new(trainer_list.as_slice());
-            let term_trainer_list = eetf::Term::decode(cursor).unwrap();
-            match term_trainer_list {
-                eetf::Term::List(term_permission_list) => {
-                    let mut out = Vec::with_capacity(term_permission_list.elements.len());
-                    for el in term_permission_list.elements {
-                        if let eetf::Term::Binary(b) = el {
-                            out.push(b.bytes); // move, no clone
+            let term = vecpak::decode(trainer_list.as_slice()).unwrap();
+            match term {
+                vecpak::Term::List(term_list) => {
+                    let mut out = Vec::with_capacity(100);
+                    for el in term_list {
+                        if let vecpak::Term::Binary(b) = el {
+                            out.push(b);
                         } else {
-                            panic_any("invalid_trainer_list_term");
+                            panic_any("invalid_trainer_list_element");
                         }
                     }
                     out
-                },
+                }
                 _ => panic_any("invalid_trainer_list_term")
             }
         }
@@ -275,11 +238,8 @@ pub fn kv_get_trainers2(env: &crate::consensus::consensus_apply::ApplyEnv, prefi
 }
 
 pub fn kv_get_trainers_removed(env: &crate::consensus::consensus_apply::ApplyEnv) -> Vec<Vec<u8>> {
-    let height_start_epoch = format!("{:012}", env.caller_env.entry_epoch * 100_000).into_bytes();
-    let height = format!("{:012}", env.caller_env.entry_height).into_bytes();
-
-    let trainers_start = kv_get_trainers2(env, b"bic:epoch:trainers:height:", &height_start_epoch);
-    let trainers_now = kv_get_trainers2(env, b"bic:epoch:trainers:height:", &height);
+    let trainers_start = kv_get_trainers(env, env.caller_env.entry_epoch * 100_000);
+    let trainers_now = kv_get_trainers(env, env.caller_env.entry_height);
 
     let trainers_now_set: HashSet<Vec<u8>> = trainers_now.into_iter().collect();
     trainers_start
@@ -298,12 +258,9 @@ pub fn call_slash_trainer(env: &mut crate::consensus::consensus_apply::ApplyEnv,
     let mask_size = std::str::from_utf8(&mask_size).ok().and_then(|s| s.parse::<u64>().ok()).unwrap_or_else(|| panic_any("invalid_mask_size"));
     let mask = args[4].to_vec();
 
-    let height = format!("{:012}", env.caller_env.entry_height).into_bytes();
-    let height_next = format!("{:012}", env.caller_env.entry_height.saturating_add(1)).into_bytes();
-
     if epoch != env.caller_env.entry_epoch { panic_any("invalid_epoch") }
 
-    let mut trainers = kv_get_trainers2(env, b"bic:epoch:trainers:height:", &height);
+    let mut trainers = kv_get_trainers(env, env.caller_env.entry_height);
     if !trainers.iter().any(|v| v.as_slice() == malicious_pk) { panic_any("invalid_trainer_pk") }
 
     let signers = consensus::aggsig::unmask_trainers(&trainers, &mask, mask_size as usize);
@@ -319,31 +276,19 @@ pub fn call_slash_trainer(env: &mut crate::consensus::consensus_apply::ApplyEnv,
     if !signature_valid { panic_any("invalid_signature") }
 
     trainers.retain(|pk| pk.as_slice() != malicious_pk);
-    if env.caller_env.entry_height >= 413_00000 {
-        let term_trainers = consensus::bic::list_of_binaries_to_vecpak(trainers);
-        kv_put(env, &bcat(&[b"bic:epoch:validators:height:", &height_next]), term_trainers.as_slice());
-    } else {
-        let mut trainers_removed = kv_get_trainers(env, &bcat(&[b"bic:epoch:trainers:removed:", epoch.to_string().as_bytes()]));
-        trainers_removed.push(malicious_pk.to_vec());
-        let term_trainers_removed = consensus::bic::eetf_list_of_binaries(trainers_removed).unwrap();
-        kv_put(env, &bcat(&[b"bic:epoch:trainers:removed:", epoch.to_string().as_bytes()]), term_trainers_removed.as_slice());
-
-        let term_trainers = consensus::bic::eetf_list_of_binaries(trainers).unwrap();
-        kv_put(env, &bcat(&[b"bic:epoch:trainers:", epoch.to_string().as_bytes()]), term_trainers.as_slice());
-        kv_put(env, &bcat(&[b"bic:epoch:trainers:height:", &height_next]), term_trainers.as_slice());
-    }
+    let term_trainers = consensus::bic::list_of_binaries_to_vecpak(trainers);
+    let height_next = format!("{:012}", env.caller_env.entry_height.saturating_add(1)).into_bytes();
+    kv_put(env, &bcat(&[b"bic:epoch:validators:height:", &height_next]), term_trainers.as_slice());
 }
 
 pub fn next(env: &mut ApplyEnv) {
     let epoch_cur = env.caller_env.entry_epoch;
     let epoch_next = env.caller_env.entry_epoch + 1;
-    let height = format!("{:012}", env.caller_env.entry_height).into_bytes();
-    let height_next = format!("{:012}", env.caller_env.entry_height.saturating_add(1)).into_bytes();
     let peddlebike67_map: HashSet<Vec<u8>> = PEDDLEBIKE67.iter().map(|pk| pk.to_vec()).collect();
 
     // slash sols for malicious trainers
     //let trainers = kv_get_trainers(env, &bcat(&[b"bic:epoch:trainers:", epoch_cur.to_string().as_bytes()]));
-    let trainers = kv_get_trainers2(env, b"bic:epoch:trainers:height:", &height);
+    let trainers = kv_get_trainers(env, env.caller_env.entry_height);
     let trainers_map: HashSet<Vec<u8>> = trainers.into_iter().collect();
     let trainers_removed = kv_get_trainers_removed(env);
     let trainers_removed_map: HashSet<Vec<u8>> = trainers_removed.into_iter().collect();
@@ -381,9 +326,9 @@ pub fn next(env: &mut ApplyEnv) {
 
     //Update validators for next epoch
     let new_validators = build_and_shuffle_new_validators(env, &leaders);
-    let new_validators = consensus::bic::eetf_list_of_binaries(new_validators).unwrap();
-    let _ = kv_put(env, &bcat(&[b"bic:epoch:trainers:", &epoch_next.to_string().as_bytes()]), &new_validators);
-    let _ = kv_put(env, &bcat(&[b"bic:epoch:trainers:height:", &height_next]), &new_validators);
+    let new_validators = consensus::bic::list_of_binaries_to_vecpak(new_validators);
+    let height_next = format!("{:012}", env.caller_env.entry_height.saturating_add(1)).into_bytes();
+    let _ = kv_put(env, &bcat(&[b"bic:epoch:validators:height:", &height_next]), &new_validators);
 
     update_difficulty_and_log_sols(env, epoch_cur, epoch_next, total_sols);
     clear_epoch_data(env);
@@ -397,11 +342,11 @@ fn distribute_emissions_to_trainers(env: &mut ApplyEnv, trainers_to_recv: &Vec<(
     for (trainer, trainer_sols) in trainers_to_recv {
         let coins = (trainer_sols * total_emission) / total_sols;
 
-        let emission_address = kv_get(env, &bcat(&[b"bic:epoch:emission_address:", trainer]));
+        let emission_address = kv_get(env, &bcat(&[b"account:", trainer, b":attribute:emission_address"]));
         let balance_key = if let Some(addr) = emission_address {
-            bcat(&[b"bic:coin:balance:", &addr, b":AMA"])
+            bcat(&[b"account:", &addr, b":balance:AMA"])
         } else {
-            bcat(&[b"bic:coin:balance:", trainer, b":AMA"])
+            bcat(&[b"account:", trainer, b":balance:AMA"])
         };
 
         let _ = kv_increment(env, &balance_key, coins);
@@ -416,11 +361,11 @@ fn distribute_peddlebike67_community_fund(env: &mut ApplyEnv, total_emission: i1
     for (i, peddle_pk) in PEDDLEBIKE67.iter().enumerate() {
         let coins = if (i as i128) < r { q + 1 } else { q };
 
-        let emission_address = kv_get(env, &bcat(&[b"bic:epoch:emission_address:", peddle_pk.as_slice()]));
+        let emission_address = kv_get(env, &bcat(&[b"account:", peddle_pk, b":attribute:emission_address"]));
         let balance_key = if let Some(addr) = emission_address {
-            bcat(&[b"bic:coin:balance:", &addr, b":AMA"])
+            bcat(&[b"account:", &addr, b":balance:AMA"])
         } else {
-            bcat(&[b"bic:coin:balance:", peddle_pk.as_slice(), b":AMA"])
+            bcat(&[b"account:", peddle_pk, b":balance:AMA"])
         };
 
         let _ = kv_increment(env, &balance_key, coins);

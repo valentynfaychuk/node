@@ -111,8 +111,9 @@ defmodule TXPool do
             segment_vr_hash = DB.Chain.segment_vr_hash()
             {acc, state} = :ets.foldl(fn({key, txu}, {acc, state_old})->
                 try do
+                  #TODO: remove this redundant validate
                   case TX.validate(txu) do
-                    %{error: :ok} ->
+                    %{error: :ok, txu: txu} ->
                       case validate_tx(txu, %{epoch: chain_epoch, segment_vr_hash: segment_vr_hash, batch_state: state_old}) do
                         %{error: :ok, batch_state: batch_state} ->
                           acc = acc ++ [txu]

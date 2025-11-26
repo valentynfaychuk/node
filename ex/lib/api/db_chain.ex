@@ -36,23 +36,15 @@ defmodule DB.Chain do
   end
 
   def pop(pk, db_opts \\ %{}) do
-    RocksDB.get("bic:epoch:pop:#{pk}", db_handle(db_opts, :contractstate, %{}))
+    RocksDB.get("account:#{pk}:attribute:pop", db_handle(db_opts, :contractstate, %{}))
   end
 
   def nonce(pk, db_opts \\ %{}) do
-    if RocksDB.exists("account:#{pk}:attribute:nonce", db_handle(db_opts, :contractstate, %{to_integer: true})) do
-      RocksDB.get("account:#{pk}:attribute:nonce", db_handle(db_opts, :contractstate, %{to_integer: true}))
-    else
-      RocksDB.get("bic:base:nonce:#{pk}", db_handle(db_opts, :contractstate, %{to_integer: true}))
-    end
+    RocksDB.get("account:#{pk}:attribute:nonce", db_handle(db_opts, :contractstate, %{to_integer: true}))
   end
 
   def balance(pk, symbol \\ "AMA", db_opts \\ %{}) do
-    if RocksDB.exists("account:#{pk}:balance:#{symbol}", db_handle(db_opts, :contractstate, %{to_integer: true})) do
-      RocksDB.get("account:#{pk}:balance:#{symbol}", db_handle(db_opts, :contractstate, %{to_integer: true})) || 0
-    else
-      RocksDB.get("bic:coin:balance:#{pk}:#{symbol}", db_handle(db_opts, :contractstate, %{to_integer: true})) || 0
-    end
+    RocksDB.get("account:#{pk}:balance:#{symbol}", db_handle(db_opts, :contractstate, %{to_integer: true})) || 0
   end
 
   def tx(tx_hash, db_opts \\ %{}) do
@@ -79,23 +71,20 @@ defmodule DB.Chain do
   end
 
   def validators_for_height(height, db_opts \\ %{}) do
-    opts = db_handle(db_opts, :contractstate, %{term: true})
+    opts = db_handle(db_opts, :contractstate, %{})
     cond do
-        height in 3195570..3195575 ->
-            RocksDB.get("bic:epoch:validators:height:000000319557", opts)
-        true ->
-            case RocksDB.get_prev_or_first("bic:epoch:validators:height:", pad_integer(height), db_handle(db_opts, :contractstate, %{})) do
-              {nil, nil} ->
-                {_, value} = RocksDB.get_prev_or_first("bic:epoch:trainers:height:", pad_integer(height), opts)
-                value
-              {_, value} -> RDB.vecpak_decode(value)
-            end
+      height in 3195570..3195575 ->
+        RocksDB.get("bic:epoch:validators:height:000000319557", opts)
+        |> RDB.vecpak_decode()
+      true ->
+        {_, value} = RocksDB.get_prev_or_first("bic:epoch:validators:height:", pad_integer(height), opts)
+        RDB.vecpak_decode(value)
     end
   end
 
   def validators_last_change_height(height, db_opts \\ %{}) do
-    opts = db_handle(db_opts, :contractstate, %{term: true})
-    {key, _value} = RocksDB.get_prev_or_first("bic:epoch:trainers:height:", pad_integer(height), opts)
+    opts = db_handle(db_opts, :contractstate, %{})
+    {key, _value} = RocksDB.get_prev_or_first("bic:epoch:validators:height:", pad_integer(height), opts)
     :erlang.binary_to_integer(key)
   end
 

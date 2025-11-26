@@ -100,24 +100,6 @@ defmodule API.Chain do
       last_100/50
     end
 
-    def count_wallets() do
-      key = "account:#{:binary.copy(<<0>>, 48)}:balance:AMA"
-      count_wallets_1(key, 0)
-    end
-    def count_wallets_1(key, acc) do
-      %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
-      seek = RocksDB.seek_next(key, %{db: db, cf: cf.contractstate})
-      case seek do
-        {<<"account:", pk::384, ":balance:AMA">>, _} ->
-          key = <<"account:", (pk+1)::384, ":balance:AMA">>
-          count_wallets_1(key, acc + 1)
-        {<<"account:", pk::384, _::binary>>, _} ->
-          key = <<"account:", pk::384, ":balance:AMA">>
-          count_wallets_1(key, acc)
-        {_, _} -> acc
-      end
-    end
-
     def format_entry_for_client(nil) do nil end
     def format_entry_for_client(entry) do
         hash = entry.hash

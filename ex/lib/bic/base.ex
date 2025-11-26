@@ -65,8 +65,8 @@ defmodule BIC.Base do
 
         cond do
             env.entry_height == 0 ->
-                kv_put("bic:epoch:trainers:0", [env.entry_signer], %{term: true})
-                kv_put("bic:epoch:pop:#{env.entry_signer}", EntryGenesis.pop())
+                kv_put("bic:epoch:validators:height:000000000000", [env.entry_signer], %{term: true})
+                kv_put("account:#{env.entry_signer}:attribute:pop", EntryGenesis.pop())
             rem(env.entry_height, 100_000) == 99_999 ->
                 BIC.Epoch.next(env)
             true -> :ok

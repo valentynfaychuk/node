@@ -57,8 +57,8 @@ defmodule Ama do
   def offline_node() do
     %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
     if !DB.Entry.by_hash(EntryGenesis.get().hash) do
-      RocksDB.put("bic:epoch:trainers:height:#{String.pad_leading("0", 12, "0")}",
-        :erlang.term_to_binary([EntryGenesis.signer()]), %{db: db, cf: cf.contractstate})
+      RocksDB.put("bic:epoch:validators:height:#{String.pad_leading("0", 12, "0")}",
+        RDB.vecpak_encode([EntryGenesis.signer()]), %{db: db, cf: cf.contractstate})
 
       entry = EntryGenesis.get()
       DB.Entry.insert(entry)

@@ -16,7 +16,7 @@ defmodule API.Wallet do
 
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
         opts = %{db: db, cf: cf.contractstate, to_integer: true}
-        RocksDB.get_prefix("bic:coin:balance:#{pk}:", opts)
+        RocksDB.get_prefix("account:#{pk}:balance:", opts)
         |> Enum.map(fn({symbol, coins})->
             %{symbol: symbol, flat: coins, float: BIC.Coin.from_flat(coins)}
         end)

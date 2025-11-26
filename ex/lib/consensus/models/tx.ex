@@ -56,23 +56,21 @@ defmodule TX do
      end
    end
 
-   def validate(txu, is_special_meeting_block \\ false) do
+   def validate(txu_orig, is_special_meeting_block \\ false) do
     try do
-      true = !txu[:tx_encoded]
-
-      txu = Map.take(txu, @fields)
-      tx_encoded = RDB.vecpak_encode(txu.tx)
-
+      txu = Map.take(txu_orig, @fields)
+      true = txu == txu_orig
       tx = Map.take(txu.tx, @fields_tx)
+      true = txu.tx == tx
+      txu = put_in(txu, [:tx], tx)
       action = Map.take(txu.tx.action, @fields_action)
+      true = txu.tx.action == action
+      txu = put_in(txu, [:tx, :action], action)
 
+      tx_encoded = RDB.vecpak_encode(txu.tx)
       if byte_size(tx_encoded) >= Application.fetch_env!(:ama, :tx_size), do: throw(%{error: :too_large})
-
-      hash = Map.fetch!(txu, :hash)
-      signature = Map.fetch!(txu, :signature)
-
-      if hash != :crypto.hash(:sha256, tx_encoded), do: throw(%{error: :invalid_hash})
-      if !BlsEx.verify?(txu.tx.signer, signature, hash, BLS12AggSig.dst_tx()), do: throw(%{error: :invalid_signature})
+      if txu.hash != :crypto.hash(:sha256, tx_encoded), do: throw(%{error: :invalid_hash})
+      if !BlsEx.verify?(txu.tx.signer, txu.signature, txu.hash, BLS12AggSig.dst_tx()), do: throw(%{error: :invalid_signature})
 
       if !is_integer(txu.tx.nonce), do: throw(%{error: :nonce_not_integer})
       if txu.tx.nonce > 99_999_999_999_999_999_999, do: throw(%{error: :nonce_too_high})
@@ -105,7 +103,6 @@ defmodule TX do
       #if !!txp.tx[:delay] and txp.tx.delay <= 0, do: throw %{error: :delay_too_low}
       #if !!txp.tx[:delay] and txp.tx.delay > 100_000, do: throw %{error: :delay_too_hi}
 
-      txu = %{tx: %{nonce: txu.tx.nonce, signer: txu.tx.signer, action: action}, hash: hash, signature: signature}
       throw %{error: :ok, txu: txu}
     catch
         :throw,r -> r

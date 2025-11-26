@@ -29,15 +29,27 @@ defmodule API.Contract do
     end
 
     def richlist() do
-      %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
-      opts = %{db: db, cf: cf.contractstate, to_integer: true}
-      RocksDB.get_prefix("bic:coin:balance:", opts)
-      |> Enum.map(fn({pk_symbol, coins})->
-          <<pk::48-binary,":",symbol::binary>> = pk_symbol
-          %{pk: Base58.encode(pk), symbol: symbol, flat: coins, float: trunc(BIC.Coin.from_flat(coins))}
-      end)
+      key = "account:#{:binary.copy(<<0>>, 48)}:balance:AMA"
+      {acc, count} = richlist_1(key, {[], 0})
+      acc = acc
       |> Enum.filter(& &1.symbol == "AMA")
       |> Enum.sort_by(& &1.flat, :desc)
+      {acc, count}
+    end
+    def richlist_1(key, {acc, count}) do
+      %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+      seek = RocksDB.seek_next(key, %{db: db, cf: cf.contractstate})
+      case seek do
+        {<<"account:", pk::384, ":balance:AMA">>, value} ->
+          key = <<"account:", (pk+1)::384, ":balance:AMA">>
+          flat = :erlang.binary_to_integer(value)
+          entry = %{pk: Base58.encode(<<pk::384>>), symbol: "AMA", flat: flat, float: trunc(BIC.Coin.from_flat(flat))}
+          richlist_1(key, {acc ++ [entry], count + 1})
+        {<<"account:", pk::384, _::binary>>, _} ->
+          key = <<"account:", pk::384, ":balance:AMA">>
+          richlist_1(key, {acc, count})
+        {_, _} -> {acc, count}
+      end
     end
 
     def total_burned() do
