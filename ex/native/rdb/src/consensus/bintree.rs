@@ -67,6 +67,24 @@ pub enum VerifyStatus {
     Invalid,        // The proof itself is mathematically invalid (bad root/chain)
 }
 
+#[inline]
+pub fn compute_namespace_path(namespace: Option<&[u8]>, key: &[u8]) -> Path {
+    match namespace {
+        Some(ns) => {
+            let ns_hash = sha256(ns);
+            let key_hash = sha256(key);
+
+            let mut path = [0u8; 32];
+            path[0..8].copy_from_slice(&ns_hash[0..8]);
+            path[8..32].copy_from_slice(&key_hash[0..24]);
+            path
+        },
+        None => {
+            sha256(key)
+        }
+    }
+}
+
 // ============================================================================
 // BIT HELPERS (Optimized & Inlined)
 // ============================================================================

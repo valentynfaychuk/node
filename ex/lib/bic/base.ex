@@ -1,57 +1,11 @@
 defmodule BIC.Base do
     import ConsensusKV
 
-    def exec_cost(epoch, txu) do
-        bytes = byte_size(txu.tx_encoded) + 32 + 96
-        BIC.Coin.to_cents( 1 + div(bytes, 1024) * 1 )
-
-        #for future update
-        #BIC.Coin.to_tenthousandth( 18 + div(bytes, 256) * 3 )
-    end
-
     def seed_random(vr, txhash, action_index, call_cnt) do
         seed_bin = <<seed::256-little>> = Blake3.hash(
             <<vr::binary, txhash::binary, action_index::binary, call_cnt::binary>>)
         :rand.seed(:exsss, seed)
         seed_bin
-    end
-
-    def call_txs_pre_parallel(env, txus) do
-        Process.delete(:mutations)
-        Process.delete(:mutations_reverse)
-
-        Enum.each(txus, fn(txu)->
-            kv_put("bic:base:nonce:#{txu.tx.signer}", txu.tx.nonce, %{to_integer: true})
-            exec_cost = exec_cost(env.entry_epoch, txu)
-            kv_increment("bic:coin:balance:#{txu.tx.signer}:AMA", -exec_cost)
-
-            #burn 50% to prevent MEV/FreeChainGrowth attack
-            half_exec_cost = div(exec_cost, 2)
-            kv_increment("bic:coin:balance:#{env.entry_signer}:AMA", half_exec_cost)
-            kv_increment("bic:coin:balance:#{BIC.Coin.burn_address()}:AMA", half_exec_cost)
-        end)
-
-        #parallel verify sols
-        segment_vr_hash = kv_get("bic:epoch:segment_vr_hash")
-        diff_bits = kv_get("bic:epoch:diff_bits", %{to_integer: true}) || 24
-        steam = Task.async_stream(txus, fn txu ->
-            sol = Enum.find_value(txu.tx.actions, fn(a)-> a.function == "submit_sol" and length(a.args) != [] and hd(a.args) end)
-            if sol do
-              hash = Blake3.hash(sol)
-              opts = %{hash: hash, vr_b3: env.entry_vr_b3, segment_vr_hash: segment_vr_hash, diff_bits: diff_bits}
-              valid = try do BIC.Sol.verify(sol, opts) catch _,_ -> false end
-              %{hash: hash, valid: valid}
-            end
-        end)
-
-        sol_verified_cache = for {error, spec} <- steam,
-          error == :ok and spec != nil,
-          into: %{},
-          do: {spec.hash, spec.valid}
-
-        Process.put(SolVerifiedCache, sol_verified_cache)
-
-        {Process.get(:mutations, []), Process.get(:mutations_reverse, [])}
     end
 
     def call_exit(env) do

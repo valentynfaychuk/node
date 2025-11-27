@@ -79,6 +79,8 @@ pub struct ApplyEnv<'db> {
     pub muts_rev: Vec<consensus_muts::Mutation>,
     pub muts_rev_gas: Vec<consensus_muts::Mutation>,
     pub result_log: Vec<HashMap<&'static str, &'static str>>,
+    pub testnet: bool,
+    pub testnet_peddlebikes: Vec<Vec<u8>>,
 }
 
 impl<'db> ApplyEnv<'db> {
@@ -98,6 +100,7 @@ pub fn make_apply_env<'db>(txn: Transaction<'db, TransactionDB<MultiThreaded>>, 
     entry_signer: &[u8; 48], entry_prev_hash: &[u8; 32],
     entry_slot: u64, entry_prev_slot: u64, entry_height: u64, entry_epoch: u64,
     entry_vr: &[u8; 96], entry_vr_b3: &[u8; 32], entry_dr: &[u8; 32],
+    testnet: bool, testnet_peddlebikes: Vec<Vec<u8>>
 ) -> ApplyEnv<'db> {
     ApplyEnv {
         caller_env: make_caller_env(entry_signer, entry_prev_hash, entry_slot, entry_prev_slot, entry_height, entry_epoch, entry_vr, entry_vr_b3, entry_dr),
@@ -110,6 +113,8 @@ pub fn make_apply_env<'db>(txn: Transaction<'db, TransactionDB<MultiThreaded>>, 
         muts_rev: Vec::new(),
         muts_rev_gas: Vec::new(),
         result_log: Vec::new(),
+        testnet: testnet,
+        testnet_peddlebikes: testnet_peddlebikes,
     }
 }
 
@@ -124,11 +129,12 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
     entry_signer: &[u8; 48], entry_prev_hash: &[u8; 32],
     entry_slot: u64, entry_prev_slot: u64, entry_height: u64, entry_epoch: u64,
     entry_vr: &[u8; 96], entry_vr_b3: &[u8; 32], entry_dr: &[u8; 32],
-    txus: Vec<rustler::Term<'a>>, txn: Transaction<'db, TransactionDB<MultiThreaded>>
+    txus: Vec<rustler::Term<'a>>, txn: Transaction<'db, TransactionDB<MultiThreaded>>,
+    testnet: bool, testnet_peddlebikes: Vec<Vec<u8>>,
 ) -> (Transaction<'db, TransactionDB<MultiThreaded>>, Vec<consensus_muts::Mutation>, Vec<consensus_muts::Mutation>, Vec<HashMap<&'static str, &'static str>>) {
     let cf_h = db.cf_handle("contractstate").unwrap();
 
-    let mut applyenv = make_apply_env(txn, cf_h, entry_signer, entry_prev_hash, entry_slot, entry_prev_slot, entry_height, entry_epoch, entry_vr, entry_vr_b3, entry_dr);
+    let mut applyenv = make_apply_env(txn, cf_h, entry_signer, entry_prev_hash, entry_slot, entry_prev_slot, entry_height, entry_epoch, entry_vr, entry_vr_b3, entry_dr, testnet, testnet_peddlebikes);
 
     call_txs_pre_upfront_cost(&mut applyenv, &txus);
 
@@ -216,6 +222,47 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
 
     call_exit(&mut applyenv);
 
+    //Update tree
+    //Select only the last muts, rest are irrelevent for tree
+/*
+    let mut map: HashMap<Vec<u8>, consensus_muts::Mutation> = HashMap::new();
+    for m in applyenv.muts_final.clone() {
+        match m {
+            consensus_muts::Mutation::Put { ref key, .. } | consensus_muts::Mutation::Delete { ref key, .. }
+            | consensus_muts::Mutation::SetBit { ref key, .. } | consensus_muts::Mutation::ClearBit { ref key, .. }=> {
+                map.insert(key.clone(), m);
+            }
+        }
+    }
+    let mut ops: Vec<consensus::bintree_rdb::Op> = Vec::with_capacity(map.len());
+    for (key, m) in map {
+        let namespace = consensus_kv::contractstate_namespace(&key);
+        let op = match m {
+            consensus_muts::Mutation::Put { value, .. } => {
+                consensus::bintree_rdb::Op::Insert(namespace, key, value)
+            },
+            consensus_muts::Mutation::Delete { .. } => {
+                consensus::bintree_rdb::Op::Delete(namespace, key)
+            },
+            consensus_muts::Mutation::SetBit { .. } => {
+                let val = applyenv.txn.get_cf(&applyenv.cf, &key).unwrap().unwrap();
+                consensus::bintree_rdb::Op::Insert(namespace, key, val)
+            },
+            consensus_muts::Mutation::ClearBit { .. } => {
+                let val = applyenv.txn.get_cf(&applyenv.cf, &key).unwrap().unwrap();
+                consensus::bintree_rdb::Op::Insert(namespace, key, val)
+            },
+        };
+        ops.push(op);
+    }
+
+    applyenv.muts = Vec::new();
+    applyenv.muts_rev = Vec::new();
+    let mut hub = consensus::bintree_rdb::RocksHubt::new(&mut applyenv);
+    hub.batch_update(ops);
+    applyenv.muts_final.append(&mut applyenv.muts);
+    applyenv.muts_final_rev.append(&mut applyenv.muts_rev);
+*/
     applyenv.into_parts()
 }
 
@@ -259,9 +306,8 @@ fn call_exit(env: &mut ApplyEnv) {
     if env.caller_env.entry_height % 100_000 == 99_999 {
         consensus::bic::epoch::next(env);
     }
-
     if env.caller_env.entry_height == 412_99999 {
-        migrate_db(env);
+        //migrate_db(env);
     }
 
     env.muts_final.append(&mut env.muts);
@@ -269,41 +315,6 @@ fn call_exit(env: &mut ApplyEnv) {
 }
 
 fn migrate_db(env: &mut ApplyEnv) {
-    // Key: bic:contract:account:<pub_key>:bytecode
-    let key_bytecode: [u8; 78] = [
-        98, 105, 99, 58, 99, 111, 110, 116, 114, 97, 99, 116, 58, 97, 99, 99, 111,
-          117, 110, 116, 58, 166, 112, 134, 96, 188, 113, 89, 66, 210, 222, 166, 166,
-          244, 194, 43, 73, 91, 160, 1, 2, 191, 60, 106, 30, 203, 157, 253, 32, 193, 44,
-          143, 47, 139, 145, 54, 246, 234, 89, 164, 178, 122, 246, 243, 251, 81, 35, 2,
-          15, 58, 98, 121, 116, 101, 99, 111, 100, 101
-    ];
-    consensus_kv::kv_delete(env, &key_bytecode);
-
-    // Key: c:<pub_key>:vault:<text_address>:AMA
-    let key_vault_text: [u8; 127] = [
-        99, 58, 166, 112, 134, 96, 188, 113, 89, 66, 210, 222, 166, 166, 244, 194, 43,
-          73, 91, 160, 1, 2, 191, 60, 106, 30, 203, 157, 253, 32, 193, 44, 143, 47, 139,
-          145, 54, 246, 234, 89, 164, 178, 122, 246, 243, 251, 81, 35, 2, 15, 58, 118,
-          97, 117, 108, 116, 58, 55, 55, 55, 100, 54, 90, 57, 87, 77, 77, 53, 87, 118,
-          75, 82, 97, 69, 117, 74, 72, 53, 97, 98, 69, 66, 83, 77, 117, 117, 111, 81,
-          122, 111, 116, 78, 68, 56, 50, 106, 53, 81, 112, 109, 120, 87, 66, 78, 102,
-          121, 117, 115, 103, 81, 117, 52, 54, 90, 121, 72, 121, 57, 107, 103, 89, 84,
-          56, 58, 65, 77, 65
-    ];
-    consensus_kv::kv_delete(env, &key_vault_text);
-
-    // Key: c:<pub_key>:vault:<pub_key>:AMA
-    let key_vault_binary: [u8; 109] = [
-        99, 58, 166, 112, 134, 96, 188, 113, 89, 66, 210, 222, 166, 166, 244, 194, 43,
-          73, 91, 160, 1, 2, 191, 60, 106, 30, 203, 157, 253, 32, 193, 44, 143, 47, 139,
-          145, 54, 246, 234, 89, 164, 178, 122, 246, 243, 251, 81, 35, 2, 15, 58, 118,
-          97, 117, 108, 116, 58, 166, 112, 134, 96, 188, 113, 89, 66, 210, 222, 166,
-          166, 244, 194, 43, 73, 91, 160, 1, 2, 191, 60, 106, 30, 203, 157, 253, 32,
-          193, 44, 143, 47, 139, 145, 54, 246, 234, 89, 164, 178, 122, 246, 243, 251,
-          81, 35, 2, 15, 58, 65, 77, 65
-    ];
-    consensus_kv::kv_delete(env, &key_vault_binary);
-
     //"bic:epoch:trainers:85"
     //"bic:epoch:trainers:height:000039625024"
     //"bic:epoch:trainers:removed:

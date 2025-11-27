@@ -144,14 +144,26 @@ pub fn kv_get_prev_or_first(env: &ApplyEnv, prefix: &[u8], key: &[u8]) -> Option
     }
 }
 
+pub fn contractstate_namespace(key: &[u8]) -> Option<Vec<u8>> {
+    if key.starts_with(b"account:") {
+        Some(key[0..56].to_vec())
+    } else if key.starts_with(b"coin") {
+        Some(b"coin".to_vec())
+    } else if key.starts_with(b"bic") {
+        Some(b"bic".to_vec())
+    } else {
+        None
+    }
+}
+
 pub fn revert(env: &mut ApplyEnv) {
-    for m in env.muts_rev.clone() {
+    for m in env.muts_rev.clone().iter().rev() {
         match m {
             Mutation::Put { op, key, value } => {
-                kv_put(env, key.as_slice(), value.as_slice());
+                env.txn.put_cf(&env.cf, key, value).unwrap();
             }
             Mutation::Delete { op, key } => {
-                kv_delete(env, key.as_slice());
+                env.txn.delete_cf(&env.cf, key).unwrap();
             }
             Mutation::SetBit { op, key, value, bloomsize } => {
             }
@@ -164,7 +176,7 @@ pub fn revert(env: &mut ApplyEnv) {
                         let mask: u8 = 1u8 << (7 - bit_in);
                         // Force bit to 0 (idempotent)
                         old[byte_idx] &= !mask;
-                        kv_put(env, key.as_slice(), old.as_slice());
+                        env.txn.put_cf(&env.cf, key, &old).unwrap();
                     }
                 }
             }

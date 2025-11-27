@@ -284,7 +284,10 @@ pub fn call_slash_trainer(env: &mut crate::consensus::consensus_apply::ApplyEnv,
 pub fn next(env: &mut ApplyEnv) {
     let epoch_cur = env.caller_env.entry_epoch;
     let epoch_next = env.caller_env.entry_epoch + 1;
-    let peddlebike67_map: HashSet<Vec<u8>> = PEDDLEBIKE67.iter().map(|pk| pk.to_vec()).collect();
+    let mut peddlebike67_map: HashSet<Vec<u8>> = PEDDLEBIKE67.iter().map(|pk| pk.to_vec()).collect();
+    if env.testnet {
+        peddlebike67_map = env.testnet_peddlebikes.iter().map(|pk| pk.to_vec()).collect();
+    }
 
     // slash sols for malicious trainers
     //let trainers = kv_get_trainers(env, &bcat(&[b"bic:epoch:trainers:", epoch_cur.to_string().as_bytes()]));

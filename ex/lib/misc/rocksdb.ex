@@ -209,6 +209,13 @@ defmodule RocksDB do
       :ok = RDB.transaction_rollback(rtx)
     end
 
+    def dumpstate() do
+      %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+      d = RocksDB.dump(cf.contractstate)
+      dd = inspect d, limit: 1111111111111111111, pretty: true
+      File.write! "/tmp/amastate", dd
+    end
+
     def dump(cf) do
         {:ok, it} = RDB.iterator_cf(cf)
         res = RDB.iterator_move(it, :first)

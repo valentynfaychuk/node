@@ -312,7 +312,10 @@ defmodule FabricGen do
       }
 
       txus = Enum.map(entry.txs, & Map.put(&1, :tx_cost, TX.exec_cost(0, &1)))
-      {rtx, m, m_rev, l} = RDB.apply_entry(db, next_entry_trimmed_map, Application.fetch_env!(:ama, :trainer_pk), Application.fetch_env!(:ama, :trainer_sk), txus)
+      {rtx, m, m_rev, l} = RDB.apply_entry(db, next_entry_trimmed_map,
+        Application.fetch_env!(:ama, :trainer_pk), Application.fetch_env!(:ama, :trainer_sk), txus,
+        Application.fetch_env!(:ama, :testnet), Map.keys(Application.fetch_env!(:ama, :keys_by_pk))
+      )
       rebuild_m_fn = fn(m)->
         Enum.map(m, fn(inner)->
           op = :"#{IO.iodata_to_binary(inner[~c"op"])}"
@@ -332,6 +335,8 @@ defmodule FabricGen do
       m = rebuild_m_fn.(m)
       m_rev = rebuild_m_fn.(m_rev)
       l = rebuild_l_fn.(l)
+
+      #IO.inspect Enum.map(m, & Map.put(&1, :key, RocksDB.ascii_dump(&1.key))), limit: 11111111111
 
       #call the exit
       Process.put({RocksDB, :ctx}, %{rtx: rtx, cf: cf})

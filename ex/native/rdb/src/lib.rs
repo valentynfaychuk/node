@@ -674,7 +674,8 @@ pub fn fixed<const N: usize>(t: Term<'_>) -> Result<[u8; N], Error> {
 }
 
 #[rustler::nif(schedule = "DirtyCpu")]
-fn apply_entry<'a>(env: Env<'a>, db: ResourceArc<DbResource>, next_entry_trimmed_map: Term<'a>, pk: Binary, sk: Binary, txus: Vec<Term<'a>>) -> Result<Term<'a>, Error> {
+fn apply_entry<'a>(env: Env<'a>, db: ResourceArc<DbResource>, next_entry_trimmed_map: Term<'a>, pk: Binary, sk: Binary, txus: Vec<Term<'a>>,
+    testnet: bool, testnet_peddlebikes: Vec<Binary>) -> Result<Term<'a>, Error> {
     let entry_signer = fixed::<48>(next_entry_trimmed_map.map_get(atoms::entry_signer())?)?;
     let entry_prev_hash = fixed::<32>(next_entry_trimmed_map.map_get(atoms::entry_prev_hash())?)?;
     let entry_vr = fixed::<96>(next_entry_trimmed_map.map_get(atoms::entry_vr())?)?;
@@ -692,7 +693,9 @@ fn apply_entry<'a>(env: Env<'a>, db: ResourceArc<DbResource>, next_entry_trimmed
 
     let (txn, muts, muts_rev, result_log) =
         consensus::consensus_apply::apply_entry(&db.db, pk.as_slice(), sk.as_slice(), &entry_signer, &entry_prev_hash,
-            entry_slot, entry_prev_slot, entry_height, entry_epoch, &entry_vr, &entry_vr_b3, &entry_dr, txus, txn);
+            entry_slot, entry_prev_slot, entry_height, entry_epoch, &entry_vr, &entry_vr_b3, &entry_dr, txus, txn,
+            testnet, testnet_peddlebikes.iter().map(|bin| bin.as_slice().to_vec()).collect()
+        );
 
     let tx_static: Tx<'static> = unsafe { std::mem::transmute::<Tx<'_>, Tx<'static>>(txn) };
     let term_txn = ResourceArc::new(TxResource {
@@ -848,6 +851,53 @@ fn bintree_root_verify<'a>(env: Env<'a>, proof_ex: Term<'a>, key: Binary<'a>, va
         crate::consensus::bintree::VerifyStatus::Mismatch => (atoms::mismatch()).encode(env),
         crate::consensus::bintree::VerifyStatus::NonExistence => (atoms::nonexistance()).encode(env),
     }
+}
+
+//rocksdb proof
+#[rustler::nif]
+fn bintree_contractstate_root_prove<'a>(env: Env<'a>, db: ResourceArc<DbResource>, key: Binary<'a>) -> Term<'a> {
+    let cf_handle = db.db.cf_handle("contractstate").unwrap();
+    let mut iter = db.db.raw_iterator_cf(&cf_handle);
+
+    let namespace = if key.to_vec().starts_with(b"account:") {
+        Some(&key[0..56])
+    } else if key.to_vec().starts_with(b"coin") {
+        Some(&b"coin"[..])
+    } else if key.to_vec().starts_with(b"bic") {
+        Some(&b"bic"[..])
+    } else {
+        None
+    };
+
+    let proof = crate::consensus::bintree_rdb_prove::RocksHubtProveViaIterator::prove(
+        &mut iter,
+        namespace,
+        key.as_slice(),
+    );
+
+    let nodes_list: Vec<Term> = proof.nodes.iter().map(|node| {
+        let mut map = Term::map_new(env);
+
+        let hash_term = to_binary2(env, &node.hash);
+        let dir_term = node.direction.encode(env);
+
+        map = map.map_put(atoms::hash(), hash_term).ok().unwrap();
+        map = map.map_put(atoms::direction(), dir_term).ok().unwrap();
+        map
+    }).collect();
+
+    let mut proof_map = Term::map_new(env);
+
+    let root_term = to_binary2(env, &proof.root);
+    let path_term = to_binary2(env, &proof.path);
+    let hash_term = to_binary2(env, &proof.hash);
+
+    proof_map = proof_map.map_put(atoms::root(), root_term).ok().unwrap();
+    proof_map = proof_map.map_put(atoms::path(), path_term).ok().unwrap();
+    proof_map = proof_map.map_put(atoms::hash(), hash_term).ok().unwrap();
+    proof_map = proof_map.map_put(atoms::nodes(), nodes_list.encode(env)).ok().unwrap();
+
+    (proof_map).encode(env)
 }
 
 rustler::init!("Elixir.RDB", load = on_load);

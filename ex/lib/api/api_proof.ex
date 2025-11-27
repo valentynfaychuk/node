@@ -7,11 +7,16 @@ defmodule API.Proof do
       key: proof.key,
       validators: Enum.map(proof.validators, & Base58.encode(&1)),
       proof: %{
-        nodes: Enum.map(proof.proof.nodes, & %{direction: &1.direction, hash: Base58.encode(&1.hash)}),
+        root: Base58.encode(proof.proof.root),
         path: Base58.encode(proof.proof.path),
-        path: Base58.encode(proof.proof.root),
-        path: Base58.encode(proof.proof.hash),
+        hash: Base58.encode(proof.proof.hash),
+        nodes: Enum.map(proof.proof.nodes, & %{direction: &1.direction, hash: Base58.encode(&1.hash)}),
       }
     }
+  end
+
+  def proof_contractstate(key) do
+    %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+    RDB.bintree_contractstate_root_prove(db, key)
   end
 end

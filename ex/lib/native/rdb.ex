@@ -43,7 +43,7 @@ defmodule RDB do
   def transaction_iterator_cf(_tx, _cf), do: :erlang.nif_error(:nif_not_loaded)
   def transaction_iterator_move(_it, _action), do: :erlang.nif_error(:nif_not_loaded)
 
-  def apply_entry(_db, _next_entry_trimmed_map, _pk, _sk, _txus), do: :erlang.nif_error(:nif_not_loaded)
+  def apply_entry(_db, _next_entry_trimmed_map, _pk, _sk, _txus, _testnet, _testnet_peddlebike), do: :erlang.nif_error(:nif_not_loaded)
 
   def vecpak_encode(_map), do: :erlang.nif_error(:nif_not_loaded)
   def vecpak_decode(_bin), do: :erlang.nif_error(:nif_not_loaded)
@@ -53,4 +53,5 @@ defmodule RDB do
   def bintree_root(_propslist), do: :erlang.nif_error(:nif_not_loaded)
   def bintree_root_prove(_propslist, _key), do: :erlang.nif_error(:nif_not_loaded)
   def bintree_root_verify(_proof, _key, _value), do: :erlang.nif_error(:nif_not_loaded)
+  def bintree_contractstate_root_prove(_db, _key), do: :erlang.nif_error(:nif_not_loaded)
 end

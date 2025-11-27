@@ -185,7 +185,7 @@ defmodule API.TX do
                 true -> Base58.encode(arg)
             end
         end)
-        Map.put(action, :args, args)
+        action = Map.put(action, :args, args)
 
         tx = put_in(tx, [:tx, :action], action)
 
