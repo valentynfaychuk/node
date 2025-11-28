@@ -3,8 +3,8 @@ defmodule API.Proof do
     entry_hash = if byte_size(entry_hash) != 32, do: Base58.decode(entry_hash), else: entry_hash
     proof = Entry.proof_validators(entry_hash)
     %{
-      value: Base58.encode(proof.value),
       key: proof.key,
+      value: Base58.encode(proof.value),
       validators: Enum.map(proof.validators, & Base58.encode(&1)),
       proof: %{
         root: Base58.encode(proof.proof.root),
@@ -17,6 +17,9 @@ defmodule API.Proof do
 
   def proof_contractstate(key) do
     %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
-    RDB.bintree_contractstate_root_prove(db, key)
+    proof = RDB.bintree_contractstate_root_prove(db, key)
+    #RDB.bintree_root_verify(proof, "bic:epoch:segment_vr_hash", "7")
+    #RDB.bintree_
+    #
   end
 end

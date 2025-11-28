@@ -20,7 +20,7 @@ use std::sync::{Mutex};
 
 use vecpak_ex;
 
-use crate::consensus::consensus_muts;
+use crate::consensus::{consensus_kv, consensus_muts};
 
 
 pub struct DbResource {
@@ -842,9 +842,9 @@ fn term_to_proof(term: Term) -> Result<crate::consensus::bintree::Proof, Error> 
 }
 
 #[rustler::nif]
-fn bintree_root_verify<'a>(env: Env<'a>, proof_ex: Term<'a>, key: Binary<'a>, value: Binary<'a>) -> Term<'a> {
+fn bintree_root_verify<'a>(env: Env<'a>, proof_ex: Term<'a>, namespace: Option<Binary<'a>>, key: Binary<'a>, value: Binary<'a>) -> Term<'a> {
     let proof = term_to_proof(proof_ex).unwrap();
-    let result = crate::consensus::bintree::Hubt::verify(&proof, key.to_vec(), value.to_vec());
+    let result = crate::consensus::bintree::Hubt::verify(&proof, namespace.as_ref().map(|v| v.as_slice()), key.to_vec(), value.to_vec());
     match result {
         crate::consensus::bintree::VerifyStatus::Invalid => (atoms::invalid()).encode(env),
         crate::consensus::bintree::VerifyStatus::Included => (atoms::included()).encode(env),
@@ -856,24 +856,19 @@ fn bintree_root_verify<'a>(env: Env<'a>, proof_ex: Term<'a>, key: Binary<'a>, va
 //rocksdb proof
 #[rustler::nif]
 fn bintree_contractstate_root_prove<'a>(env: Env<'a>, db: ResourceArc<DbResource>, key: Binary<'a>) -> Term<'a> {
-    let cf_handle = db.db.cf_handle("contractstate").unwrap();
+    let cf_handle = db.db.cf_handle("contractstate_tree").unwrap();
     let mut iter = db.db.raw_iterator_cf(&cf_handle);
 
-    let namespace = if key.to_vec().starts_with(b"account:") {
-        Some(&key[0..56])
-    } else if key.to_vec().starts_with(b"coin") {
-        Some(&b"coin"[..])
-    } else if key.to_vec().starts_with(b"bic") {
-        Some(&b"bic"[..])
-    } else {
-        None
-    };
-
+    let namespace_data = consensus_kv::contractstate_namespace(&key);
+    let namespace = namespace_data.as_deref();
     let proof = crate::consensus::bintree_rdb_prove::RocksHubtProveViaIterator::prove(
         &mut iter,
         namespace,
         key.as_slice(),
     );
+
+    let result = crate::consensus::bintree::Hubt::verify(&proof, namespace, key.as_slice().to_vec(), b"8".to_vec());
+    println!("{:?}", result);
 
     let nodes_list: Vec<Term> = proof.nodes.iter().map(|node| {
         let mut map = Term::map_new(env);

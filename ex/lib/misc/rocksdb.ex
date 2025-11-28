@@ -214,6 +214,9 @@ defmodule RocksDB do
       d = RocksDB.dump(cf.contractstate)
       dd = inspect d, limit: 1111111111111111111, pretty: true
       File.write! "/tmp/amastate", dd
+      d = RocksDB.dump(cf.contractstate_tree)
+      dd = inspect d, limit: 1111111111111111111, pretty: true
+      File.write! "/tmp/amastate_tree", dd
     end
 
     def dump(cf) do

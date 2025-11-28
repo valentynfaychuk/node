@@ -80,6 +80,7 @@ defmodule TX do
       if !is_binary(action[:contract]), do: throw %{error: :contract_must_be_binary}
       if !is_binary(action[:function]), do: throw %{error: :function_must_be_binary}
       if !is_list(action[:args]), do: throw %{error: :args_must_be_list}
+      if length(action.args) > 16, do: throw %{error: :args_length_cannot_exceed_16}
       Enum.each(action.args, fn(arg)->
         if !is_binary(arg), do: throw(%{error: :arg_must_be_binary})
       end)

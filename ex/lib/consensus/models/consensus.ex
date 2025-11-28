@@ -19,6 +19,11 @@ defmodule Consensus do
           mask_set_size: 99
         }
       }
+
+      entry_hash
+      root_blocks
+      root_contractstate
+      root_receipts
     """
 
     def validate_vs_chain(c) do

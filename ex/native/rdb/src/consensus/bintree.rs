@@ -11,6 +11,26 @@ const ZERO_HASH: Hash = [0u8; 32];
 // STRUCTS
 // ============================================================================
 
+/// The Universal Proof Struct.
+///
+/// - If `path` == sha256(key) and `hash` == sha256(key, value): It's an Inclusion Proof.
+/// - If `path` == sha256(key) and `hash` != sha256(key, value): It's a Mismatch Proof.
+/// - If `path` != sha256(key): It's a Non-Existence Proof (pointing to the closest ancestor).
+#[derive(Debug, Clone)]
+pub struct Proof {
+    pub root: Hash,
+    pub nodes: Vec<ProofNode>,
+    pub path: Path, // The path of the leaf node actually found in the tree
+    pub hash: Hash, // The hash of the leaf node actually found in the tree
+}
+
+/// A simplified proof node without length.
+#[derive(Debug, Clone)]
+pub struct ProofNode {
+    pub hash: Hash,
+    pub direction: u8
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub struct NodeKey {
     pub path: Path,
@@ -37,26 +57,6 @@ impl Ord for NodeKey {
 pub enum Op {
     Insert(Vec<u8>, Vec<u8>),
     Delete(Vec<u8>),
-}
-
-/// A simplified proof node without length.
-#[derive(Debug, Clone)]
-pub struct ProofNode {
-    pub hash: Hash,
-    pub direction: u8
-}
-
-/// The Universal Proof Struct.
-///
-/// - If `path` == sha256(key) and `hash` == sha256(key, value): It's an Inclusion Proof.
-/// - If `path` == sha256(key) and `hash` != sha256(key, value): It's a Mismatch Proof.
-/// - If `path` != sha256(key): It's a Non-Existence Proof (pointing to the closest ancestor).
-#[derive(Debug, Clone)]
-pub struct Proof {
-    pub root: Hash,
-    pub nodes: Vec<ProofNode>,
-    pub path: Path, // The path of the leaf node actually found in the tree
-    pub hash: Hash, // The hash of the leaf node actually found in the tree
 }
 
 #[derive(Debug, PartialEq)]
@@ -387,8 +387,8 @@ impl Hubt {
     // ========================================================================
 
     /// Verifies the proof and determines the relationship between the Key, Value, and the Tree.
-    pub fn verify(proof: &Proof, k: Vec<u8>, v: Vec<u8>) -> VerifyStatus {
-        let target_path = sha256(&k);
+    pub fn verify(proof: &Proof, ns: Option<&[u8]>, k: Vec<u8>, v: Vec<u8>) -> VerifyStatus {
+        let target_path = compute_namespace_path(ns, &k);
         let claimed_leaf_hash = concat_and_hash(&k, &v);
 
         // 1. Basic Integrity Check: Does the proof path/hash actually hash up to the Root?

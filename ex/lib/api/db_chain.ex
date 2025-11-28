@@ -114,6 +114,11 @@ defmodule DB.Chain do
     validator_for_height(height(db_opts) + 1, db_opts)
   end
 
+  def validators_removed(epoch, db_opts \\ %{}) do
+    vstart = validators_for_height(epoch * 100_000, db_opts)
+    vend = validators_for_height(epoch * 100_000 + 99_999, db_opts)
+    vstart -- vend
+  end
 
   #Rewind
   def rewind(target_hash) do
@@ -158,16 +163,20 @@ defmodule DB.Chain do
     Enum.reverse(m_rev)
     |> Enum.each(fn(mut)->
       op = :"#{mut.op}"
+      cf_table = case mut.table do
+        "contractstate" -> cf.contractstate
+        "contractstate_tree" -> cf.contractstate_tree
+      end
       case op do
         :put ->
-          RocksDB.put(mut.key, mut.value, %{rtx: db_opts.rtx, cf: cf.contractstate})
+          RocksDB.put(mut.key, mut.value, %{rtx: db_opts.rtx, cf: cf_table})
         :delete ->
-          RocksDB.delete(mut.key, %{rtx: db_opts.rtx, cf: cf.contractstate})
+          RocksDB.delete(mut.key, %{rtx: db_opts.rtx, cf: cf_table})
         :clear_bit ->
-          old_value = RocksDB.get(mut.key, %{rtx: db_opts.rtx, cf: cf.contractstate})
+          old_value = RocksDB.get(mut.key, %{rtx: db_opts.rtx, cf: cf_table})
           << left::size(mut.value), _old_bit::size(1), right::bitstring >> = old_value
           new_value = << left::size(mut.value), 0::size(1), right::bitstring >>
-          RocksDB.put(mut.key, new_value, %{rtx: db_opts.rtx, cf: cf.contractstate})
+          RocksDB.put(mut.key, new_value, %{rtx: db_opts.rtx, cf: cf_table})
       end
     end)
   end

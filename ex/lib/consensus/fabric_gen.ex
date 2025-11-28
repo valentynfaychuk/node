@@ -314,22 +314,26 @@ defmodule FabricGen do
       txus = Enum.map(entry.txs, & Map.put(&1, :tx_cost, TX.exec_cost(0, &1)))
       {rtx, m, m_rev, l} = RDB.apply_entry(db, next_entry_trimmed_map,
         Application.fetch_env!(:ama, :trainer_pk), Application.fetch_env!(:ama, :trainer_sk), txus,
-        Application.fetch_env!(:ama, :testnet), Map.keys(Application.fetch_env!(:ama, :keys_by_pk))
+        !!Application.fetch_env!(:ama, :testnet), Map.keys(Application.fetch_env!(:ama, :keys_by_pk))
       )
       rebuild_m_fn = fn(m)->
         Enum.map(m, fn(inner)->
           op = :"#{IO.iodata_to_binary(inner[~c"op"])}"
           case op do
-            :set_bit -> %{op: op, key: IO.iodata_to_binary(inner[~c"key"]), value: :erlang.binary_to_integer("#{inner[~c"value"]}"), bloomsize: :erlang.binary_to_integer("#{inner[~c"bloomsize"]}")}
-            :clear_bit -> %{op: op, key: IO.iodata_to_binary(inner[~c"key"]), value: :erlang.binary_to_integer("#{inner[~c"value"]}")}
-            :delete -> %{op: op, key: IO.iodata_to_binary(inner[~c"key"])}
-            :put -> %{op: op, key: IO.iodata_to_binary(inner[~c"key"]), value: IO.iodata_to_binary(inner[~c"value"])}
+            :set_bit -> %{op: op, table: IO.iodata_to_binary(inner[~c"table"]), key: IO.iodata_to_binary(inner[~c"key"]), value: :erlang.binary_to_integer("#{inner[~c"value"]}"), bloomsize: :erlang.binary_to_integer("#{inner[~c"bloomsize"]}")}
+            :clear_bit -> %{op: op, table: IO.iodata_to_binary(inner[~c"table"]), key: IO.iodata_to_binary(inner[~c"key"]), value: :erlang.binary_to_integer("#{inner[~c"value"]}")}
+            :delete -> %{op: op, table: IO.iodata_to_binary(inner[~c"table"]), key: IO.iodata_to_binary(inner[~c"key"])}
+            :put -> %{op: op, table: IO.iodata_to_binary(inner[~c"table"]), key: IO.iodata_to_binary(inner[~c"key"]), value: IO.iodata_to_binary(inner[~c"value"])}
           end
         end)
       end
       rebuild_l_fn = fn(m)->
         Enum.map(m, fn(inner)->
+          if entry.header.height >= 416_00000 do
+            %{error: IO.iodata_to_binary(inner["error"]), gas_used: IO.iodata_to_binary(inner["gas_used"])}
+          else
           %{error: :"#{IO.iodata_to_binary(inner["error"])}"}
+          end
         end)
       end
       m = rebuild_m_fn.(m)
@@ -345,7 +349,7 @@ defmodule FabricGen do
       #m = m ++ m_exit
       #m_rev = m_rev ++ m_exit_rev
 
-      mutations_hash = ConsensusKV.hash_mutations(l ++ m)
+      mutations_hash = ConsensusKV.hash_mutations(next_entry.header.height, l ++ m)
 
       RocksDB.put("temporal_tip", next_entry.hash, %{rtx: rtx, cf: cf.sysconf})
 

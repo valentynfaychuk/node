@@ -1,7 +1,7 @@
 use crate::consensus::{self, consensus_apply};
 use consensus_apply::ApplyEnv;
 use crate::consensus::consensus_kv::{kv_put, kv_delete};
-use crate::consensus::bintree::{compute_namespace_path};
+use crate::consensus::bintree::{compute_namespace_path, Proof, ProofNode, NodeKey, VerifyStatus};
 
 use sha2::{Digest, Sha256};
 use rayon::prelude::*;
@@ -18,55 +18,10 @@ pub type Hash = [u8; 32];
 pub type Path = [u8; 32];
 const ZERO_HASH: Hash = [0u8; 32];
 
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
-pub struct NodeKey {
-    pub path: Path,
-    pub len: u16,
-}
-
-impl PartialOrd for NodeKey {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for NodeKey {
-    fn cmp(&self, other: &Self) -> Ordering {
-        // Big Endian Sort: Path first, then Length
-        match self.path.cmp(&other.path) {
-            Ordering::Equal => self.len.cmp(&other.len),
-            other => other,
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub enum Op {
     Insert(Option<Vec<u8>>, Vec<u8>, Vec<u8>),
     Delete(Option<Vec<u8>>, Vec<u8>),
-}
-
-#[derive(Debug, PartialEq)]
-pub enum VerifyStatus {
-    Included,       // Key exists and Value matches
-    Mismatch,       // Key exists but Value is different
-    NonExistence,   // Key does not exist
-    Invalid,        // The proof itself is mathematically invalid
-}
-
-// MATCHING THE UNIFIED PROOF STRUCTURE
-#[derive(Debug, Clone)]
-pub struct ProofNode {
-    pub hash: Hash,
-    pub direction: u8,
-}
-
-#[derive(Debug, Clone)]
-pub struct Proof {
-    pub root: Hash,
-    pub nodes: Vec<ProofNode>,
-    pub path: Path, // The path of the leaf node actually found in the tree
-    pub hash: Hash, // The hash of the leaf node actually found in the tree
 }
 
 // ============================================================================

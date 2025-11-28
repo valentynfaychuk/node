@@ -1,56 +1,17 @@
 use rust_rocksdb::{DBRawIteratorWithThreadMode, TransactionDB, MultiThreaded};
-use sha2::{Digest, Sha256};
 use std::cmp::{min, Ordering};
 use std::convert::TryInto;
 
-use crate::consensus::bintree::{compute_namespace_path};
+use crate::consensus::bintree::{compute_namespace_path, Proof, ProofNode, NodeKey};
 
 // ============================================================================
 // TYPES & CONSTANTS
 // ============================================================================
-
-// DEFINE THE SPECIFIC ITERATOR TYPE FOR TransactionDB<MultiThreaded>
-// This fixes the "mismatched types" error.
 pub type Iter<'a> = DBRawIteratorWithThreadMode<'a, TransactionDB<MultiThreaded>>;
 
 pub type Hash = [u8; 32];
 pub type Path = [u8; 32];
 pub const ZERO_HASH: Hash = [0u8; 32];
-
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
-pub struct NodeKey {
-    pub path: Path,
-    pub len: u16,
-}
-
-impl PartialOrd for NodeKey {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for NodeKey {
-    fn cmp(&self, other: &Self) -> Ordering {
-        match self.path.cmp(&other.path) {
-            Ordering::Equal => self.len.cmp(&other.len),
-            other => other,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct ProofNode {
-    pub hash: Hash,
-    pub direction: u8,
-}
-
-#[derive(Debug, Clone)]
-pub struct Proof {
-    pub root: Hash,
-    pub nodes: Vec<ProofNode>,
-    pub path: Path,
-    pub hash: Hash,
-}
 
 // ============================================================================
 // BIT & HASH HELPERS
@@ -117,21 +78,13 @@ fn prefix_match_be(target: &Path, path: &Path, len: u16) -> bool {
     true
 }
 
-#[inline]
-fn sha256(data: &[u8]) -> Hash {
-    let mut hasher = Sha256::new();
-    hasher.update(data);
-    hasher.finalize().into()
-}
-
 // ============================================================================
 // ROCKSDB SERIALIZATION HELPERS
 // ============================================================================
 
 #[inline]
 fn serialize_key(key: &NodeKey) -> Vec<u8> {
-    let mut v = Vec::with_capacity(39);
-    v.extend_from_slice(b"tree:");
+    let mut v = Vec::with_capacity(34);
     v.extend_from_slice(&key.path);
     v.extend_from_slice(&key.len.to_be_bytes());
     v
@@ -139,7 +92,6 @@ fn serialize_key(key: &NodeKey) -> Vec<u8> {
 
 #[inline]
 fn deserialize_key(data: &[u8]) -> NodeKey {
-    let data = &data[5..];
     let mut path = [0u8; 32];
     path.copy_from_slice(&data[0..32]);
     let len = u16::from_be_bytes([data[32], data[33]]);
@@ -149,19 +101,14 @@ fn deserialize_key(data: &[u8]) -> NodeKey {
 // ============================================================================
 // PROVER MODULE
 // ============================================================================
-
 pub struct RocksHubtProveViaIterator;
-
 impl RocksHubtProveViaIterator {
-
-    // CHANGED: iter type from DBRawIterator to Iter (the alias for TransactionDB iterator)
     pub fn prove(
         iter: &mut Iter,
         ns: Option<&[u8]>,
         k: &[u8]
     ) -> Proof {
         let target_path = compute_namespace_path(ns, k);
-
         let root_hash = Self::get_root(iter);
 
         let (found_key, found_hash) = match Self::find_longest_prefix_node(iter, &target_path) {
