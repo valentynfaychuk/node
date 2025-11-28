@@ -330,7 +330,7 @@ defmodule FabricGen do
       rebuild_l_fn = fn(m)->
         Enum.map(m, fn(inner)->
           if entry.header.height >= 416_00000 do
-            %{error: IO.iodata_to_binary(inner["error"]), gas_used: IO.iodata_to_binary(inner["gas_used"])}
+            %{error: IO.iodata_to_binary(inner["error"]), exec_used: IO.iodata_to_binary(inner["exec_used"])}
           else
           %{error: :"#{IO.iodata_to_binary(inner["error"])}"}
           end
