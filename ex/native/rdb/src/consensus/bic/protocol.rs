@@ -8,7 +8,7 @@ pub const AMA_1_DOLLAR: i128 = 1_000_000_000;
 pub const AMA_10_CENT: i128 =    100_000_000;
 pub const AMA_1_CENT: i128 =      10_000_000;
 
-pub const RESERVE_AMA_PER_TX: i128 = AMA_10_CENT; //minimum balance required per account per TX in a entry
+pub const RESERVE_AMA_PER_TX: i128 = AMA_10_CENT; //reserved for exec balance (refunded at end of TX execution)
 
 pub const COST_PER_BYTE_HISTORICAL: i128 = 6_666; //cost to increase the ledger size
 pub const COST_PER_BYTE_STATE: i128 = 16_666; //cost to grow the contract state

@@ -12,7 +12,6 @@ pub fn exec_budget_decr(env: &mut ApplyEnv, amount: i128) {
     }
 
     if env.caller_env.entry_height >= protocol::FORKHEIGHT && env.exec_track {
-        println!("cost {}", amount);
         match env.exec_left.checked_sub(amount) {
             Some(new_budget) => {
                 if new_budget < 0 {
