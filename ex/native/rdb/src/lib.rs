@@ -20,6 +20,7 @@ use std::sync::{Mutex};
 
 use vecpak_ex;
 
+use crate::consensus::bic::protocol;
 use crate::consensus::{consensus_kv, consensus_muts};
 
 
@@ -900,6 +901,34 @@ fn bintree_contractstate_root_prove<'a>(env: Env<'a>, db: ResourceArc<DbResource
     proof_map = proof_map.map_put(atoms::nodes(), nodes_list.encode(env)).ok().unwrap();
 
     (proof_map).encode(env)
+}
+
+#[rustler::nif]
+fn protocol_constants<'a>(env: Env<'a>) -> Term<'a> {
+    let mut map = Term::map_new(env);
+
+
+    map = map.map_put(atoms::forkheight(), protocol::FORKHEIGHT).ok().unwrap();
+
+    map = map.map_put(atoms::ama_1_dollar(), protocol::AMA_1_DOLLAR).ok().unwrap();
+    map = map.map_put(atoms::ama_10_cent(), protocol::AMA_10_CENT).ok().unwrap();
+    map = map.map_put(atoms::ama_1_cent(), protocol::AMA_1_CENT).ok().unwrap();
+
+    map = map.map_put(atoms::reserve_ama_per_tx(), protocol::RESERVE_AMA_PER_TX).ok().unwrap();
+
+    map = map.map_put(atoms::cost_per_byte_historical(), protocol::COST_PER_BYTE_HISTORICAL).ok().unwrap();
+    map = map.map_put(atoms::cost_per_byte_state(), protocol::COST_PER_BYTE_STATE).ok().unwrap();
+    map = map.map_put(atoms::cost_per_op_wasm(), protocol::COST_PER_OP_WASM).ok().unwrap();
+
+    map = map.map_put(atoms::cost_per_db_read_base(), protocol::COST_PER_DB_READ_BASE).ok().unwrap();
+    map = map.map_put(atoms::cost_per_db_read_byte(), protocol::COST_PER_DB_READ_BYTE).ok().unwrap();
+    map = map.map_put(atoms::cost_per_db_write_base(), protocol::COST_PER_DB_WRITE_BASE).ok().unwrap();
+    map = map.map_put(atoms::cost_per_db_write_byte(), protocol::COST_PER_DB_WRITE_BYTE).ok().unwrap();
+
+    map = map.map_put(atoms::cost_per_sol(), protocol::COST_PER_SOL).ok().unwrap();
+    map = map.map_put(atoms::cost_per_new_leaf_merkle(), protocol::COST_PER_NEW_LEAF_MERKLE).ok().unwrap();
+
+    (map).encode(env)
 }
 
 rustler::init!("Elixir.RDB", load = on_load);

@@ -193,7 +193,7 @@ defmodule EntryGenesis do
         RocksDB.put("bic:epoch:segment_vr_hash", Blake3.hash(vr), %{rtx: rtx, cf: cf.contractstate})
 
         Enum.each(Application.fetch_env!(:ama, :keys), fn(key)->
-          RocksDB.put("account:#{key.pk}:balance:AMA", "1001000000000", %{rtx: rtx, cf: cf.contractstate})
+          RocksDB.put("account:#{key.pk}:balance:AMA", "10300300123456789", %{rtx: rtx, cf: cf.contractstate})
           RocksDB.put("account:#{key.pk}:attribute:pop", key.pop, %{rtx: rtx, cf: cf.contractstate})
         end)
         rtx = RocksDB.transaction_commit(rtx)

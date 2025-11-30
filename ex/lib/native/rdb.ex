@@ -54,4 +54,44 @@ defmodule RDB do
   def bintree_root_prove(_propslist, _key), do: :erlang.nif_error(:nif_not_loaded)
   def bintree_root_verify(_proof, _ns, _key, _value), do: :erlang.nif_error(:nif_not_loaded)
   def bintree_contractstate_root_prove(_db, _key), do: :erlang.nif_error(:nif_not_loaded)
+
+  def protocol_constants(), do: :erlang.nif_error(:nif_not_loaded)
+end
+
+defmodule RDBProtocol do
+  def reserve_ama_per_tx() do
+    const = :persistent_term.get({ProtocolConstant, :reserve_ama_per_tx}, nil)
+    if const do const else
+      const = RDB.protocol_constants().reserve_ama_per_tx
+      :persistent_term.put({ProtocolConstant, :reserve_ama_per_tx}, const)
+      const
+    end
+  end
+
+  def cost_per_byte_historical() do
+    const = :persistent_term.get({ProtocolConstant, :cost_per_byte_historical}, nil)
+    if const do const else
+      const = RDB.protocol_constants().cost_per_byte_historical
+      :persistent_term.put({ProtocolConstant, :cost_per_byte_historical}, const)
+      const
+    end
+  end
+
+  def ama_1_cent() do
+    const = :persistent_term.get({ProtocolConstant, :ama_1_cent}, nil)
+    if const do const else
+      const = RDB.protocol_constants().ama_1_cent
+      :persistent_term.put({ProtocolConstant, :ama_1_cent}, const)
+      const
+    end
+  end
+
+  def forkheight() do
+    const = :persistent_term.get({ProtocolConstant, :forkheight}, nil)
+    if const do const else
+      const = RDB.protocol_constants().forkheight
+      :persistent_term.put({ProtocolConstant, :forkheight}, const)
+      const
+    end
+  end
 end

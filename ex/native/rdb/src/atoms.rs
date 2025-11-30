@@ -53,6 +53,7 @@ rustler::atoms! {
     missing_stem_other_stem,
 
     tx_cost,
+    tx_historical_cost,
     tx_size,
 
     direction,
@@ -64,4 +65,24 @@ rustler::atoms! {
     included,
     mismatch,
     nonexistance,
+
+    forkheight,
+
+    ama_1_dollar,
+    ama_10_cent,
+    ama_1_cent,
+
+    reserve_ama_per_tx,
+
+    cost_per_byte_historical,
+    cost_per_byte_state,
+    cost_per_op_wasm,
+
+    cost_per_db_read_base,
+    cost_per_db_read_byte,
+    cost_per_db_write_base,
+    cost_per_db_write_byte,
+
+    cost_per_sol,
+    cost_per_new_leaf_merkle,
 }

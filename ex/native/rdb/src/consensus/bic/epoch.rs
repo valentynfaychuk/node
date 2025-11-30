@@ -259,9 +259,10 @@ pub fn call_slash_trainer(env: &mut crate::consensus::consensus_apply::ApplyEnv,
     let mask = args[4].to_vec();
 
     if epoch != env.caller_env.entry_epoch { panic_any("invalid_epoch") }
-
+println!("a{}", env.exec_left);
     let mut trainers = kv_get_trainers(env, env.caller_env.entry_height);
     if !trainers.iter().any(|v| v.as_slice() == malicious_pk) { panic_any("invalid_trainer_pk") }
+    println!("b{}", env.exec_left);
 
     let signers = consensus::aggsig::unmask_trainers(&trainers, &mask, mask_size as usize);
     let consensus_pct = signers.len() as f64 / trainers.len() as f64;
@@ -278,7 +279,12 @@ pub fn call_slash_trainer(env: &mut crate::consensus::consensus_apply::ApplyEnv,
     trainers.retain(|pk| pk.as_slice() != malicious_pk);
     let term_trainers = consensus::bic::list_of_binaries_to_vecpak(trainers);
     let height_next = format!("{:012}", env.caller_env.entry_height.saturating_add(1)).into_bytes();
+    println!("c{}", env.exec_left);
+    println!("zz{}", term_trainers.as_slice().len());
+
     kv_put(env, &bcat(&[b"bic:epoch:validators:height:", &height_next]), term_trainers.as_slice());
+    println!("d{}", env.exec_left);
+
 }
 
 pub fn next(env: &mut ApplyEnv) {

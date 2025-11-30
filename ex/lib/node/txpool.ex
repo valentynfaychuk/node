@@ -51,6 +51,7 @@ defmodule TXPool do
 
     def validate_tx(txu, args \\ %{}) do
       chain_epoch = Map.get_lazy(args, :epoch, fn()-> DB.Chain.epoch() end)
+      chain_height = Map.get_lazy(args, :height, fn()-> DB.Chain.height() end)
       chain_segment_vr_hash = Map.get_lazy(args, :segment_vr_hash, fn()-> DB.Chain.segment_vr_hash() end)
       chain_diff_bits = Map.get_lazy(args, :diff_bits, fn()-> DB.Chain.diff_bits() end)
       batch_state = Map.get_lazy(args, :batch_state, fn()-> %{} end)
@@ -62,8 +63,13 @@ defmodule TXPool do
         batch_state = Map.put(batch_state, {:chain_nonce, txu.tx.signer}, txu.tx.nonce)
 
         balance = Map.get_lazy(batch_state, {:balance, txu.tx.signer}, fn()-> DB.Chain.balance(txu.tx.signer) end)
-        balance = balance - TX.exec_cost(chain_epoch, txu)
-        balance = balance - BIC.Coin.to_cents(1)
+        balance = if chain_height >= RDBProtocol.forkheight() do
+          balance = balance - (RDBProtocol.reserve_ama_per_tx() * 2)
+          balance = balance - TX.historical_cost(txu)
+        else
+          balance = balance - TX.exec_cost(chain_epoch, txu)
+          balance = balance - BIC.Coin.to_cents(1)
+        end
         if balance < 0, do: throw(%{error: :not_enough_tx_exec_balance, key: {txu.tx.nonce, txu.hash}})
         batch_state = Map.put(batch_state, {:balance, txu.tx.signer}, balance)
 
@@ -84,6 +90,7 @@ defmodule TXPool do
       end
     end
 
+    #TODO: fix this, we dont need to validate VS chain here
     def event_tx_validate(txu) when is_map(txu) do event_tx_validate([txu]) end
     def event_tx_validate(txus) when is_list(txus) do
       chain_epoch = DB.Chain.epoch()

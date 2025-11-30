@@ -311,7 +311,8 @@ defmodule FabricGen do
           entry_epoch: div(entry.header.height, 100_000),
       }
 
-      txus = Enum.map(entry.txs, & Map.merge(&1, %{tx_cost: TX.exec_cost(0, &1), tx_size: byte_size(RDB.vecpak_encode(&1))}))
+      txus = Enum.map(entry.txs, & Map.merge(&1, %{tx_cost: TX.exec_cost(0, &1), tx_size: byte_size(RDB.vecpak_encode(&1)),
+        tx_historical_cost: TX.historical_cost(&1) }))
       {rtx, m, m_rev, l, root_receipts, root_contractstate} = RDB.apply_entry(db, next_entry_trimmed_map,
         Application.fetch_env!(:ama, :trainer_pk), Application.fetch_env!(:ama, :trainer_sk), txus,
         !!Application.fetch_env!(:ama, :testnet), Map.keys(Application.fetch_env!(:ama, :keys_by_pk))

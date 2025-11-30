@@ -55,15 +55,6 @@ defmodule Entry do
 
     @fields [:header, :hash, :signature, :txs, :mask, :mask_size, :mask_set_size]
     @fields_header [:height, :prev_hash, :slot, :prev_slot, :signer, :dr, :vr, :root_tx, :root_validator]
-    @forkheight 412_00009
-
-    def forkheight() do
-      @forkheight
-    end
-
-    def forkheight2() do
-      @forkheight+@forkheight+111000
-    end
 
     def unpack_from_db(nil), do: nil
     def unpack_from_db(entry_packed) do

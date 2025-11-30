@@ -152,6 +152,14 @@ defmodule TX do
       BIC.Coin.to_cents( 1 + div(bytes, 1024) * 1 )
    end
 
+   def historical_cost(txu) do
+     min(
+       RDBProtocol.ama_1_cent(),
+       max(
+         RDBProtocol.ama_1_cent(),
+         RDBProtocol.cost_per_byte_historical() * byte_size(RDB.vecpak_encode(txu.tx))))
+   end
+
    def action(%{tx: %{actions: [action|_]}}), do: action
    def action(%{tx: %{action: action}}), do: action
 end

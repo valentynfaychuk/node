@@ -6,43 +6,67 @@ use consensus_apply::ApplyEnv;
 use crate::consensus::consensus_muts;
 use consensus_muts::Mutation;
 
+pub fn exec_budget_decr(env: &mut ApplyEnv, amount: i128) {
+    if amount < 0 {
+         panic_any("invalid_exec_amount_negative");
+    }
+
+    if env.caller_env.entry_height >= protocol::FORKHEIGHT && env.exec_track {
+        println!("cost {}", amount);
+        match env.exec_left.checked_sub(amount) {
+            Some(new_budget) => {
+                if new_budget < 0 {
+                    env.exec_left = 0;
+                    panic_any("insufficient_exec_budget");
+                }
+                env.exec_left = new_budget;
+            },
+            None => panic_any("critical_exec_underflow")
+        }
+    }
+}
+
 pub fn kv_put(env: &mut ApplyEnv, key: &[u8], value: &[u8]) {
-    env.exec_accum += protocol::COST_PER_DB_WRITE_BASE + (protocol::COST_PER_DB_WRITE_BYTE * (key.len() + value.len()) as i128);
+    exec_budget_decr(env, protocol::COST_PER_DB_WRITE_BASE + protocol::COST_PER_DB_WRITE_BYTE * (key.len() + value.len()) as i128);
 
     let old_value = env.txn.get_cf(&env.cf, key).unwrap();
-    env.txn.put_cf(&env.cf, key, value).unwrap_or_else(|_| panic_any("kv_put_failed"));
-
-    env.muts.push(Mutation::Put { op: b"put".to_vec(), table: env.cf_name.to_vec(), key: key.to_vec(), value: value.to_vec() });
     match old_value {
         None => {
-            env.exec_accum += protocol::COST_PER_BYTE_STATE * protocol::COST_PER_NEW_LEAF_MERKLE;
-            env.exec_accum += protocol::COST_PER_BYTE_STATE * ((key.len() + value.len()) as i128);
-            env.muts_rev.push(Mutation::Delete { op: b"delete".to_vec(), table: env.cf_name.to_vec(), key: key.to_vec() })
+            exec_budget_decr(env, protocol::COST_PER_NEW_LEAF_MERKLE);
+            exec_budget_decr(env, protocol::COST_PER_BYTE_STATE * (key.len() + value.len()) as i128);
+            env.muts_rev.push(Mutation::Delete { op: b"delete".to_vec(), table: env.cf_name.to_vec(), key: key.to_vec() });
+
+            env.muts.push(Mutation::Put { op: b"put".to_vec(), table: env.cf_name.to_vec(), key: key.to_vec(), value: value.to_vec() });
+            env.txn.put_cf(&env.cf, key, value).unwrap_or_else(|_| panic_any("kv_put_failed"))
         },
         Some(old) => {
             //TODO: consider gas refund on delete? gas-token attack?
-            env.exec_accum += protocol::COST_PER_BYTE_STATE * (value.len().abs_diff(old.len()) as i128);
-            env.muts_rev.push(Mutation::Put { op: b"put".to_vec(), table: env.cf_name.to_vec(), key: key.to_vec(), value: old.to_vec() })
+            exec_budget_decr(env, protocol::COST_PER_BYTE_STATE * value.len().saturating_sub(old.len()) as i128);
+            env.muts_rev.push(Mutation::Put { op: b"put".to_vec(), table: env.cf_name.to_vec(), key: key.to_vec(), value: old.to_vec() });
+
+            env.muts.push(Mutation::Put { op: b"put".to_vec(), table: env.cf_name.to_vec(), key: key.to_vec(), value: value.to_vec() });
+            env.txn.put_cf(&env.cf, key, value).unwrap_or_else(|_| panic_any("kv_put_failed"))
         }
     }
 }
 
 pub fn kv_increment(env: &mut ApplyEnv, key: &[u8], value: i128) -> i128 {
     let value_str = value.to_string().into_bytes();
-    env.exec_accum += protocol::COST_PER_DB_WRITE_BASE + (protocol::COST_PER_DB_WRITE_BYTE * (key.len() + value_str.len()) as i128);
+    exec_budget_decr(env, protocol::COST_PER_DB_WRITE_BASE + protocol::COST_PER_DB_WRITE_BYTE * (key.len() + value_str.len()) as i128);
 
     match env.txn.get_cf(&env.cf, key).unwrap() {
         None => {
-            env.exec_accum += protocol::COST_PER_BYTE_STATE * protocol::COST_PER_NEW_LEAF_MERKLE;
-            env.exec_accum += protocol::COST_PER_BYTE_STATE * (value_str.len() as i128);
+            exec_budget_decr(env, protocol::COST_PER_NEW_LEAF_MERKLE);
+            exec_budget_decr(env, protocol::COST_PER_BYTE_STATE * (key.len() + value_str.len()) as i128);
             env.muts.push(Mutation::Put { op: b"put".to_vec(), table: env.cf_name.to_vec(), key: key.to_vec(), value: value.to_string().into_bytes() });
             env.muts_rev.push(Mutation::Delete { op: b"delete".to_vec(), table: env.cf_name.to_vec(), key: key.to_vec() });
             env.txn.put_cf(&env.cf, key, value_str).unwrap_or_else(|_| panic_any("kv_put_failed"));
             value
         },
         Some(old) => {
-            env.exec_accum += protocol::COST_PER_BYTE_STATE * (value_str.len().abs_diff(old.len()) as i128);
             let new_value: i128 = atoi::atoi::<i128>(&old).ok_or("invalid_integer").unwrap() + value;
+            let new_value_str = new_value.to_string().into_bytes();
+            exec_budget_decr(env, protocol::COST_PER_BYTE_STATE * new_value_str.len().saturating_sub(old.len()) as i128);
             env.muts.push(Mutation::Put { op: b"put".to_vec(), table: env.cf_name.to_vec(), key: key.to_vec(), value: new_value.to_string().into_bytes() });
             env.muts_rev.push(Mutation::Put { op: b"put".to_vec(), table: env.cf_name.to_vec(), key: key.to_vec(), value: old });
             env.txn.put_cf(&env.cf, key, new_value.to_string().into_bytes()).unwrap_or_else(|_| panic_any("kv_put_failed"));
@@ -52,7 +76,7 @@ pub fn kv_increment(env: &mut ApplyEnv, key: &[u8], value: i128) -> i128 {
 }
 
 pub fn kv_delete(env: &mut ApplyEnv, key: &[u8]) {
-    env.exec_accum += protocol::COST_PER_DB_WRITE_BASE + (protocol::COST_PER_DB_WRITE_BYTE * (key.len()) as i128);
+    exec_budget_decr(env, protocol::COST_PER_DB_WRITE_BASE + protocol::COST_PER_DB_WRITE_BYTE * (key.len()) as i128);
 
     match env.txn.get_cf(&env.cf, key).unwrap() {
         None => (),
@@ -65,7 +89,7 @@ pub fn kv_delete(env: &mut ApplyEnv, key: &[u8]) {
 }
 
 pub fn kv_set_bit(env: &mut ApplyEnv, key: &[u8], bit_idx: u64) -> bool {
-    env.exec_accum += protocol::COST_PER_DB_WRITE_BASE + (protocol::COST_PER_DB_WRITE_BYTE * (key.len()) as i128);
+    exec_budget_decr(env, protocol::COST_PER_DB_WRITE_BASE + protocol::COST_PER_DB_WRITE_BYTE * (key.len()) as i128);
 
     let (mut old, exists) = match env.txn.get_cf(&env.cf, key).unwrap() {
         None => (vec![0u8; crate::consensus::bic::sol_bloom::PAGE_SIZE as usize], false),
@@ -91,7 +115,7 @@ pub fn kv_set_bit(env: &mut ApplyEnv, key: &[u8], bit_idx: u64) -> bool {
 }
 
 pub fn kv_exists(env: &mut ApplyEnv, key: &[u8]) -> bool {
-    env.exec_accum += protocol::COST_PER_DB_READ_BASE + (protocol::COST_PER_DB_READ_BYTE * (key.len()) as i128);
+    exec_budget_decr(env, protocol::COST_PER_DB_READ_BASE + protocol::COST_PER_DB_READ_BYTE * (key.len()) as i128);
 
     match env.txn.get_cf(&env.cf, key).unwrap() {
         None => false,
@@ -100,13 +124,13 @@ pub fn kv_exists(env: &mut ApplyEnv, key: &[u8]) -> bool {
 }
 
 pub fn kv_get(env: &mut ApplyEnv, key: &[u8]) -> Option<Vec<u8>> {
-    env.exec_accum += protocol::COST_PER_DB_READ_BASE + (protocol::COST_PER_DB_READ_BYTE * (key.len()) as i128);
+    exec_budget_decr(env, protocol::COST_PER_DB_READ_BASE + protocol::COST_PER_DB_READ_BYTE * (key.len()) as i128);
 
     env.txn.get_cf(&env.cf, key).unwrap()
 }
 
 pub fn kv_get_next(env: &mut ApplyEnv, prefix: &[u8], key: &[u8]) -> Option<(Vec<u8>, Vec<u8>)> {
-    env.exec_accum += protocol::COST_PER_DB_READ_BASE + (protocol::COST_PER_DB_READ_BYTE * (prefix.len() + key.len()) as i128);
+    exec_budget_decr(env, protocol::COST_PER_DB_READ_BASE + protocol::COST_PER_DB_READ_BYTE * (prefix.len() + key.len()) as i128);
 
     let seek = [prefix, key].concat();
 
@@ -130,7 +154,7 @@ pub fn kv_get_next(env: &mut ApplyEnv, prefix: &[u8], key: &[u8]) -> Option<(Vec
 }
 
 pub fn kv_get_prev(env: &mut ApplyEnv, prefix: &[u8], key: &[u8]) -> Option<(Vec<u8>, Vec<u8>)> {
-    env.exec_accum += protocol::COST_PER_DB_READ_BASE + (protocol::COST_PER_DB_READ_BYTE * (prefix.len() + key.len()) as i128);
+    exec_budget_decr(env, protocol::COST_PER_DB_READ_BASE + protocol::COST_PER_DB_READ_BYTE * (prefix.len() + key.len()) as i128);
 
     let seek = [prefix, key].concat();
 
@@ -154,7 +178,7 @@ pub fn kv_get_prev(env: &mut ApplyEnv, prefix: &[u8], key: &[u8]) -> Option<(Vec
 }
 
 pub fn kv_get_prev_or_first(env: &mut ApplyEnv, prefix: &[u8], key: &[u8]) -> Option<(Vec<u8>, Vec<u8>)> {
-    env.exec_accum += protocol::COST_PER_DB_READ_BASE + (protocol::COST_PER_DB_READ_BYTE * (prefix.len() + key.len()) as i128);
+    exec_budget_decr(env, protocol::COST_PER_DB_READ_BASE + protocol::COST_PER_DB_READ_BYTE * (prefix.len() + key.len()) as i128);
 
     let seek = [prefix, key].concat();
 

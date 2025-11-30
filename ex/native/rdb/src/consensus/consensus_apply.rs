@@ -81,7 +81,9 @@ pub struct ApplyEnv<'db> {
     pub muts_final_rev: Vec<consensus_muts::Mutation>,
     pub muts: Vec<consensus_muts::Mutation>,
     pub muts_rev: Vec<consensus_muts::Mutation>,
-    pub exec_accum: i128,
+    pub exec_track: bool,
+    pub exec_left: i128,
+    pub exec_max: i128,
     pub result_log: Vec<HashMap<String, String>>,
     pub testnet: bool,
     pub testnet_peddlebikes: Vec<Vec<u8>>,
@@ -122,7 +124,9 @@ pub fn make_apply_env<'db>(db: &'db TransactionDB<MultiThreaded>, txn: Transacti
         muts_final_rev: Vec::new(),
         muts: Vec::new(),
         muts_rev: Vec::new(),
-        exec_accum: 0,
+        exec_track: false,
+        exec_left: 0,
+        exec_max: protocol::AMA_10_CENT,
         result_log: Vec::new(),
         testnet: testnet,
         testnet_peddlebikes: testnet_peddlebikes,
@@ -186,11 +190,9 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
         applyenv.caller_env.account_current = contract.to_vec();
         applyenv.muts = Vec::new();
         applyenv.muts_rev = Vec::new();
-
-        let tx_cost = txu.map_get(crate::atoms::tx_cost()).unwrap().decode::<i128>().unwrap();
-        let tx_size = txu.map_get(crate::atoms::tx_size()).unwrap().decode::<i128>().unwrap();
-        applyenv.exec_accum = tx_size * protocol::COST_PER_BYTE_HISTORICAL;
-        let tx_cost = (tx_cost as u64).to_string();
+        applyenv.exec_track = true;
+        applyenv.exec_left = protocol::AMA_10_CENT;
+        applyenv.exec_max = protocol::AMA_10_CENT;
 
         std::panic::set_hook(Box::new(|_| {}));
         let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -205,13 +207,18 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
                 }
             }
         }));
+        applyenv.exec_track = false;
 
-        println!("-{} {} {}", i, tx_cost, applyenv.exec_accum);
+        let tx_cost = txu.map_get(crate::atoms::tx_cost()).unwrap().decode::<i128>().unwrap();
+        let tx_historical_cost = txu.map_get(crate::atoms::tx_historical_cost()).unwrap().decode::<i128>().unwrap();
+        let exec_cost_total = ((tx_historical_cost + (applyenv.exec_max - applyenv.exec_left)) as u64).to_string();
+        let tx_cost = (tx_cost as u64).to_string();
+
         match res {
             Ok(_) => {
-                //apply gas
                 applyenv.muts_final.append(&mut applyenv.muts);
                 applyenv.muts_final_rev.append(&mut applyenv.muts_rev);
+                refund_exec_deposit(&mut applyenv);
 
                 //max logs 100
                 //max logs size 1024bytes
@@ -237,24 +244,31 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
                 let mut m = std::collections::HashMap::new();
                 m.insert("error".to_string(), "ok".to_string());
                 m.insert("exec_used".to_string(), tx_cost.clone());
+                if applyenv.caller_env.entry_height >= protocol::FORKHEIGHT {
+                    m.insert("exec_used".to_string(), exec_cost_total.clone());
+                }
                 applyenv.result_log.push(m);
             }
             Err(payload) => {
-                //apply gas
-                //applyenv.muts_final.append(&mut applyenv.muts_gas);
-                //applyenv.muts_final_rev.append(&mut applyenv.muts_rev_gas);
-
+                //TODO: refund storage costs on revert?
                 consensus_kv::revert(&mut applyenv);
+                refund_exec_deposit(&mut applyenv);
 
                 if let Some(&s) = payload.downcast_ref::<&'static str>() {
                     let mut m = std::collections::HashMap::new();
                     m.insert("error".to_string(), s.to_string());
                     m.insert("exec_used".to_string(), tx_cost.clone());
+                    if applyenv.caller_env.entry_height >= protocol::FORKHEIGHT {
+                        m.insert("exec_used".to_string(), exec_cost_total.clone());
+                    }
                     applyenv.result_log.push(m);
                 } else {
                     let mut m = std::collections::HashMap::new();
                     m.insert("error".to_string(), "unknown".to_string());
                     m.insert("exec_used".to_string(), tx_cost.clone());
+                    if applyenv.caller_env.entry_height >= protocol::FORKHEIGHT {
+                        m.insert("exec_used".to_string(), exec_cost_total.clone());
+                    }
                     applyenv.result_log.push(m);
                 }
             }
@@ -265,6 +279,7 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
 
     let root_receipts = root_receipts(txus.clone(), applyenv.result_log.clone());
     let root_contractstate = update_and_root_contractstate(&mut applyenv);
+
     //println!("r{:?} {}", applyenv.caller_env.entry_height, root_receipts(txus.clone(), applyenv.result_log.clone()).iter().map(|b| format!("{:02x}", b)).collect::<String>() );
     //println!("c{:?} {}", applyenv.caller_env.entry_height, hubt_contractstate_root.iter().map(|b| format!("{:02x}", b)).collect::<String>());
 
@@ -387,6 +402,26 @@ impl ToTerm for Vec<HashMap<String, String>> {
     }
 }
 
+fn refund_exec_deposit(applyenv: &mut ApplyEnv) {
+    //Refund remainer of the exec budget
+    if applyenv.caller_env.entry_height >= protocol::FORKHEIGHT {
+        applyenv.muts = Vec::new();
+        applyenv.muts_rev = Vec::new();
+        let refund = applyenv.exec_left.max(0);
+        if refund > 0 {
+            let key = &crate::bcat(&[b"account:", &applyenv.caller_env.account_origin, b":balance:AMA"]);
+            consensus_kv::kv_increment(applyenv, key, refund);
+        }
+        // Increment validator / burn
+        let cost = applyenv.exec_max - refund;
+        consensus_kv::kv_increment(applyenv, &crate::bcat(&[b"account:", &applyenv.caller_env.entry_signer, b":balance:AMA"]), cost/2);
+        consensus_kv::kv_increment(applyenv, &crate::bcat(&[b"account:", &consensus::bic::coin::BURN_ADDRESS, b":balance:AMA"]), cost/2);
+
+        applyenv.muts_final.append(&mut applyenv.muts);
+        applyenv.muts_final_rev.append(&mut applyenv.muts_rev);
+    }
+}
+
 fn call_txs_pre_upfront_cost<'a>(env: &mut ApplyEnv, txus: &[rustler::Term<'a>]) {
     env.muts = Vec::new();
     env.muts_rev = Vec::new();
@@ -400,9 +435,17 @@ fn call_txs_pre_upfront_cost<'a>(env: &mut ApplyEnv, txus: &[rustler::Term<'a>])
 
         // Update nonce
         consensus_kv::kv_put(env, &crate::bcat(&[b"account:", &tx_signer, b":attribute:nonce"]), &tx_nonce.to_string().into_bytes());
-        // Deduct tx cost
-        let tx_cost = txu.map_get(crate::atoms::tx_cost()).unwrap().decode::<i128>().unwrap();
-        protocol::pay_cost(env, tx_cost);
+
+        // Deduct tx historical cost
+        if env.caller_env.entry_height >= protocol::FORKHEIGHT {
+            let tx_historical_cost = txu.map_get(crate::atoms::tx_historical_cost()).unwrap().decode::<i128>().unwrap();
+            protocol::pay_cost(env, tx_historical_cost);
+            //lock 0.1 AMA during execution
+            consensus_kv::kv_increment(env, &crate::bcat(&[b"account:", &env.caller_env.account_origin, b":balance:AMA"]), -protocol::AMA_10_CENT);
+        } else {
+            let tx_cost = txu.map_get(crate::atoms::tx_cost()).unwrap().decode::<i128>().unwrap();
+            protocol::pay_cost(env, tx_cost);
+        }
     }
     env.muts_final.append(&mut env.muts);
     env.muts_final_rev.append(&mut env.muts_rev);
@@ -559,7 +602,7 @@ fn call_bic(env: &mut ApplyEnv, contract: Vec<u8>, function: Vec<u8>, args: Vec<
         //(b"Coin", b"pause") => consensus::bic::coin::call_pause(env, args),
         (b"Epoch", b"set_emission_address") => consensus::bic::epoch::call_set_emission_address(env, args),
         (b"Epoch", b"submit_sol") => {
-            env.exec_accum += protocol::COST_PER_SOL;
+            consensus_kv::exec_budget_decr(env, protocol::COST_PER_SOL);
             consensus::bic::epoch::call_submit_sol(env, args)
         },
         (b"Epoch", b"slash_trainer") => consensus::bic::epoch::call_slash_trainer(env, args),
