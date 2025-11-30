@@ -691,7 +691,7 @@ fn apply_entry<'a>(env: Env<'a>, db: ResourceArc<DbResource>, next_entry_trimmed
     let write_opts = WriteOptions::default();
     let txn = db.db.transaction_opt(&write_opts, &txn_opts);
 
-    let (txn, muts, muts_rev, result_log) =
+    let (txn, muts, muts_rev, result_log, root_receipts, root_contractstate) =
         consensus::consensus_apply::apply_entry(&db.db, pk.as_slice(), sk.as_slice(), &entry_signer, &entry_prev_hash,
             entry_slot, entry_prev_slot, entry_height, entry_epoch, &entry_vr, &entry_vr_b3, &entry_dr, txus, txn,
             testnet, testnet_peddlebikes.iter().map(|bin| bin.as_slice().to_vec()).collect()
@@ -703,7 +703,14 @@ fn apply_entry<'a>(env: Env<'a>, db: ResourceArc<DbResource>, next_entry_trimmed
         tx: Mutex::new(Some(tx_static)),
     }).encode(env);
 
-    Ok((term_txn, consensus_muts::mutations_to_map(muts), consensus_muts::mutations_to_map(muts_rev), result_log).encode(env))
+    let mut ob1 = OwnedBinary::new(root_receipts.len()).ok_or_else(|| Error::Term(Box::new("alloc failed"))).unwrap();
+    ob1.as_mut_slice().copy_from_slice(&root_receipts);
+    let mut ob2 = OwnedBinary::new(root_contractstate.len()).ok_or_else(|| Error::Term(Box::new("alloc failed"))).unwrap();
+    ob2.as_mut_slice().copy_from_slice(&root_contractstate);
+
+
+    Ok((term_txn, consensus_muts::mutations_to_map(muts), consensus_muts::mutations_to_map(muts_rev), result_log,
+        Binary::from_owned(ob1, env).encode(env), Binary::from_owned(ob2, env).encode(env)).encode(env))
 }
 
 #[rustler::nif]

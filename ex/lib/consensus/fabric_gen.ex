@@ -308,11 +308,11 @@ defmodule FabricGen do
           entry_slot: entry.header.slot,
           entry_prev_slot: entry.header.prev_slot,
           entry_height: entry.header.height,
-          entry_epoch: div(entry.header.height,100_000),
+          entry_epoch: div(entry.header.height, 100_000),
       }
 
-      txus = Enum.map(entry.txs, & Map.put(&1, :tx_cost, TX.exec_cost(0, &1)))
-      {rtx, m, m_rev, l} = RDB.apply_entry(db, next_entry_trimmed_map,
+      txus = Enum.map(entry.txs, & Map.merge(&1, %{tx_cost: TX.exec_cost(0, &1), tx_size: byte_size(RDB.vecpak_encode(&1))}))
+      {rtx, m, m_rev, l, root_receipts, root_contractstate} = RDB.apply_entry(db, next_entry_trimmed_map,
         Application.fetch_env!(:ama, :trainer_pk), Application.fetch_env!(:ama, :trainer_sk), txus,
         !!Application.fetch_env!(:ama, :testnet), Map.keys(Application.fetch_env!(:ama, :keys_by_pk))
       )
@@ -329,17 +329,14 @@ defmodule FabricGen do
       end
       rebuild_l_fn = fn(m)->
         Enum.map(m, fn(inner)->
-          if entry.header.height >= 416_00000 do
-            %{error: IO.iodata_to_binary(inner["error"]), exec_used: IO.iodata_to_binary(inner["exec_used"])}
-          else
-          %{error: :"#{IO.iodata_to_binary(inner["error"])}"}
-          end
+          %{error: IO.iodata_to_binary(inner["error"]), exec_used: IO.iodata_to_binary(inner["exec_used"])}
         end)
       end
       m = rebuild_m_fn.(m)
       m_rev = rebuild_m_fn.(m_rev)
       l = rebuild_l_fn.(l)
 
+      #IO.inspect {entry.header.height, :erlang.crc32(root_receipts), :erlang.crc32(root_contractstate)}
       #IO.inspect Enum.map(m, & Map.put(&1, :key, RocksDB.ascii_dump(&1.key))), limit: 11111111111
 
       #call the exit
@@ -349,11 +346,11 @@ defmodule FabricGen do
       #m = m ++ m_exit
       #m_rev = m_rev ++ m_exit_rev
 
-      mutations_hash = ConsensusKV.hash_mutations(next_entry.header.height, l ++ m)
+      mutations_hash = RDB.vecpak_encode(l ++ m) |> Blake3.hash()
 
       RocksDB.put("temporal_tip", next_entry.hash, %{rtx: rtx, cf: cf.sysconf})
 
-      DB.Entry.apply_into_main_chain(next_entry, mutations_hash, m_rev, l, %{rtx: rtx})
+      DB.Entry.apply_into_main_chain(next_entry, mutations_hash, m_rev, l, root_receipts, root_contractstate, %{rtx: rtx})
       if Application.fetch_env!(:ama, :archival_node) do
           DB.Entry.apply_into_main_chain_muts(next_entry.hash, m, %{rtx: rtx})
       end
@@ -365,7 +362,7 @@ defmodule FabricGen do
       # rtx = RocksDB.transaction(:persistent_term.get({:rocksdb, Fabric}).db)
       # :ok = RocksDB.transaction_commit(rtx)
       attestations = Enum.map(my_validators, fn(seed)->
-        attestation = Attestation.sign(seed.seed, next_entry.hash, mutations_hash)
+        attestation = Attestation.sign(seed.seed, next_entry.hash, next_entry.header.height, mutations_hash, root_receipts, root_contractstate, :binary.copy(<<0>>, 32))
         DB.Attestation.put(attestation, Entry.height(next_entry), %{rtx: rtx})
         attestation
       end)

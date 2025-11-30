@@ -207,17 +207,6 @@ defmodule ConsensusKV do
       end
     end
 
-    def hash_mutations(height, m) do
-        if height >= 416_00000 do
-          RDB.vecpak_encode(m)
-          |> Blake3.hash()
-        else
-        m = Enum.map(m, & Map.drop(&1, [:table]))
-        RDB.vecpak_encode(m)
-        |> Blake3.hash()
-        end
-    end
-
     def merge_nested(left, right) do
         Map.merge(left, right, &merge_nested_resolve/3)
     end

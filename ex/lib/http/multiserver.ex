@@ -219,8 +219,20 @@ defmodule Ama.MultiServer do
 
             r.method == "GET" and String.starts_with?(r.path, "/api/proof/validators/") ->
                 entry_hash = String.replace(r.path, "/api/proof/validators/", "")
-                result = API.Proof.proof_validators(entry_hash)
+                result = API.Proof.validators(entry_hash)
                 quick_reply(state, result)
+            r.method == "GET" and String.starts_with?(r.path, "/api/proof/contractstate/") ->
+                key_value = String.replace(r.path, "/api/proof/contractstate/", "")
+                result = case :binary.split(key_value, "/") do
+                  [key] -> API.Proof.validators(Base58.decode(key))
+                  [key, value] -> API.Proof.validators(Base58.decode(key), Base58.decode(value))
+                end
+                quick_reply(state, result)
+            r.method == "POST" and String.starts_with?(r.path, "/api/proof/contractstate") ->
+                {r, vecpak_bin} = Photon.HTTP.read_body_all(state.socket, r)
+                map = RDB.vecpak_decode(vecpak_bin)
+                result = API.Proof.validators(map.key, map[:value])
+                quick_reply(%{state|request: r}, result)
 
             #r.method == "GET" ->
             #    bin = build_dashboard(state)

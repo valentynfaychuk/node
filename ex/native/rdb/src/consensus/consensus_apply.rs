@@ -71,6 +71,7 @@ pub fn make_caller_env(
 
 pub struct ApplyEnv<'db> {
     pub caller_env: CallerEnv,
+    pub db: &'db TransactionDB<MultiThreaded>,
     pub cf: std::sync::Arc<BoundColumnFamily<'db>>,
     pub cf_name: Vec<u8>,
     pub cf_contractstate: std::sync::Arc<BoundColumnFamily<'db>>,
@@ -79,9 +80,8 @@ pub struct ApplyEnv<'db> {
     pub muts_final: Vec<consensus_muts::Mutation>,
     pub muts_final_rev: Vec<consensus_muts::Mutation>,
     pub muts: Vec<consensus_muts::Mutation>,
-    pub muts_gas: Vec<consensus_muts::Mutation>,
     pub muts_rev: Vec<consensus_muts::Mutation>,
-    pub muts_rev_gas: Vec<consensus_muts::Mutation>,
+    pub exec_accum: i128,
     pub result_log: Vec<HashMap<String, String>>,
     pub testnet: bool,
     pub testnet_peddlebikes: Vec<Vec<u8>>,
@@ -89,18 +89,20 @@ pub struct ApplyEnv<'db> {
 
 impl<'db> ApplyEnv<'db> {
     fn into_parts(
-        self,
+        self, root_receipts: [u8; 32], root_contractstate: [u8; 32]
     ) -> (
         Transaction<'db, TransactionDB<MultiThreaded>>,
         Vec<consensus_muts::Mutation>,
         Vec<consensus_muts::Mutation>,
         Vec<HashMap<String, String>>,
+        [u8; 32],
+        [u8; 32],
     ) {
-        (self.txn, self.muts_final, self.muts_final_rev, self.result_log)
+        (self.txn, self.muts_final, self.muts_final_rev, self.result_log, root_receipts, root_contractstate)
     }
 }
 
-pub fn make_apply_env<'db>(txn: Transaction<'db, TransactionDB<MultiThreaded>>,
+pub fn make_apply_env<'db>(db: &'db TransactionDB<MultiThreaded>, txn: Transaction<'db, TransactionDB<MultiThreaded>>,
     cf: std::sync::Arc<BoundColumnFamily<'db>>, cf_name: Vec<u8>,
     cf_contractstate: std::sync::Arc<BoundColumnFamily<'db>>, cf_contractstate_tree: std::sync::Arc<BoundColumnFamily<'db>>,
     entry_signer: &[u8; 48], entry_prev_hash: &[u8; 32],
@@ -110,6 +112,7 @@ pub fn make_apply_env<'db>(txn: Transaction<'db, TransactionDB<MultiThreaded>>,
 ) -> ApplyEnv<'db> {
     ApplyEnv {
         caller_env: make_caller_env(entry_signer, entry_prev_hash, entry_slot, entry_prev_slot, entry_height, entry_epoch, entry_vr, entry_vr_b3, entry_dr),
+        db: db,
         cf: cf,
         cf_name: cf_name,
         cf_contractstate: cf_contractstate,
@@ -118,9 +121,8 @@ pub fn make_apply_env<'db>(txn: Transaction<'db, TransactionDB<MultiThreaded>>,
         muts_final: Vec::new(),
         muts_final_rev: Vec::new(),
         muts: Vec::new(),
-        muts_gas: Vec::new(),
         muts_rev: Vec::new(),
-        muts_rev_gas: Vec::new(),
+        exec_accum: 0,
         result_log: Vec::new(),
         testnet: testnet,
         testnet_peddlebikes: testnet_peddlebikes,
@@ -140,11 +142,11 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
     entry_vr: &[u8; 96], entry_vr_b3: &[u8; 32], entry_dr: &[u8; 32],
     txus: Vec<rustler::Term<'a>>, txn: Transaction<'db, TransactionDB<MultiThreaded>>,
     testnet: bool, testnet_peddlebikes: Vec<Vec<u8>>,
-) -> (Transaction<'db, TransactionDB<MultiThreaded>>, Vec<consensus_muts::Mutation>, Vec<consensus_muts::Mutation>, Vec<HashMap<String, String>>) {
+) -> (Transaction<'db, TransactionDB<MultiThreaded>>, Vec<consensus_muts::Mutation>, Vec<consensus_muts::Mutation>, Vec<HashMap<String, String>>, [u8; 32], [u8; 32]) {
     let cf_h = db.cf_handle("contractstate").unwrap();
     let cf2_h = db.cf_handle("contractstate").unwrap();
     let cf_tree_h = db.cf_handle("contractstate_tree").unwrap();
-    let mut applyenv = make_apply_env(txn, cf_h, b"contractstate".to_vec(), cf2_h, cf_tree_h, entry_signer, entry_prev_hash, entry_slot, entry_prev_slot, entry_height, entry_epoch, entry_vr, entry_vr_b3, entry_dr, testnet, testnet_peddlebikes);
+    let mut applyenv = make_apply_env(db, txn, cf_h, b"contractstate".to_vec(), cf2_h, cf_tree_h, entry_signer, entry_prev_hash, entry_slot, entry_prev_slot, entry_height, entry_epoch, entry_vr, entry_vr_b3, entry_dr, testnet, testnet_peddlebikes);
 
     call_txs_pre_upfront_cost(&mut applyenv, &txus);
 
@@ -184,8 +186,11 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
         applyenv.caller_env.account_current = contract.to_vec();
         applyenv.muts = Vec::new();
         applyenv.muts_rev = Vec::new();
-        applyenv.muts_gas = Vec::new();
-        applyenv.muts_rev_gas = Vec::new();
+
+        let tx_cost = txu.map_get(crate::atoms::tx_cost()).unwrap().decode::<i128>().unwrap();
+        let tx_size = txu.map_get(crate::atoms::tx_size()).unwrap().decode::<i128>().unwrap();
+        applyenv.exec_accum = tx_size * protocol::COST_PER_BYTE_HISTORICAL;
+        let tx_cost = (tx_cost as u64).to_string();
 
         std::panic::set_hook(Box::new(|_| {}));
         let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -201,21 +206,18 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
             }
         }));
 
-        let tx_cost = txu.map_get(crate::atoms::tx_cost()).unwrap().decode::<i128>().unwrap();
-        let tx_cost = (tx_cost as u64).to_string();
+        println!("-{} {} {}", i, tx_cost, applyenv.exec_accum);
         match res {
             Ok(_) => {
+                //apply gas
                 applyenv.muts_final.append(&mut applyenv.muts);
-                applyenv.muts_final.append(&mut applyenv.muts_gas);
                 applyenv.muts_final_rev.append(&mut applyenv.muts_rev);
-                applyenv.muts_final_rev.append(&mut applyenv.muts_rev_gas);
 
                 //max logs 100
                 //max logs size 1024bytes
                 //
                 //status	🚨 Critical	1 = Success, 0 = Revert. Always check this first. If it is 0, ignore the rest.
                 //logs	🚨 Critical	Contains the actual data of what happened (token transfers, updates).
-                //gasUsed	⚠️ High	Needed to calculate the cost or debug efficiency.
                 //transactionHash	ℹ️ Medium	Links the receipt back to your original request.
                 //logsBloom
 /*
@@ -234,31 +236,25 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
 */
                 let mut m = std::collections::HashMap::new();
                 m.insert("error".to_string(), "ok".to_string());
-                if applyenv.caller_env.entry_height >= 416_00000 {
-                    m.insert("exec_used".to_string(), tx_cost.clone());
-                }
+                m.insert("exec_used".to_string(), tx_cost.clone());
                 applyenv.result_log.push(m);
             }
             Err(payload) => {
-                applyenv.muts_final.append(&mut applyenv.muts_gas);
-                applyenv.muts_final_rev.append(&mut applyenv.muts_rev_gas);
+                //apply gas
+                //applyenv.muts_final.append(&mut applyenv.muts_gas);
+                //applyenv.muts_final_rev.append(&mut applyenv.muts_rev_gas);
 
                 consensus_kv::revert(&mut applyenv);
 
                 if let Some(&s) = payload.downcast_ref::<&'static str>() {
                     let mut m = std::collections::HashMap::new();
                     m.insert("error".to_string(), s.to_string());
-                    if applyenv.caller_env.entry_height >= 416_00000 {
-                        m.insert("exec_used".to_string(), tx_cost.clone());
-                    }
+                    m.insert("exec_used".to_string(), tx_cost.clone());
                     applyenv.result_log.push(m);
                 } else {
                     let mut m = std::collections::HashMap::new();
                     m.insert("error".to_string(), "unknown".to_string());
-                    if applyenv.caller_env.entry_height >= 416_00000 {
-                        //(tx_cost as u64).to_string().into_bytes()
-                        m.insert("exec_used".to_string(), tx_cost.clone());
-                    }
+                    m.insert("exec_used".to_string(), tx_cost.clone());
                     applyenv.result_log.push(m);
                 }
             }
@@ -267,79 +263,64 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
 
     call_exit(&mut applyenv);
 
-    //Update tree
-    //Select only the last muts, rest are irrelevent for tree
-    let mut ops: Vec<consensus::bintree_rdb::Op> = Vec::with_capacity(10000);
-    if applyenv.caller_env.entry_height >= 416_00000 {
-        if applyenv.caller_env.entry_height == 416_00000 {
-            let iter = applyenv.txn.iterator_cf(&applyenv.cf_contractstate, rust_rocksdb::IteratorMode::Start);
-            for item in iter {
-                match item {
-                    Ok((key, value)) => {
-                        let namespace = consensus_kv::contractstate_namespace(&key);
-                        ops.push(consensus::bintree_rdb::Op::Insert(namespace, key.to_vec(), value.to_vec()))
-                        //println!("Key: {} | Val: {}", key.iter().map(|b| format!("{:02x}", b)).collect::<String>(), value.iter().map(|b| format!("{:02x}", b)).collect::<String>());
-                    },
-                    Err(_) => {
-                        panic!("Error during iteration")
-                    }
-                }
-            }
-        }
+    let root_receipts = root_receipts(txus.clone(), applyenv.result_log.clone());
+    let root_contractstate = update_and_root_contractstate(&mut applyenv);
+    //println!("r{:?} {}", applyenv.caller_env.entry_height, root_receipts(txus.clone(), applyenv.result_log.clone()).iter().map(|b| format!("{:02x}", b)).collect::<String>() );
+    //println!("c{:?} {}", applyenv.caller_env.entry_height, hubt_contractstate_root.iter().map(|b| format!("{:02x}", b)).collect::<String>());
 
-        let mut map: HashMap<Vec<u8>, consensus_muts::Mutation> = HashMap::new();
-        for m in applyenv.muts_final.clone() {
-            match m {
-                consensus_muts::Mutation::Put { ref key, .. } | consensus_muts::Mutation::Delete { ref key, .. }
-                | consensus_muts::Mutation::SetBit { ref key, .. } | consensus_muts::Mutation::ClearBit { ref key, .. }=> {
-                    map.insert(key.clone(), m);
-                }
-            }
-        }
-        for (key, m) in map {
-            let namespace = consensus_kv::contractstate_namespace(&key);
-            let op = match m {
-                consensus_muts::Mutation::Put { value, .. } => {
-                    consensus::bintree_rdb::Op::Insert(namespace, key, value)
-                },
-                consensus_muts::Mutation::Delete { .. } => {
-                    consensus::bintree_rdb::Op::Delete(namespace, key)
-                },
-                consensus_muts::Mutation::SetBit { .. } => {
-                    let val = applyenv.txn.get_cf(&applyenv.cf, &key).unwrap().unwrap();
-                    consensus::bintree_rdb::Op::Insert(namespace, key, val)
-                },
-                consensus_muts::Mutation::ClearBit { .. } => {
-                    let val = applyenv.txn.get_cf(&applyenv.cf, &key).unwrap().unwrap();
-                    consensus::bintree_rdb::Op::Insert(namespace, key, val)
-                },
-            };
-            ops.push(op);
-        }
-
-        applyenv.cf = db.cf_handle("contractstate_tree").unwrap();
-        applyenv.cf_name = b"contractstate_tree".to_vec();
-        applyenv.muts = Vec::new();
-        applyenv.muts_rev = Vec::new();
-        let mut hubt_contractstate = consensus::bintree_rdb::RocksHubt::new(&mut applyenv);
-        hubt_contractstate.batch_update(ops);
-        //let hubt_contractstate_root = hubt_contractstate.root();
-
-        let mut muts = unique_mutations(applyenv.muts.clone(), false);
-        applyenv.muts_final.append(&mut muts);
-        let mut muts_rev = unique_mutations(applyenv.muts_rev.clone(), true);
-        applyenv.muts_final_rev.append(&mut muts_rev);
-
-        //println!("{:?} {:?}", applyenv.caller_env.entry_height, root_receipts(txus.clone(), applyenv.result_log.clone()));
-        //println!("{:?} {}", applyenv.caller_env.entry_height, hubt_contractstate_root.iter().map(|b| format!("{:02x}", b)).collect::<String>());
-    }
-    applyenv.into_parts()
+    applyenv.into_parts(root_receipts, root_contractstate)
 }
 
-fn root_receipts(
-    txus: Vec<rustler::Term>,
-    result_log: Vec<HashMap<&'static str, &'static str>>
-) -> [u8; 32] {
+fn update_and_root_contractstate(applyenv: &mut ApplyEnv) -> [u8; 32] {
+    //Select only the last muts, rest are irrelevent for tree
+    let mut map: HashMap<Vec<u8>, consensus_muts::Mutation> = HashMap::new();
+    for m in applyenv.muts_final.clone() {
+        match m {
+            consensus_muts::Mutation::Put { ref key, .. } | consensus_muts::Mutation::Delete { ref key, .. }
+            | consensus_muts::Mutation::SetBit { ref key, .. } | consensus_muts::Mutation::ClearBit { ref key, .. }=> {
+                map.insert(key.clone(), m);
+            }
+        }
+    }
+
+    let mut ops: Vec<consensus::bintree_rdb::Op> = Vec::with_capacity(map.len());
+    for (key, m) in map {
+        let namespace = consensus_kv::contractstate_namespace(&key);
+        let op = match m {
+            consensus_muts::Mutation::Put { value, .. } => {
+                consensus::bintree_rdb::Op::Insert(namespace, key, value)
+            },
+            consensus_muts::Mutation::Delete { .. } => {
+                consensus::bintree_rdb::Op::Delete(namespace, key)
+            },
+            consensus_muts::Mutation::SetBit { .. } => {
+                let val = applyenv.txn.get_cf(&applyenv.cf, &key).unwrap().unwrap();
+                consensus::bintree_rdb::Op::Insert(namespace, key, val)
+            },
+            consensus_muts::Mutation::ClearBit { .. } => {
+                let val = applyenv.txn.get_cf(&applyenv.cf, &key).unwrap().unwrap();
+                consensus::bintree_rdb::Op::Insert(namespace, key, val)
+            },
+        };
+        ops.push(op);
+    }
+
+    applyenv.cf = applyenv.db.cf_handle("contractstate_tree").unwrap();
+    applyenv.cf_name = b"contractstate_tree".to_vec();
+    applyenv.muts = Vec::new();
+    applyenv.muts_rev = Vec::new();
+    let mut hubt_contractstate = consensus::bintree_rdb::RocksHubt::new(applyenv);
+    hubt_contractstate.batch_update(ops);
+    let root_contractstate = hubt_contractstate.root();
+
+    let mut muts = unique_mutations(applyenv.muts.clone(), false);
+    applyenv.muts_final.append(&mut muts);
+    let mut muts_rev = unique_mutations(applyenv.muts_rev.clone(), true);
+    applyenv.muts_final_rev.append(&mut muts_rev);
+    root_contractstate
+}
+
+fn root_receipts(txus: Vec<rustler::Term>, result_log: Vec<HashMap<String, String>>) -> [u8; 32] {
     use sha2::{Sha256, Digest};
     let mut hubt = bintree::Hubt::new();
     let mut kvs = Vec::new();
@@ -369,7 +350,7 @@ fn root_receipts(
 pub trait ToTerm {
     fn to_term(self) -> vecpak::Term;
 }
-impl ToTerm for HashMap<&'static str, &'static str> {
+impl ToTerm for HashMap<String, String> {
     fn to_term(self) -> vecpak::Term {
         let props: Vec<(vecpak::Term, vecpak::Term)> = self
             .into_iter()
@@ -384,7 +365,7 @@ impl ToTerm for HashMap<&'static str, &'static str> {
         vecpak::Term::PropList(props)
     }
 }
-impl ToTerm for Vec<HashMap<&'static str, &'static str>> {
+impl ToTerm for Vec<HashMap<String, String>> {
     fn to_term(self) -> vecpak::Term {
         let list_content: Vec<vecpak::Term> = self
             .into_iter()
@@ -577,7 +558,10 @@ fn call_bic(env: &mut ApplyEnv, contract: Vec<u8>, function: Vec<u8>, args: Vec<
         //(b"Coin", b"mint") => consensus::bic::coin::call_mint(env, args),
         //(b"Coin", b"pause") => consensus::bic::coin::call_pause(env, args),
         (b"Epoch", b"set_emission_address") => consensus::bic::epoch::call_set_emission_address(env, args),
-        (b"Epoch", b"submit_sol") => consensus::bic::epoch::call_submit_sol(env, args),
+        (b"Epoch", b"submit_sol") => {
+            env.exec_accum += protocol::COST_PER_SOL;
+            consensus::bic::epoch::call_submit_sol(env, args)
+        },
         (b"Epoch", b"slash_trainer") => consensus::bic::epoch::call_slash_trainer(env, args),
         (b"Contract", b"deploy") => consensus::bic::contract::call_deploy(env, args),
         //(b"Lockup", b"unlock") => consensus::bic::lockup::call_unlock(env, args),
@@ -600,7 +584,7 @@ fn call_wasmvm(env: &mut ApplyEnv, contract: Vec<u8>, function: Vec<u8>, args: V
         (Some(attached_symbol), Some(attached_amount)) => {
             let amount = std::str::from_utf8(&attached_amount).ok().and_then(|s| s.parse::<i128>().ok()).unwrap_or_else(|| panic_any("invalid_attached_amount"));
             if amount <= 0 { panic_any("invalid_attached_amount") }
-            if amount > consensus::bic::coin::balance(env, &env.caller_env.account_caller, &attached_symbol) { panic_any("attached_amount_insufficient_funds") }
+            if amount > consensus::bic::coin::balance(env, &env.caller_env.account_caller.clone(), &attached_symbol) { panic_any("attached_amount_insufficient_funds") }
 
             consensus_kv::kv_increment(env, &crate::bcat(&[b"account:", &contract, b":balance:", &attached_symbol]), amount);
             consensus_kv::kv_increment(env, &crate::bcat(&[b"account:", &env.caller_env.account_caller, b":balance:", &attached_symbol]), -amount);

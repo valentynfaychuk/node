@@ -11,8 +11,8 @@ config :logger, translator_inspect_opts: inspect_opts
 
 config :ama, :version, Mix.Project.config[:version]
 
-config :ama, :entry_size, 524288
-config :ama, :tx_size, 393216
+config :ama, :entry_size, 1048576
+config :ama, :tx_size, 786432
 config :ama, :quorum, 3
 #config :ama, :quorum, 1
 

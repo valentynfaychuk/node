@@ -1,31 +1,47 @@
 use std::panic::panic_any;
 
-use crate::consensus::consensus_apply;
+use crate::consensus::{bic::protocol, consensus_apply};
 use consensus_apply::ApplyEnv;
 
 use crate::consensus::consensus_muts;
 use consensus_muts::Mutation;
 
 pub fn kv_put(env: &mut ApplyEnv, key: &[u8], value: &[u8]) {
+    env.exec_accum += protocol::COST_PER_DB_WRITE_BASE + (protocol::COST_PER_DB_WRITE_BYTE * (key.len() + value.len()) as i128);
+
     let old_value = env.txn.get_cf(&env.cf, key).unwrap();
     env.txn.put_cf(&env.cf, key, value).unwrap_or_else(|_| panic_any("kv_put_failed"));
 
     env.muts.push(Mutation::Put { op: b"put".to_vec(), table: env.cf_name.to_vec(), key: key.to_vec(), value: value.to_vec() });
     match old_value {
-        None => env.muts_rev.push(Mutation::Delete { op: b"delete".to_vec(), table: env.cf_name.to_vec(), key: key.to_vec() }),
-        Some(old) => env.muts_rev.push(Mutation::Put { op: b"put".to_vec(), table: env.cf_name.to_vec(), key: key.to_vec(), value: old.to_vec() })
+        None => {
+            env.exec_accum += protocol::COST_PER_BYTE_STATE * protocol::COST_PER_NEW_LEAF_MERKLE;
+            env.exec_accum += protocol::COST_PER_BYTE_STATE * ((key.len() + value.len()) as i128);
+            env.muts_rev.push(Mutation::Delete { op: b"delete".to_vec(), table: env.cf_name.to_vec(), key: key.to_vec() })
+        },
+        Some(old) => {
+            //TODO: consider gas refund on delete? gas-token attack?
+            env.exec_accum += protocol::COST_PER_BYTE_STATE * (value.len().abs_diff(old.len()) as i128);
+            env.muts_rev.push(Mutation::Put { op: b"put".to_vec(), table: env.cf_name.to_vec(), key: key.to_vec(), value: old.to_vec() })
+        }
     }
 }
 
 pub fn kv_increment(env: &mut ApplyEnv, key: &[u8], value: i128) -> i128 {
+    let value_str = value.to_string().into_bytes();
+    env.exec_accum += protocol::COST_PER_DB_WRITE_BASE + (protocol::COST_PER_DB_WRITE_BYTE * (key.len() + value_str.len()) as i128);
+
     match env.txn.get_cf(&env.cf, key).unwrap() {
         None => {
+            env.exec_accum += protocol::COST_PER_BYTE_STATE * protocol::COST_PER_NEW_LEAF_MERKLE;
+            env.exec_accum += protocol::COST_PER_BYTE_STATE * (value_str.len() as i128);
             env.muts.push(Mutation::Put { op: b"put".to_vec(), table: env.cf_name.to_vec(), key: key.to_vec(), value: value.to_string().into_bytes() });
             env.muts_rev.push(Mutation::Delete { op: b"delete".to_vec(), table: env.cf_name.to_vec(), key: key.to_vec() });
-            env.txn.put_cf(&env.cf, key, value.to_string().into_bytes()).unwrap_or_else(|_| panic_any("kv_put_failed"));
+            env.txn.put_cf(&env.cf, key, value_str).unwrap_or_else(|_| panic_any("kv_put_failed"));
             value
         },
         Some(old) => {
+            env.exec_accum += protocol::COST_PER_BYTE_STATE * (value_str.len().abs_diff(old.len()) as i128);
             let new_value: i128 = atoi::atoi::<i128>(&old).ok_or("invalid_integer").unwrap() + value;
             env.muts.push(Mutation::Put { op: b"put".to_vec(), table: env.cf_name.to_vec(), key: key.to_vec(), value: new_value.to_string().into_bytes() });
             env.muts_rev.push(Mutation::Put { op: b"put".to_vec(), table: env.cf_name.to_vec(), key: key.to_vec(), value: old });
@@ -36,6 +52,8 @@ pub fn kv_increment(env: &mut ApplyEnv, key: &[u8], value: i128) -> i128 {
 }
 
 pub fn kv_delete(env: &mut ApplyEnv, key: &[u8]) {
+    env.exec_accum += protocol::COST_PER_DB_WRITE_BASE + (protocol::COST_PER_DB_WRITE_BYTE * (key.len()) as i128);
+
     match env.txn.get_cf(&env.cf, key).unwrap() {
         None => (),
         Some(old) => {
@@ -47,6 +65,8 @@ pub fn kv_delete(env: &mut ApplyEnv, key: &[u8]) {
 }
 
 pub fn kv_set_bit(env: &mut ApplyEnv, key: &[u8], bit_idx: u64) -> bool {
+    env.exec_accum += protocol::COST_PER_DB_WRITE_BASE + (protocol::COST_PER_DB_WRITE_BYTE * (key.len()) as i128);
+
     let (mut old, exists) = match env.txn.get_cf(&env.cf, key).unwrap() {
         None => (vec![0u8; crate::consensus::bic::sol_bloom::PAGE_SIZE as usize], false),
         Some(value) => (value, true)
@@ -71,17 +91,23 @@ pub fn kv_set_bit(env: &mut ApplyEnv, key: &[u8], bit_idx: u64) -> bool {
 }
 
 pub fn kv_exists(env: &mut ApplyEnv, key: &[u8]) -> bool {
+    env.exec_accum += protocol::COST_PER_DB_READ_BASE + (protocol::COST_PER_DB_READ_BYTE * (key.len()) as i128);
+
     match env.txn.get_cf(&env.cf, key).unwrap() {
         None => false,
         Some(_) => true
     }
 }
 
-pub fn kv_get(env: &ApplyEnv, key: &[u8]) -> Option<Vec<u8>> {
+pub fn kv_get(env: &mut ApplyEnv, key: &[u8]) -> Option<Vec<u8>> {
+    env.exec_accum += protocol::COST_PER_DB_READ_BASE + (protocol::COST_PER_DB_READ_BYTE * (key.len()) as i128);
+
     env.txn.get_cf(&env.cf, key).unwrap()
 }
 
 pub fn kv_get_next(env: &mut ApplyEnv, prefix: &[u8], key: &[u8]) -> Option<(Vec<u8>, Vec<u8>)> {
+    env.exec_accum += protocol::COST_PER_DB_READ_BASE + (protocol::COST_PER_DB_READ_BYTE * (prefix.len() + key.len()) as i128);
+
     let seek = [prefix, key].concat();
 
     let mut it = env.txn.raw_iterator_cf(&env.cf);
@@ -104,6 +130,8 @@ pub fn kv_get_next(env: &mut ApplyEnv, prefix: &[u8], key: &[u8]) -> Option<(Vec
 }
 
 pub fn kv_get_prev(env: &mut ApplyEnv, prefix: &[u8], key: &[u8]) -> Option<(Vec<u8>, Vec<u8>)> {
+    env.exec_accum += protocol::COST_PER_DB_READ_BASE + (protocol::COST_PER_DB_READ_BYTE * (prefix.len() + key.len()) as i128);
+
     let seek = [prefix, key].concat();
 
     let mut it = env.txn.raw_iterator_cf(&env.cf);
@@ -125,7 +153,9 @@ pub fn kv_get_prev(env: &mut ApplyEnv, prefix: &[u8], key: &[u8]) -> Option<(Vec
     }
 }
 
-pub fn kv_get_prev_or_first(env: &ApplyEnv, prefix: &[u8], key: &[u8]) -> Option<(Vec<u8>, Vec<u8>)> {
+pub fn kv_get_prev_or_first(env: &mut ApplyEnv, prefix: &[u8], key: &[u8]) -> Option<(Vec<u8>, Vec<u8>)> {
+    env.exec_accum += protocol::COST_PER_DB_READ_BASE + (protocol::COST_PER_DB_READ_BYTE * (prefix.len() + key.len()) as i128);
+
     let seek = [prefix, key].concat();
 
     let mut it = env.txn.raw_iterator_cf(&env.cf);

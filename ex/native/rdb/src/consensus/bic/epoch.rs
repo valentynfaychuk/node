@@ -213,7 +213,7 @@ pub fn call_submit_sol(env: &mut crate::consensus::consensus_apply::ApplyEnv, ar
     kv_increment(env, &bcat(&[b"bic:epoch:solutions_count:", usol.pk.as_slice()]), 1);
 }
 
-pub fn kv_get_trainers(env: &crate::consensus::consensus_apply::ApplyEnv, height: u64) -> Vec<Vec<u8>> {
+pub fn kv_get_trainers(env: &mut crate::consensus::consensus_apply::ApplyEnv, height: u64) -> Vec<Vec<u8>> {
     let height_padded = format!("{:012}", height).into_bytes();
     match kv_get_prev_or_first(env, b"bic:epoch:validators:height:", &height_padded) {
         None => Vec::new(),
@@ -237,7 +237,7 @@ pub fn kv_get_trainers(env: &crate::consensus::consensus_apply::ApplyEnv, height
     }
 }
 
-pub fn kv_get_trainers_removed(env: &crate::consensus::consensus_apply::ApplyEnv) -> Vec<Vec<u8>> {
+pub fn kv_get_trainers_removed(env: &mut crate::consensus::consensus_apply::ApplyEnv) -> Vec<Vec<u8>> {
     let trainers_start = kv_get_trainers(env, env.caller_env.entry_epoch * 100_000);
     let trainers_now = kv_get_trainers(env, env.caller_env.entry_height);
 

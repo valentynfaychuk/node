@@ -80,7 +80,7 @@ defmodule DB.Entry do
     db_opts[:rtx_commit] && RocksDB.transaction_commit(db_opts.rtx)
   end
 
-  def apply_into_main_chain(entry, muts_hash, muts_rev, receipts, db_opts = %{rtx: _}) do
+  def apply_into_main_chain(entry, muts_hash, muts_rev, receipts, root_receipts, root_contractstate, db_opts = %{rtx: _}) do
     entry_packed = Entry.pack_for_db(entry)
     RocksDB.put(entry.hash, entry_packed, db_handle(db_opts, :entry, %{}))
     RocksDB.put("by_height:#{pad_integer(entry.header.height)}:#{entry.hash}", entry.hash, db_handle(db_opts, :entry_meta, %{}))
@@ -91,6 +91,8 @@ defmodule DB.Entry do
     RocksDB.put("entry:#{entry.hash}:in_chain", "", db_handle(db_opts, :entry_meta, %{}))
     RocksDB.put("entry:#{entry.hash}:muts_hash", muts_hash, db_handle(db_opts, :entry_meta, %{}))
     RocksDB.put("entry:#{entry.hash}:muts_rev", RDB.vecpak_encode(muts_rev), db_handle(db_opts, :entry_meta, %{}))
+    RocksDB.put("entry:#{entry.hash}:root_receipts", root_receipts, db_handle(db_opts, :entry_meta, %{}))
+    RocksDB.put("entry:#{entry.hash}:root_contractstate", root_contractstate, db_handle(db_opts, :entry_meta, %{}))
 
     Enum.each(Enum.zip(entry.txs, receipts), fn({txu, result})->
       case :binary.match(entry_packed, TX.pack(txu)) do
@@ -138,6 +140,8 @@ defmodule DB.Entry do
     RocksDB.delete("entry:#{hash}:in_chain", db_handle(db_opts, :entry_meta, %{}))
     RocksDB.delete("entry:#{hash}:muts", db_handle(db_opts, :entry_meta, %{}))
     RocksDB.delete("entry:#{hash}:muts_rev", db_handle(db_opts, :entry_meta, %{}))
+    RocksDB.delete("entry:#{hash}:root_receipts", db_handle(db_opts, :entry_meta, %{}))
+    RocksDB.delete("entry:#{hash}:root_contractstate", db_handle(db_opts, :entry_meta, %{}))
     RocksDB.delete_prefix("consensus:#{hash}:", db_handle(db_opts, :attestation, %{}))
     RocksDB.delete_prefix("attestation:#{height_padded}:#{hash}:", db_handle(db_opts, :attestation, %{}))
 

@@ -53,6 +53,7 @@ rustler::atoms! {
     missing_stem_other_stem,
 
     tx_cost,
+    tx_size,
 
     direction,
     root,

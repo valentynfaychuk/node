@@ -34,7 +34,7 @@ pub fn call_lock(env: &mut crate::consensus::consensus_apply::ApplyEnv, args: Ve
     };
 
     if amount <= to_flat(1) { panic_any("invalid_amount") }
-    if amount > balance(env, env.caller_env.account_caller.as_slice(), b"AMA") { panic_any("insufficient_funds") }
+    if amount > balance(env, &env.caller_env.account_caller.clone(), b"AMA") { panic_any("insufficient_funds") }
     kv_increment(env, &bcat(&[b"account:", &env.caller_env.account_caller, b":balance:AMA"]), -amount);
 
     let vault_index = kv_increment(env, &bcat(&[b"bic:lockup_prime:unique_index"]), 1);

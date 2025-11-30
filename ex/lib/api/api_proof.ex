@@ -1,5 +1,5 @@
 defmodule API.Proof do
-  def proof_validators(entry_hash) do
+  def validators(entry_hash) do
     entry_hash = if byte_size(entry_hash) != 32, do: Base58.decode(entry_hash), else: entry_hash
     proof = Entry.proof_validators(entry_hash)
     %{
@@ -15,11 +15,32 @@ defmodule API.Proof do
     }
   end
 
-  def proof_contractstate(key) do
+  def contractstate_namespace(key) do
+    case key do
+      <<"account:", pk::binary-48, _::binary>> -> <<"account:", pk>>
+      <<"coin:", _::binary>> -> "coin"
+      <<"bic:", _::binary>> -> "bic"
+      _ -> nil
+    end
+  end
+
+  def contractstate(key, value \\ nil) do
     %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+    namespace = contractstate_namespace(key)
     proof = RDB.bintree_contractstate_root_prove(db, key)
-    #RDB.bintree_root_verify(proof, "bic:epoch:segment_vr_hash", "7")
-    #RDB.bintree_
-    #
+    map = %{
+      namespace: Base58.encode(namespace),
+      key: Base58.encode(key),
+      proof: %{
+        root: Base58.encode(proof.root),
+        path: Base58.encode(proof.path),
+        hash: Base58.encode(proof.hash),
+        nodes: Enum.map(proof.nodes, & %{direction: &1.direction, hash: Base58.encode(&1.hash)}),
+      }
+    }
+    if !value do map else
+      result = RDB.bintree_root_verify(proof, namespace, key, value)
+      Map.merge(map, %{value: Base58.encode(value), result: result})
+    end
   end
 end

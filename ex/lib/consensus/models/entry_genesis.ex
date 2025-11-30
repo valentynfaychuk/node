@@ -129,8 +129,8 @@ defmodule EntryGenesis do
         Process.put({RocksDB, :ctx}, %{rtx: rtx, cf: cf})
         {mutations, _} = BIC.Base.call_exit(%{entry: entry})
 
-        mutations_hash = ConsensusKV.hash_mutations(mutations)
-        attestation = Attestation.sign(sk, entry_signed.hash, mutations_hash)
+        mutations_hash = RDB.vecpak_encode(mutations) |> Blake3.hash()
+        attestation = Attestation.sign(sk, entry_signed.hash, 0, mutations_hash, :binary.copy(<<0>>, 32), :binary.copy(<<0>>, 32), :binary.copy(<<0>>, 32))
 
         pop = BlsEx.sign!(sk, pk, BLS12AggSig.dst_pop())
 
@@ -176,13 +176,13 @@ defmodule EntryGenesis do
         rtx = RocksDB.transaction(db)
         Process.put({RocksDB, :ctx}, %{rtx: rtx, cf: cf})
 
-        mutations_hash = ConsensusKV.hash_mutations([])
-        attestation = Attestation.sign(sk, entry_signed.hash, mutations_hash)
+        mutations_hash = RDB.vecpak_encode([]) |> Blake3.hash()
+        attestation = Attestation.sign(sk, entry_signed.hash, 0, mutations_hash, :binary.copy(<<0>>, 32), :binary.copy(<<0>>, 32), :binary.copy(<<0>>, 32))
 
         pop = BlsEx.sign!(sk, pk, BLS12AggSig.dst_pop())
 
         DB.Entry.insert(entry_signed, %{rtx: rtx})
-        DB.Entry.apply_into_main_chain(entry_signed, mutations_hash, [], [], %{rtx: rtx})
+        DB.Entry.apply_into_main_chain(entry_signed, mutations_hash, [], [], "", "", %{rtx: rtx})
         RocksDB.put("temporal_tip", entry_signed.hash, %{rtx: rtx, cf: cf.sysconf})
         RocksDB.put("rooted_tip", entry_signed.hash, %{rtx: rtx, cf: cf.sysconf})
 

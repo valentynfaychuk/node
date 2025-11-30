@@ -22,60 +22,60 @@ pub fn from_flat(coins: i128) -> f64 {
     (x * 1e9).round() / 1e9
 }
 
-pub fn balance_burnt(env: &crate::consensus::consensus_apply::ApplyEnv, symbol: &[u8]) -> i128 {
+pub fn balance_burnt(env: &mut crate::consensus::consensus_apply::ApplyEnv, symbol: &[u8]) -> i128 {
     balance(env, &BURN_ADDRESS, symbol)
 }
 
-pub fn balance(env: &crate::consensus::consensus_apply::ApplyEnv, address: &[u8], symbol: &[u8]) -> i128 {
+pub fn balance(env: &mut crate::consensus::consensus_apply::ApplyEnv, address: &[u8], symbol: &[u8]) -> i128 {
     match kv_get(env, &bcat(&[b"account:", address, b":balance:", symbol])) {
         Some(amount) => std::str::from_utf8(&amount).unwrap().parse::<i128>().unwrap_or_else(|_| panic_any("invalid_balance")),
         None => 0
     }
 }
 
-pub fn mintable(env: &crate::consensus::consensus_apply::ApplyEnv, symbol: &[u8]) -> bool {
+pub fn mintable(env: &mut crate::consensus::consensus_apply::ApplyEnv, symbol: &[u8]) -> bool {
     match kv_get(env, &bcat(&[b"coin:", symbol, b":mintable"])).as_deref() {
         Some(b"true") => true,
         _ => false
     }
 }
 
-pub fn pausable(env: &crate::consensus::consensus_apply::ApplyEnv, symbol: &[u8]) -> bool {
+pub fn pausable(env: &mut crate::consensus::consensus_apply::ApplyEnv, symbol: &[u8]) -> bool {
     match kv_get(env, &bcat(&[b"coin:", symbol, b":pausable"])).as_deref() {
         Some(b"true") => true,
         _ => false
     }
 }
 
-pub fn paused(env: &crate::consensus::consensus_apply::ApplyEnv, symbol: &[u8]) -> bool {
+pub fn paused(env: &mut crate::consensus::consensus_apply::ApplyEnv, symbol: &[u8]) -> bool {
     match kv_get(env, &bcat(&[b"coin:", symbol, b":paused"])).as_deref() {
         Some(b"true") => pausable(env, symbol),
         _ => false
     }
 }
 
-pub fn soulbound(env: &crate::consensus::consensus_apply::ApplyEnv, symbol: &[u8]) -> bool {
+pub fn soulbound(env: &mut crate::consensus::consensus_apply::ApplyEnv, symbol: &[u8]) -> bool {
     match kv_get(env, &bcat(&[b"coin:", symbol, b":soulbound"])).as_deref() {
         Some(b"true") => true,
         _ => false
     }
 }
 
-pub fn total_supply(env: &crate::consensus::consensus_apply::ApplyEnv, symbol: &[u8]) -> i128 {
+pub fn total_supply(env: &mut crate::consensus::consensus_apply::ApplyEnv, symbol: &[u8]) -> i128 {
     match kv_get(env, &bcat(&[b"coin:", symbol, b":totalSupply"])) {
         Some(amount) => std::str::from_utf8(&amount).unwrap().parse::<i128>().unwrap_or_else(|_| panic_any("invalid_total_supply")),
         None => 0
     }
 }
 
-pub fn exists(env: &crate::consensus::consensus_apply::ApplyEnv, symbol: &[u8]) -> bool {
+pub fn exists(env: &mut crate::consensus::consensus_apply::ApplyEnv, symbol: &[u8]) -> bool {
     match kv_get(env, &bcat(&[b"coin:", symbol, b":totalSupply"])) {
         Some(_) => true,
         None => false
     }
 }
 
-pub fn has_permission(env: &crate::consensus::consensus_apply::ApplyEnv, symbol: &[u8], signer: &[u8]) -> bool {
+pub fn has_permission(env: &mut crate::consensus::consensus_apply::ApplyEnv, symbol: &[u8], signer: &[u8]) -> bool {
     match kv_get(env, &bcat(&[b"coin:", symbol, b":permission"])) {
         None => false,
         Some(permission_list) => {
@@ -100,7 +100,7 @@ pub fn call_transfer(env: &mut crate::consensus::consensus_apply::ApplyEnv, args
     if receiver.len() != 48 { panic_any("invalid_receiver_pk") }
     if !(consensus::bls12_381::validate_public_key(receiver) || receiver == &BURN_ADDRESS) { panic_any("invalid_receiver_pk") }
     if amount <= 0 { panic_any("invalid_amount") }
-    if amount > balance(env, env.caller_env.account_caller.as_slice(), &symbol) { panic_any("insufficient_funds") }
+    if amount > balance(env, &env.caller_env.account_caller.clone(), &symbol) { panic_any("insufficient_funds") }
 
     if paused(env, symbol) { panic_any("paused") }
     if soulbound(env, symbol) { panic_any("soulbound") }
@@ -159,7 +159,7 @@ pub fn call_mint(env: &mut crate::consensus::consensus_apply::ApplyEnv, args: Ve
     let receiver = args[2].as_slice();
     if receiver.len() != 48 { panic_any("invalid_receiver_pk") }
 
-    if !has_permission(env, &symbol, env.caller_env.account_caller.as_slice()) { panic_any("no_permissions") }
+    if !has_permission(env, &symbol, &env.caller_env.account_caller.clone()) { panic_any("no_permissions") }
 
     mint(env, symbol, amount, receiver);
 }
@@ -184,7 +184,7 @@ pub fn call_pause(env: &mut crate::consensus::consensus_apply::ApplyEnv, args: V
     if direction != b"true" && direction != b"false" { panic_any("invalid_direction") }
 
     if !exists(env, &symbol) { panic_any("symbol_doesnt_exist") }
-    if !has_permission(env, &symbol, env.caller_env.account_caller.as_slice()) { panic_any("no_permissions") }
+    if !has_permission(env, &symbol, &env.caller_env.account_caller.clone()) { panic_any("no_permissions") }
     if !pausable(env, &symbol) { panic_any("not_pausable") }
 
     kv_put(env, &bcat(&[b"coin:", &symbol, b":paused"]), &direction);
