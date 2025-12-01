@@ -9,6 +9,14 @@ defmodule Testnet do
     RocksDB.get(key, %{db: db, cf: cf.contractstate})
   end
 
+  def transfer(to, amount, symbol \\ "AMA") do
+    key0 = Application.fetch_env!(:ama, :keys) |> Enum.at(0)
+    to = if byte_size(to) != 48, do: Base58.decode(to), else: to
+    amount = if is_float(amount) do trunc(amount * 1_000_000_000) else amount end
+    amount = if is_integer(amount) do :erlang.integer_to_binary(amount) else amount end
+    Testnet.call(key0.seed, "Coin", "transfer", [to, amount, symbol])
+  end
+
   def slash_trainer(signer_count \\ 1) do
     validators = DB.Chain.validators_for_height(DB.Chain.height()+1)
     malicious_pk = List.last(validators)

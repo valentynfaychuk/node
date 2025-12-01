@@ -22,6 +22,14 @@ pub const COST_PER_DB_WRITE_BYTE: i128 = 250;
 pub const COST_PER_SOL: i128 = AMA_1_CENT; //cost to submit_sol
 pub const COST_PER_NEW_LEAF_MERKLE: i128 = COST_PER_BYTE_STATE * 128; //cost to grow the merkle tree
 
+pub const LOG_MSG_SIZE: i128 = 4096; //max log line length
+pub const LOG_TOTAL_SIZE: i128 = 16384; //max log total size
+pub const WASM_MAX_PTR_LEN: i128 = 1048576; //largest term passable from inside WASM to HOST
+pub const WASM_MAX_PANIC_MSG_SIZE: usize = 128;
+
+pub const MAX_DB_KEY_SIZE: i128 = 512;
+pub const MAX_DB_VALUE_SIZE: i128 = 1048576;
+
 pub fn pay_cost(env: &mut crate::consensus::consensus_apply::ApplyEnv, cost: i128) {
     consensus_kv::kv_increment(env, &crate::bcat(&[b"account:", &env.caller_env.account_origin, b":balance:AMA"]), -cost);
     // Increment validator / burn
