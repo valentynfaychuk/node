@@ -207,6 +207,7 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
                 }
             }
         }));
+
         applyenv.exec_track = false;
 
         let tx_cost = txu.map_get(crate::atoms::tx_cost()).unwrap().decode::<i128>().unwrap();
@@ -243,10 +244,7 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
 */
                 let mut m = std::collections::HashMap::new();
                 m.insert("error".to_string(), "ok".to_string());
-                m.insert("exec_used".to_string(), tx_cost.clone());
-                if applyenv.caller_env.entry_height >= protocol::FORKHEIGHT {
-                    m.insert("exec_used".to_string(), exec_cost_total.clone());
-                }
+                m.insert("exec_used".to_string(), exec_cost_total.clone());
                 applyenv.result_log.push(m);
             }
             Err(payload) => {
@@ -257,18 +255,12 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
                 if let Some(&s) = payload.downcast_ref::<&'static str>() {
                     let mut m = std::collections::HashMap::new();
                     m.insert("error".to_string(), s.to_string());
-                    m.insert("exec_used".to_string(), tx_cost.clone());
-                    if applyenv.caller_env.entry_height >= protocol::FORKHEIGHT {
-                        m.insert("exec_used".to_string(), exec_cost_total.clone());
-                    }
+                    m.insert("exec_used".to_string(), exec_cost_total.clone());
                     applyenv.result_log.push(m);
                 } else {
                     let mut m = std::collections::HashMap::new();
                     m.insert("error".to_string(), "unknown".to_string());
-                    m.insert("exec_used".to_string(), tx_cost.clone());
-                    if applyenv.caller_env.entry_height >= protocol::FORKHEIGHT {
-                        m.insert("exec_used".to_string(), exec_cost_total.clone());
-                    }
+                    m.insert("exec_used".to_string(), exec_cost_total.clone());
                     applyenv.result_log.push(m);
                 }
             }
@@ -404,22 +396,20 @@ impl ToTerm for Vec<HashMap<String, String>> {
 
 fn refund_exec_deposit(applyenv: &mut ApplyEnv) {
     //Refund remainer of the exec budget
-    if applyenv.caller_env.entry_height >= protocol::FORKHEIGHT {
-        applyenv.muts = Vec::new();
-        applyenv.muts_rev = Vec::new();
-        let refund = applyenv.exec_left.max(0);
-        if refund > 0 {
-            let key = &crate::bcat(&[b"account:", &applyenv.caller_env.account_origin, b":balance:AMA"]);
-            consensus_kv::kv_increment(applyenv, key, refund);
-        }
-        // Increment validator / burn
-        let cost = applyenv.exec_max - refund;
-        consensus_kv::kv_increment(applyenv, &crate::bcat(&[b"account:", &applyenv.caller_env.entry_signer, b":balance:AMA"]), cost/2);
-        consensus_kv::kv_increment(applyenv, &crate::bcat(&[b"account:", &consensus::bic::coin::BURN_ADDRESS, b":balance:AMA"]), cost/2);
-
-        applyenv.muts_final.append(&mut applyenv.muts);
-        applyenv.muts_final_rev.append(&mut applyenv.muts_rev);
+    applyenv.muts = Vec::new();
+    applyenv.muts_rev = Vec::new();
+    let refund = applyenv.exec_left.max(0);
+    if refund > 0 {
+        let key = &crate::bcat(&[b"account:", &applyenv.caller_env.account_origin, b":balance:AMA"]);
+        consensus_kv::kv_increment(applyenv, key, refund);
     }
+    // Increment validator / burn
+    let cost = applyenv.exec_max - refund;
+    consensus_kv::kv_increment(applyenv, &crate::bcat(&[b"account:", &applyenv.caller_env.entry_signer, b":balance:AMA"]), cost/2);
+    consensus_kv::kv_increment(applyenv, &crate::bcat(&[b"account:", &consensus::bic::coin::BURN_ADDRESS, b":balance:AMA"]), cost/2);
+
+    applyenv.muts_final.append(&mut applyenv.muts);
+    applyenv.muts_final_rev.append(&mut applyenv.muts_rev);
 }
 
 fn call_txs_pre_upfront_cost<'a>(env: &mut ApplyEnv, txus: &[rustler::Term<'a>]) {
@@ -437,15 +427,10 @@ fn call_txs_pre_upfront_cost<'a>(env: &mut ApplyEnv, txus: &[rustler::Term<'a>])
         consensus_kv::kv_put(env, &crate::bcat(&[b"account:", &tx_signer, b":attribute:nonce"]), &tx_nonce.to_string().into_bytes());
 
         // Deduct tx historical cost
-        if env.caller_env.entry_height >= protocol::FORKHEIGHT {
-            let tx_historical_cost = txu.map_get(crate::atoms::tx_historical_cost()).unwrap().decode::<i128>().unwrap();
-            protocol::pay_cost(env, tx_historical_cost);
-            //lock 0.1 AMA during execution
-            consensus_kv::kv_increment(env, &crate::bcat(&[b"account:", &env.caller_env.account_origin, b":balance:AMA"]), -protocol::AMA_10_CENT);
-        } else {
-            let tx_cost = txu.map_get(crate::atoms::tx_cost()).unwrap().decode::<i128>().unwrap();
-            protocol::pay_cost(env, tx_cost);
-        }
+        let tx_historical_cost = txu.map_get(crate::atoms::tx_historical_cost()).unwrap().decode::<i128>().unwrap();
+        protocol::pay_cost(env, tx_historical_cost);
+        //lock 0.1 AMA during execution
+        consensus_kv::kv_increment(env, &crate::bcat(&[b"account:", &env.caller_env.account_origin, b":balance:AMA"]), -protocol::AMA_10_CENT);
     }
     env.muts_final.append(&mut env.muts);
     env.muts_final_rev.append(&mut env.muts_rev);

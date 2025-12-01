@@ -875,9 +875,6 @@ fn bintree_contractstate_root_prove<'a>(env: Env<'a>, db: ResourceArc<DbResource
         key.as_slice(),
     );
 
-    let result = crate::consensus::bintree::Hubt::verify(&proof, namespace, key.as_slice().to_vec(), b"8".to_vec());
-    println!("{:?}", result);
-
     let nodes_list: Vec<Term> = proof.nodes.iter().map(|node| {
         let mut map = Term::map_new(env);
 

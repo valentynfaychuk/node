@@ -63,13 +63,8 @@ defmodule TXPool do
         batch_state = Map.put(batch_state, {:chain_nonce, txu.tx.signer}, txu.tx.nonce)
 
         balance = Map.get_lazy(batch_state, {:balance, txu.tx.signer}, fn()-> DB.Chain.balance(txu.tx.signer) end)
-        balance = if chain_height >= RDBProtocol.forkheight() do
-          balance = balance - (RDBProtocol.reserve_ama_per_tx() * 2)
-          balance = balance - TX.historical_cost(txu)
-        else
-          balance = balance - TX.exec_cost(chain_epoch, txu)
-          balance = balance - BIC.Coin.to_cents(1)
-        end
+        balance = balance - (RDBProtocol.reserve_ama_per_tx() * 2)
+        balance = balance - TX.historical_cost(txu)
         if balance < 0, do: throw(%{error: :not_enough_tx_exec_balance, key: {txu.tx.nonce, txu.hash}})
         batch_state = Map.put(batch_state, {:balance, txu.tx.signer}, balance)
 

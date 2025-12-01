@@ -11,7 +11,7 @@ pub fn exec_budget_decr(env: &mut ApplyEnv, amount: i128) {
          panic_any("invalid_exec_amount_negative");
     }
 
-    if env.caller_env.entry_height >= protocol::FORKHEIGHT && env.exec_track {
+    if env.exec_track {
         match env.exec_left.checked_sub(amount) {
             Some(new_budget) => {
                 if new_budget < 0 {
