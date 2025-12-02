@@ -25,7 +25,19 @@ pub fn exec_budget_decr(env: &mut ApplyEnv, amount: i128) {
     }
 }
 
+pub fn exec_kv_size(key: &[u8], value: Option<&[u8]>) {
+    if key.len() > protocol::MAX_DB_KEY_SIZE {
+         panic_any("too_large_key_size");
+    }
+    if let Some(v) = value {
+        if v.len() > protocol::MAX_DB_VALUE_SIZE {
+             panic_any("too_large_value_size");
+        }
+    }
+}
+
 pub fn kv_put(env: &mut ApplyEnv, key: &[u8], value: &[u8]) {
+    exec_kv_size(key, Some(value));
     exec_budget_decr(env, protocol::COST_PER_DB_WRITE_BASE + protocol::COST_PER_DB_WRITE_BYTE * (key.len() + value.len()) as i128);
 
     let old_value = env.txn.get_cf(&env.cf, key).unwrap();
@@ -55,6 +67,7 @@ pub fn kv_increment(env: &mut ApplyEnv, key: &[u8], value: i128) -> i128 {
 
     match env.txn.get_cf(&env.cf, key).unwrap() {
         None => {
+            exec_kv_size(key, Some(&value_str));
             exec_budget_decr(env, protocol::COST_PER_NEW_LEAF_MERKLE);
             exec_budget_decr(env, protocol::COST_PER_BYTE_STATE * (key.len() + value_str.len()) as i128);
             env.muts.push(Mutation::Put { op: b"put".to_vec(), table: env.cf_name.to_vec(), key: key.to_vec(), value: value.to_string().into_bytes() });
@@ -63,8 +76,10 @@ pub fn kv_increment(env: &mut ApplyEnv, key: &[u8], value: i128) -> i128 {
             value
         },
         Some(old) => {
-            let new_value: i128 = atoi::atoi::<i128>(&old).ok_or("invalid_integer").unwrap() + value;
+            let old_int: i128 = atoi::atoi::<i128>(&old).unwrap_or_else(|| panic_any("invalid_integer"));
+            let new_value = old_int.checked_add(value).unwrap_or_else(|| panic_any("integer_overflow"));
             let new_value_str = new_value.to_string().into_bytes();
+            exec_kv_size(key, Some(&new_value_str));
             exec_budget_decr(env, protocol::COST_PER_BYTE_STATE * new_value_str.len().saturating_sub(old.len()) as i128);
             env.muts.push(Mutation::Put { op: b"put".to_vec(), table: env.cf_name.to_vec(), key: key.to_vec(), value: new_value.to_string().into_bytes() });
             env.muts_rev.push(Mutation::Put { op: b"put".to_vec(), table: env.cf_name.to_vec(), key: key.to_vec(), value: old });

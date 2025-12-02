@@ -284,7 +284,11 @@ pub fn call_slash_trainer(env: &mut crate::consensus::consensus_apply::ApplyEnv,
 pub fn next(env: &mut ApplyEnv) {
     let epoch_cur = env.caller_env.entry_epoch;
     let epoch_next = env.caller_env.entry_epoch + 1;
+
     let mut peddlebike67_map: HashSet<Vec<u8>> = PEDDLEBIKE67.iter().map(|pk| pk.to_vec()).collect();
+    if env.testnet {
+        peddlebike67_map = env.testnet_peddlebikes.iter().map(|pk| pk.to_vec()).collect();
+    }
 
     // slash sols for malicious trainers
     //let trainers = kv_get_trainers(env, &bcat(&[b"bic:epoch:trainers:", epoch_cur.to_string().as_bytes()]));
@@ -373,17 +377,25 @@ fn distribute_peddlebike67_community_fund(env: &mut ApplyEnv, total_emission: i1
 }
 
 fn build_and_shuffle_new_validators(env: &ApplyEnv, leaders: &Vec<(Vec<u8>, i128)>) -> Vec<Vec<u8>> {
+    let PEDDLEBIKE_LOCAL: Vec<[u8; 48]> = if env.testnet {
+        env.testnet_peddlebikes.iter()
+            .map(|pk| {
+                pk.as_slice()
+                  .try_into()
+                  .expect("Testnet key was not 48 bytes long")
+            })
+            .collect()
+    } else {
+        PEDDLEBIKE67.to_vec()
+    };
+
     let leader_pks: Vec<Vec<u8>> = leaders.iter().map(|(pk, _)| pk.clone()).collect();
     let filtered_leaders: Vec<Vec<u8>> =
-        leader_pks.into_iter().filter(|pk| !PEDDLEBIKE67.iter().any(|p| p.as_slice() == pk.as_slice())).collect();
+        leader_pks.into_iter().filter(|pk| !PEDDLEBIKE_LOCAL.iter().any(|p| p.as_slice() == pk.as_slice())).collect();
 
-    let mut new_validators: Vec<Vec<u8>> = PEDDLEBIKE67.iter().map(|p| p.to_vec()).collect();
+    let mut new_validators: Vec<Vec<u8>> = PEDDLEBIKE_LOCAL.iter().map(|p| p.to_vec()).collect();
     new_validators.extend(filtered_leaders);
     new_validators.truncate(99);
-
-    if env.testnet {
-        new_validators = env.testnet_peddlebikes.iter().map(|pk| pk.to_vec()).collect();
-    }
 
     let seed_bytes = &env.caller_env.seed;
     let seed_array: [u8; 32] = seed_bytes.get(..32).and_then(|s| s.try_into().ok()).unwrap_or([0u8; 32]);

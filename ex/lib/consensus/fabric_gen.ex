@@ -202,23 +202,18 @@ defmodule FabricGen do
 
     am_i_next = Enum.find(Application.fetch_env!(:ama, :keys), & &1.pk == next_validator)
 
-    #prevent double-entries due to severe system lag (you shouldnt be validator in the first place)
-    lastSlot = :persistent_term.get(:last_made_entry_slot, nil)
-
     rooted_tip = DB.Chain.rooted_tip()
 
+    #prevent double-entries due to sync
     emptyHeight = DB.Entry.by_height(next_height)
     emptyHeight = emptyHeight == []
 
     cond do
-      lastSlot == next_slot -> nil
       !emptyHeight -> nil
 
       !FabricSyncAttestGen.isQuorumSynced() -> nil
 
       am_i_next ->
-        :persistent_term.put(:last_made_entry_slot, next_slot)
-
         if :persistent_term.get(:snapshot_before_my_slot, nil) do
           :persistent_term.erase(:snapshot_before_my_slot)
           IO.inspect "taking snapshot #{DB.Chain.rooted_height()}"

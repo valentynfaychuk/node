@@ -85,6 +85,8 @@ pub struct ApplyEnv<'db> {
     pub exec_left: i128,
     pub exec_max: i128,
     pub result_log: Vec<HashMap<String, String>>,
+    pub logs: Vec<Vec<u8>>,
+    pub logs_size: usize,
     pub testnet: bool,
     pub testnet_peddlebikes: Vec<Vec<u8>>,
 }
@@ -128,6 +130,8 @@ pub fn make_apply_env<'db>(db: &'db TransactionDB<MultiThreaded>, txn: Transacti
         exec_left: 0,
         exec_max: protocol::AMA_10_CENT,
         result_log: Vec::new(),
+        logs: Vec::new(),
+        logs_size: 0,
         testnet: testnet,
         testnet_peddlebikes: testnet_peddlebikes,
     }
@@ -150,7 +154,9 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
     let cf_h = db.cf_handle("contractstate").unwrap();
     let cf2_h = db.cf_handle("contractstate").unwrap();
     let cf_tree_h = db.cf_handle("contractstate_tree").unwrap();
-    let mut applyenv = make_apply_env(db, txn, cf_h, b"contractstate".to_vec(), cf2_h, cf_tree_h, entry_signer, entry_prev_hash, entry_slot, entry_prev_slot, entry_height, entry_epoch, entry_vr, entry_vr_b3, entry_dr, testnet, testnet_peddlebikes);
+    let mut applyenv = make_apply_env(db, txn, cf_h, b"contractstate".to_vec(), cf2_h, cf_tree_h, 
+        entry_signer, entry_prev_hash, entry_slot, entry_prev_slot, entry_height, entry_epoch, entry_vr, entry_vr_b3, entry_dr, 
+        testnet, testnet_peddlebikes);
 
     call_txs_pre_upfront_cost(&mut applyenv, &txus);
 
@@ -190,6 +196,8 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
         applyenv.caller_env.account_current = contract.to_vec();
         applyenv.muts = Vec::new();
         applyenv.muts_rev = Vec::new();
+        applyenv.logs = Vec::new();
+        applyenv.logs_size = 0;
         applyenv.exec_track = true;
         applyenv.exec_left = protocol::AMA_10_CENT;
         applyenv.exec_max = protocol::AMA_10_CENT;
@@ -426,9 +434,21 @@ fn call_txs_pre_upfront_cost<'a>(env: &mut ApplyEnv, txus: &[rustler::Term<'a>])
         // Update nonce
         consensus_kv::kv_put(env, &crate::bcat(&[b"account:", &tx_signer, b":attribute:nonce"]), &tx_nonce.to_string().into_bytes());
 
+
         // Deduct tx historical cost
         let tx_historical_cost = txu.map_get(crate::atoms::tx_historical_cost()).unwrap().decode::<i128>().unwrap();
         protocol::pay_cost(env, tx_historical_cost);
+
+        // Deduct fixed call costs
+        let action = tx.map_get(crate::atoms::action()).unwrap().decode::<rustler::Term<'a>>().unwrap();
+        let contract = action.map_get(crate::atoms::contract()).unwrap().decode::<rustler::Binary>().unwrap().to_vec();
+        let function = action.map_get(crate::atoms::function()).unwrap().decode::<rustler::Binary>().unwrap().to_vec();
+        match (contract.as_slice(), function.as_slice()) {
+            (b"Epoch", b"submit_sol") => protocol::pay_cost(env, protocol::COST_PER_SOL),
+            (b"Contract", b"deploy") => protocol::pay_cost(env, protocol::COST_PER_DEPLOY),
+            (_, _) => ()
+        }
+
         //lock 0.1 AMA during execution
         consensus_kv::kv_increment(env, &crate::bcat(&[b"account:", &env.caller_env.account_origin, b":balance:AMA"]), -protocol::AMA_10_CENT);
     }
@@ -586,10 +606,7 @@ fn call_bic(env: &mut ApplyEnv, contract: Vec<u8>, function: Vec<u8>, args: Vec<
         //(b"Coin", b"mint") => consensus::bic::coin::call_mint(env, args),
         //(b"Coin", b"pause") => consensus::bic::coin::call_pause(env, args),
         (b"Epoch", b"set_emission_address") => consensus::bic::epoch::call_set_emission_address(env, args),
-        (b"Epoch", b"submit_sol") => {
-            consensus_kv::exec_budget_decr(env, protocol::COST_PER_SOL);
-            consensus::bic::epoch::call_submit_sol(env, args)
-        },
+        (b"Epoch", b"submit_sol") => consensus::bic::epoch::call_submit_sol(env, args),
         (b"Epoch", b"slash_trainer") => consensus::bic::epoch::call_slash_trainer(env, args),
         (b"Contract", b"deploy") => consensus::bic::contract::call_deploy(env, args),
         //(b"Lockup", b"unlock") => consensus::bic::lockup::call_unlock(env, args),

@@ -1,12 +1,14 @@
+use crate::consensus::bic::protocol;
 use crate::consensus::consensus_apply::{ApplyEnv};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, SystemTime};
 use std::panic::panic_any;
 
+
 use wasmer::{
     imports,
-    wasmparser::Operator,
+    wasmparser::{Parser, Payload, Operator},
     sys::{EngineBuilder, Features, CompilerConfig as _},
     AsStoreMut, Function, FunctionEnv, FunctionEnvMut, FunctionType, Global, Instance, Memory, MemoryType, Engine,
     MemoryView, Module, Pages, Store, Type, Value,
@@ -17,7 +19,6 @@ use wasmer_middlewares::{
     metering::{get_remaining_points, set_remaining_points, MeteringPoints},
     Metering,
 };
-
 
 
 use std::ffi::c_void;
@@ -70,8 +71,8 @@ fn cost_function(operator: &Operator) -> u64 {
 
         //TODO: middleware based on bytes copied
         Operator::MemoryCopy { .. }
-        | Operator::MemoryFill { .. } => 50,
-        Operator::MemoryGrow { .. } => 100,
+        | Operator::MemoryFill { .. } => 1000,
+        Operator::MemoryGrow { .. } => 2000,
 
         Operator::If { .. }
         | Operator::Else { .. }
@@ -85,20 +86,88 @@ fn cost_function(operator: &Operator) -> u64 {
 fn import_log_implementation(mut env: FunctionEnvMut<HostEnv>, ptr: i32, len: i32) {
     let (data, store) = env.data_and_store_mut();
     let view = data.memory.clone().view(&store);
-    //let apply_env = unsafe { data.applyenv_ptr.as_mut() };
+    let applyenv = unsafe { data.applyenv_ptr.as_mut() };
+    let len = len as usize;
 
+    if len > protocol::WASM_MAX_PTR_LEN {
+        panic_any("wasm_ptr_term_too_long")
+    }
+    if len > protocol::LOG_MSG_SIZE {
+        panic_any("wasm_log_msg_size_exceeded")
+    }
+    if (applyenv.logs_size.saturating_add(len)) > protocol::LOG_TOTAL_SIZE {
+        panic_any("wasm_logs_total_size_exceeded")
+    }
 
     let mut buffer = vec![0u8; len as usize];
     if view.read(ptr as u64, &mut buffer).is_ok() {
-        let log_string = String::from_utf8_lossy(&buffer).to_string();
-        //data.logs.push(log_string);
+        applyenv.logs.push(buffer.to_vec());
+        applyenv.logs_size += len
     } else {
-        // Optional: Panic/Trap if memory access is out of bounds
-        // wasmer::panic_any("log_memory_access_violation");
+        panic_any("wasm_log_invalid_ptr")
     }
 }
 
+pub fn check_module_limits(wasm_bytes: &[u8]) -> Result<(), String> {
+    if wasm_bytes.len() > protocol::WASM_MAX_BINARY_SIZE {
+        return Err("binary_size_exceeds_limit".to_string());
+    }
+
+    for payload in Parser::new(0).parse_all(wasm_bytes) {
+        match payload.map_err(|e| e.to_string())? {
+            Payload::FunctionSection(reader) => {
+                let count = reader.count();
+                if count > protocol::WASM_MAX_FUNCTIONS {
+                    return Err("wasmparser_function_count_exceeds_limit".to_string());
+                }
+            },
+            Payload::GlobalSection(reader) => {
+                let count = reader.count();
+                if count > protocol::WASM_MAX_GLOBALS {
+                    return Err("wasmparser_global_count_exceeds_limit".to_string());
+                }
+            },
+            Payload::ExportSection(reader) => {
+                let count = reader.count();
+                if count > protocol::WASM_MAX_EXPORTS {
+                    return Err("wasmparser_export_count_exceeds_limit".to_string());
+                }
+            },
+            Payload::ImportSection(reader) => {
+                let count = reader.count();
+                if count > protocol::WASM_MAX_IMPORTS {
+                    return Err("wasmparser_import_count_exceeds_limit".to_string());
+                }
+            },
+            Payload::CodeSectionStart { count, .. } => {
+                if count > protocol::WASM_MAX_FUNCTIONS {
+                    return Err("wasmparser_code_body_count_exceeds_limit".to_string());
+                }
+            },
+            Payload::DataSection(reader) => {
+                for data in reader {
+                    let d = data.map_err(|e| e.to_string())?;
+                    if let wasmer::wasmparser::DataKind::Active { offset_expr, .. } = d.kind {
+                         let mut r = offset_expr.get_binary_reader();
+                         if let Ok(wasmer::wasmparser::Operator::I32Const { value }) = r.read_operator() {
+                             if value >= 0 && value < 65536 {
+                                 return Err("wasmparser_first_65536_bytes_not_reserved".to_string());
+                             }
+                         }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
 fn validate_contract(mut env: ApplyEnv, wasm_bytes: &[u8]) {
+    if let Err(e) = check_module_limits(wasm_bytes) {
+        panic_any(e)
+    }
+
     let metering = Arc::new(Metering::new(env.exec_left.max(0) as u64, cost_function));
     let mut compiler = Singlepass::default();
     compiler.canonicalize_nans(true);
@@ -114,7 +183,8 @@ fn validate_contract(mut env: ApplyEnv, wasm_bytes: &[u8]) {
     features.module_linking(false);
     features.memory64(false);
 
-    features.bulk_memory(true); //required for modern compilers to WASM
+    //required for modern compilers to WASM
+    features.bulk_memory(true);
 
     let engine = EngineBuilder::new(compiler).set_features(Some(features));
     let mut store = Store::new(engine);
@@ -172,9 +242,11 @@ fn validate_contract(mut env: ApplyEnv, wasm_bytes: &[u8]) {
             "memory" => memory,
             "import_log" => Function::new_typed_with_env(&mut store, &host_env, import_log_implementation),
 /*
+            "import_return" => Function::new_typed_with_env(&mut store, &host_env, import_return_implementation),
+
+
             "import_attach" => Function::new_typed_with_env(&mut store, &host_env, import_attach_implementation),
 
-            "import_return_value" => Function::new_typed_with_env(&mut store, &host_env, import_return_value_implementation),
 
             "import_call_0" => Function::new_typed_with_env(&mut store, &host_env, import_call_0_implementation),
             "import_call_1" => Function::new_typed_with_env(&mut store, &host_env, import_call_1_implementation),
