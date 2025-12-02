@@ -116,7 +116,7 @@ defmodule NodeANR do
     routed = if !Application.fetch_env!(:ama, :check_routed_peer) do true else CymruRouting.globally_routed?(anr.ip4) end
     cond do
       !routed -> nil
-      !old_anr -> insert_new(anr)
+      !old_anr or !old_anr[:ts] -> insert_new(anr)
       anr.ts <= old_anr.ts -> nil
       old_anr.ip4 == anr.ip4 and old_anr.port == anr.port -> MnesiaKV.merge(NODEANR, anr.pk, anr)
       true -> insert_new(anr)

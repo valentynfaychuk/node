@@ -56,6 +56,8 @@ defmodule RDB do
   def bintree_contractstate_root_prove(_db, _key), do: :erlang.nif_error(:nif_not_loaded)
 
   def protocol_constants(), do: :erlang.nif_error(:nif_not_loaded)
+  def protocol_epoch_emission(_epoch), do: :erlang.nif_error(:nif_not_loaded)
+  def protocol_circulating_without_burn(_epoch), do: :erlang.nif_error(:nif_not_loaded)
 end
 
 defmodule RDBProtocol do

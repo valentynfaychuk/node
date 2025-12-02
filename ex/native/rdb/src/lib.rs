@@ -928,4 +928,14 @@ fn protocol_constants<'a>(env: Env<'a>) -> Term<'a> {
     (map).encode(env)
 }
 
+#[rustler::nif]
+fn protocol_epoch_emission<'a>(env: Env<'a>, epoch: u64) -> i128 {
+    crate::consensus::bic::epoch::epoch_emission(epoch)
+}
+
+#[rustler::nif]
+fn protocol_circulating_without_burn<'a>(env: Env<'a>, epoch: u64) -> i128 {
+    crate::consensus::bic::epoch::circulating_without_burn(epoch)
+}
+
 rustler::init!("Elixir.RDB", load = on_load);
