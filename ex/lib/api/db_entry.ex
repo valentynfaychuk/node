@@ -48,6 +48,14 @@ defmodule DB.Entry do
     RocksDB.get("entry:#{hash}:next", db_handle(db_opts, :entry_meta, %{}))
   end
 
+  def root_receipts(hash, db_opts \\ %{}) do
+    RocksDB.get("entry:#{hash}:root_receipts", db_handle(db_opts, :entry_meta, %{}))
+  end
+
+  def root_contractstate(hash, db_opts \\ %{}) do
+    RocksDB.get("entry:#{hash}:root_contractstate", db_handle(db_opts, :entry_meta, %{}))
+  end
+
   def in_chain(hash, db_opts \\ %{}) do
     !!RocksDB.get("entry:#{hash}:in_chain", db_handle(db_opts, :entry_meta, %{}))
   end

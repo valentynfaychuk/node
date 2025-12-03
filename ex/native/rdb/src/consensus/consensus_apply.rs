@@ -438,13 +438,13 @@ fn call_txs_pre_upfront_cost<'a>(env: &mut ApplyEnv, txus: &[rustler::Term<'a>])
         // Deduct tx historical cost
         let tx_historical_cost = txu.map_get(crate::atoms::tx_historical_cost()).unwrap().decode::<i128>().unwrap();
         protocol::pay_cost(env, tx_historical_cost);
-
         // Deduct fixed call costs
         let action = tx.map_get(crate::atoms::action()).unwrap().decode::<rustler::Term<'a>>().unwrap();
         let contract = action.map_get(crate::atoms::contract()).unwrap().decode::<rustler::Binary>().unwrap().to_vec();
         let function = action.map_get(crate::atoms::function()).unwrap().decode::<rustler::Binary>().unwrap().to_vec();
         match (contract.as_slice(), function.as_slice()) {
-            (b"Epoch", b"submit_sol") => protocol::pay_cost(env, protocol::COST_PER_SOL),
+            //TODO: add later via scheduled fork
+            //(b"Epoch", b"submit_sol") => protocol::pay_cost(env, protocol::COST_PER_SOL),
             (b"Contract", b"deploy") => protocol::pay_cost(env, protocol::COST_PER_DEPLOY),
             (_, _) => ()
         }
@@ -606,7 +606,10 @@ fn call_bic(env: &mut ApplyEnv, contract: Vec<u8>, function: Vec<u8>, args: Vec<
         //(b"Coin", b"mint") => consensus::bic::coin::call_mint(env, args),
         //(b"Coin", b"pause") => consensus::bic::coin::call_pause(env, args),
         (b"Epoch", b"set_emission_address") => consensus::bic::epoch::call_set_emission_address(env, args),
-        (b"Epoch", b"submit_sol") => consensus::bic::epoch::call_submit_sol(env, args),
+        (b"Epoch", b"submit_sol") => {
+            consensus_kv::exec_budget_decr(env, protocol::COST_PER_SOL);
+            consensus::bic::epoch::call_submit_sol(env, args)
+        },
         (b"Epoch", b"slash_trainer") => consensus::bic::epoch::call_slash_trainer(env, args),
         (b"Contract", b"deploy") => consensus::bic::contract::call_deploy(env, args),
         //(b"Lockup", b"unlock") => consensus::bic::lockup::call_unlock(env, args),
