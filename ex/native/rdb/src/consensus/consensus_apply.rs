@@ -89,6 +89,7 @@ pub struct ApplyEnv<'db> {
     pub logs_size: usize,
     pub testnet: bool,
     pub testnet_peddlebikes: Vec<Vec<u8>>,
+    pub readonly: bool,
 }
 
 impl<'db> ApplyEnv<'db> {
@@ -134,6 +135,7 @@ pub fn make_apply_env<'db>(db: &'db TransactionDB<MultiThreaded>, txn: Transacti
         logs_size: 0,
         testnet: testnet,
         testnet_peddlebikes: testnet_peddlebikes,
+        readonly: false,
     }
 }
 

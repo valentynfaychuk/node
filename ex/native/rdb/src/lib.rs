@@ -899,7 +899,47 @@ fn bintree_contractstate_root_prove<'a>(env: Env<'a>, db: ResourceArc<DbResource
 
     (proof_map).encode(env)
 }
+/*
+#[rustler::nif(schedule = "DirtyCpu")]
+fn contract_view<'a>(env: Env<'a>, db: ResourceArc<DbResource>, cur_entry_trimmed_map: Term<'a>, as_pk: Binary,
+    contract: Binary, function: Binary, args: Vec<Binary>) -> Result<Term<'a>, Error> {
+    let entry_signer = fixed::<48>(next_entry_trimmed_map.map_get(atoms::entry_signer())?)?;
+    let entry_prev_hash = fixed::<32>(next_entry_trimmed_map.map_get(atoms::entry_prev_hash())?)?;
+    let entry_vr = fixed::<96>(next_entry_trimmed_map.map_get(atoms::entry_vr())?)?;
+    let entry_vr_b3 = fixed::<32>(next_entry_trimmed_map.map_get(atoms::entry_vr_b3())?)?;
+    let entry_dr = fixed::<32>(next_entry_trimmed_map.map_get(atoms::entry_dr())?)?;
 
+    let entry_slot = next_entry_trimmed_map.map_get(atoms::entry_slot())?.decode::<u64>()?;
+    let entry_prev_slot = next_entry_trimmed_map.map_get(atoms::entry_prev_slot())?.decode::<u64>()?;
+    let entry_height = next_entry_trimmed_map.map_get(atoms::entry_height())?.decode::<u64>()?;
+    let entry_epoch = next_entry_trimmed_map.map_get(atoms::entry_epoch())?.decode::<u64>()?;
+
+    let txn_opts = TransactionOptions::default();
+    let write_opts = WriteOptions::default();
+    let txn = db.db.transaction_opt(&write_opts, &txn_opts);
+
+    let (txn, muts, muts_rev, result_log, root_receipts, root_contractstate) =
+        consensus::consensus_apply::apply_entry(&db.db, pk.as_slice(), sk.as_slice(), &entry_signer, &entry_prev_hash,
+            entry_slot, entry_prev_slot, entry_height, entry_epoch, &entry_vr, &entry_vr_b3, &entry_dr, txus, txn,
+            testnet, testnet_peddlebikes.iter().map(|bin| bin.as_slice().to_vec()).collect()
+        );
+
+    let tx_static: Tx<'static> = unsafe { std::mem::transmute::<Tx<'_>, Tx<'static>>(txn) };
+    let term_txn = ResourceArc::new(TxResource {
+        db: db,
+        tx: Mutex::new(Some(tx_static)),
+    }).encode(env);
+
+    let mut ob1 = OwnedBinary::new(root_receipts.len()).ok_or_else(|| Error::Term(Box::new("alloc failed"))).unwrap();
+    ob1.as_mut_slice().copy_from_slice(&root_receipts);
+    let mut ob2 = OwnedBinary::new(root_contractstate.len()).ok_or_else(|| Error::Term(Box::new("alloc failed"))).unwrap();
+    ob2.as_mut_slice().copy_from_slice(&root_contractstate);
+
+
+    Ok((term_txn, consensus_muts::mutations_to_map(muts), consensus_muts::mutations_to_map(muts_rev), result_log,
+        Binary::from_owned(ob1, env).encode(env), Binary::from_owned(ob2, env).encode(env)).encode(env))
+}
+*/
 #[rustler::nif]
 fn protocol_constants<'a>(env: Env<'a>) -> Term<'a> {
     let mut map = Term::map_new(env);

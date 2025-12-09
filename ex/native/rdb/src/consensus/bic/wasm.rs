@@ -20,7 +20,6 @@ use wasmer_middlewares::{
     Metering,
 };
 
-
 use std::ffi::c_void;
 #[derive(Clone)]
 pub struct ApplyEnvPtr {
@@ -84,6 +83,7 @@ fn cost_function(operator: &Operator) -> u64 {
 }
 
 fn import_log_implementation(mut env: FunctionEnvMut<HostEnv>, ptr: i32, len: i32) {
+    println!("called");
     let (data, store) = env.data_and_store_mut();
     let view = data.memory.clone().view(&store);
     let applyenv = unsafe { data.applyenv_ptr.as_mut() };
@@ -163,7 +163,14 @@ pub fn check_module_limits(wasm_bytes: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_contract(mut env: ApplyEnv, wasm_bytes: &[u8]) {
+fn log_line(env: &mut ApplyEnv, line: Vec<u8>) {
+    if line.len() > protocol::LOG_MSG_SIZE {
+        panic_any("log_line_too_large");
+    }
+    data.logs.push(line);
+}
+
+pub fn validate_contract(mut env: ApplyEnv, wasm_bytes: &[u8]) {
     if let Err(e) = check_module_limits(wasm_bytes) {
         panic_any(e)
     }
@@ -230,7 +237,7 @@ fn validate_contract(mut env: ApplyEnv, wasm_bytes: &[u8]) {
     view.write(5_100, &env.caller_env.attached_amount.len().to_le_bytes()).unwrap_or_else(|_| panic_any("wasm_init_memwrite"));
     view.write(5_104, &env.caller_env.attached_amount).unwrap_or_else(|_| panic_any("wasm_init_memwrite"));
 
-    let apply_ptr = &mut env as *mut ApplyEnv as *mut c_void;
+    let apply_ptr = env as *mut ApplyEnv as *mut c_void;
     let applyenv_ptr = ApplyEnvPtr { ptr: apply_ptr };
 
     let host_env = FunctionEnv::new(&mut store, HostEnv {
@@ -274,5 +281,8 @@ fn validate_contract(mut env: ApplyEnv, wasm_bytes: &[u8]) {
         }
     };
 
-    let instance = Instance::new(&mut store, &module, &import_object).unwrap_or_else(|_| panic_any("wasm_instance"));
+    let instance = Instance::new(&mut store, &module, &import_object).unwrap_or_else(|e| {
+        eprintln!("Error creating WASM instance: {}", e);
+        panic_any("wasm_instance")
+    });
 }

@@ -136,7 +136,7 @@ defmodule API.TX do
       result = TX.validate(tx_packed |> TX.unpack())
       if result[:error] == :ok do
           txu = result.txu
-          if tx_packed =~ "deploy" do
+          if tx_packed =~ "deployyy" do
               action = TX.action(txu)
               if action.contract == "Contract" and action.function == "deploy" do
                   case BIC.Contract.validate(List.first(action.args)) do

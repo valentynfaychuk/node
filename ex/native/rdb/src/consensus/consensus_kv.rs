@@ -37,6 +37,10 @@ pub fn exec_kv_size(key: &[u8], value: Option<&[u8]>) {
 }
 
 pub fn kv_put(env: &mut ApplyEnv, key: &[u8], value: &[u8]) {
+    if env.readonly {
+        panic!("cannot_write_during_view");
+    }
+
     exec_kv_size(key, Some(value));
     exec_budget_decr(env, protocol::COST_PER_DB_WRITE_BASE + protocol::COST_PER_DB_WRITE_BYTE * (key.len() + value.len()) as i128);
 
@@ -62,6 +66,10 @@ pub fn kv_put(env: &mut ApplyEnv, key: &[u8], value: &[u8]) {
 }
 
 pub fn kv_increment(env: &mut ApplyEnv, key: &[u8], value: i128) -> i128 {
+    if env.readonly {
+        panic!("cannot_write_during_view");
+    }
+
     let value_str = value.to_string().into_bytes();
     exec_budget_decr(env, protocol::COST_PER_DB_WRITE_BASE + protocol::COST_PER_DB_WRITE_BYTE * (key.len() + value_str.len()) as i128);
 
@@ -90,6 +98,10 @@ pub fn kv_increment(env: &mut ApplyEnv, key: &[u8], value: i128) -> i128 {
 }
 
 pub fn kv_delete(env: &mut ApplyEnv, key: &[u8]) {
+    if env.readonly {
+        panic!("cannot_write_during_view");
+    }
+
     exec_budget_decr(env, protocol::COST_PER_DB_WRITE_BASE + protocol::COST_PER_DB_WRITE_BYTE * (key.len()) as i128);
 
     match env.txn.get_cf(&env.cf, key).unwrap() {
@@ -103,6 +115,10 @@ pub fn kv_delete(env: &mut ApplyEnv, key: &[u8]) {
 }
 
 pub fn kv_set_bit(env: &mut ApplyEnv, key: &[u8], bit_idx: u64) -> bool {
+    if env.readonly {
+        panic!("cannot_write_during_view");
+    }
+
     exec_budget_decr(env, protocol::COST_PER_DB_WRITE_BASE + protocol::COST_PER_DB_WRITE_BYTE * (key.len()) as i128);
 
     let (mut old, exists) = match env.txn.get_cf(&env.cf, key).unwrap() {

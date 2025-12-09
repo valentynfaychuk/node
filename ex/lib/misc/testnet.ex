@@ -9,6 +9,14 @@ defmodule Testnet do
     RocksDB.get(key, %{db: db, cf: cf.contractstate})
   end
 
+  def deploy(path) do deploy(Application.fetch_env!(:ama, :keys) |> Enum.at(0) |> Map.fetch!(:pk), path) end
+  def deploy(pk, path) do
+    key0 = Application.fetch_env!(:ama, :keys) |> Enum.at(0)
+    pk = if byte_size(pk) != 48, do: Base58.decode(pk), else: pk
+    wasmbytes = File.read!(path)
+    Testnet.call(key0.seed, "Contract", "deploy", [wasmbytes])
+  end
+
   def transfer(to, amount, symbol \\ "AMA") do
     key0 = Application.fetch_env!(:ama, :keys) |> Enum.at(0)
     to = if byte_size(to) != 48, do: Base58.decode(to), else: to
