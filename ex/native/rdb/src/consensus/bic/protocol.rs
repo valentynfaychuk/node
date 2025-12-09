@@ -37,6 +37,14 @@ pub const WASM_MAX_GLOBALS: u32 = 100;
 pub const WASM_MAX_EXPORTS: u32 = 50;
 pub const WASM_MAX_IMPORTS: u32 = 50;
 
+#[derive(Clone, Debug)]
+pub struct ExecutionReceipt {
+    pub txid: Vec<u8>,
+    pub error: Vec<u8>,
+    pub exec_used: Vec<u8>,
+    pub logs: Vec<Vec<u8>>,
+}
+
 pub fn pay_cost(env: &mut crate::consensus::consensus_apply::ApplyEnv, cost: i128) {
     consensus_kv::kv_increment(env, &crate::bcat(&[b"account:", &env.caller_env.account_origin, b":balance:AMA"]), -cost);
     // Increment validator / burn

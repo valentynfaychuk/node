@@ -92,6 +92,54 @@ fn import_log_implementation(mut env: FunctionEnvMut<HostEnv>, ptr: i32, len: i3
     if len > protocol::WASM_MAX_PTR_LEN {
         panic_any("wasm_ptr_term_too_long")
     }
+
+    let mut buffer = vec![0u8; len as usize];
+    if view.read(ptr as u64, &mut buffer).is_ok() {
+        log_line(applyenv, buffer.to_vec())
+    } else {
+        panic_any("wasm_log_invalid_ptr")
+    }
+}
+
+//AssemblyScript specific
+fn abort_implementation(mut env: FunctionEnvMut<HostEnv>, msg_ptr: i32, filename_ptr: i32, line: i32, column: i32) -> Result<(), RuntimeError> {
+/*
+    let (data, mut store) = env.data_and_store_mut();
+    let Some(memory) = &data.memory else { return Err(RuntimeError::new("invalid_memory")) };
+    let view: MemoryView = memory.view(&store);
+
+    //I kill thee
+    let mut msg_size_bytes = [0u8; 4];
+    let Ok(_) = view.read((msg_ptr as u64) - 4, &mut msg_size_bytes) else { return Err(RuntimeError::new("invalid_memory")) };
+    let msg_size: i32 = i32::from_le_bytes(msg_size_bytes);
+    let mut msg_buff_utf16 = vec![0u8; msg_size as usize];
+    let Ok(_) = view.read(msg_ptr as u64, &mut msg_buff_utf16) else { return Err(RuntimeError::new("invalid_memory")) };
+    let msg_buff_utf16_b4collect = msg_buff_utf16.chunks_exact(2).map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]));
+    let msg_buff_utf16_collected: Vec<u16> = msg_buff_utf16_b4collect.collect();
+
+    let mut filename_size_bytes = [0u8; 4];
+    let Ok(_) = view.read((filename_ptr as u64) - 4, &mut filename_size_bytes) else { return Err(RuntimeError::new("invalid_memory")) };
+    let filename_size: i32 = i32::from_le_bytes(filename_size_bytes);
+    let mut filename_buff_utf16 = vec![0u8; filename_size as usize];
+    let Ok(_) = view.read(filename_ptr as u64, &mut filename_buff_utf16) else { return Err(RuntimeError::new("invalid_memory")) };
+    let filename_buff_utf16_b4collect = filename_buff_utf16.chunks_exact(2).map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]));
+    let filename_buff_utf16_collected: Vec<u16> = filename_buff_utf16_b4collect.collect();
+
+    let msg_utf8 = match String::from_utf16(&msg_buff_utf16_collected) { Ok(s) => s, Err(_) => { return Err(RuntimeError::new("invalid_memory")); }};
+    let filename_utf8 = match String::from_utf16(&filename_buff_utf16_collected) { Ok(s) => s, Err(_) => { return Err(RuntimeError::new("invalid_memory")); }};
+
+    let formatted = format!("{} | {} {} {}", msg_utf8, filename_utf8, line, column);
+    data.return_value = Some(formatted.into_bytes());
+
+    //println!("{} {} {} {}", msg_utf8, filename_utf8, line, column);
+
+    Err(RuntimeError::new("abort"))
+ */
+  Err(RuntimeError::new("abort"))
+}
+
+fn log_line(applyenv: &mut ApplyEnv, line: Vec<u8>) {
+    let len = line.len();
     if len > protocol::LOG_MSG_SIZE {
         panic_any("wasm_log_msg_size_exceeded")
     }
@@ -99,13 +147,8 @@ fn import_log_implementation(mut env: FunctionEnvMut<HostEnv>, ptr: i32, len: i3
         panic_any("wasm_logs_total_size_exceeded")
     }
 
-    let mut buffer = vec![0u8; len as usize];
-    if view.read(ptr as u64, &mut buffer).is_ok() {
-        applyenv.logs.push(buffer.to_vec());
-        applyenv.logs_size += len
-    } else {
-        panic_any("wasm_log_invalid_ptr")
-    }
+    applyenv.logs.push(line);
+    applyenv.logs_size += len
 }
 
 pub fn check_module_limits(wasm_bytes: &[u8]) -> Result<(), String> {
@@ -163,14 +206,7 @@ pub fn check_module_limits(wasm_bytes: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
-fn log_line(env: &mut ApplyEnv, line: Vec<u8>) {
-    if line.len() > protocol::LOG_MSG_SIZE {
-        panic_any("log_line_too_large");
-    }
-    data.logs.push(line);
-}
-
-pub fn validate_contract(mut env: ApplyEnv, wasm_bytes: &[u8]) {
+pub fn validate_contract(env: &mut ApplyEnv, wasm_bytes: &[u8]) {
     if let Err(e) = check_module_limits(wasm_bytes) {
         panic_any(e)
     }
@@ -276,12 +312,13 @@ pub fn validate_contract(mut env: ApplyEnv, wasm_bytes: &[u8]) {
             //"import_kv_get_prefix" => Function::new_typed(&mut store, || println!("called_kv_get_in_rust")),
 
             //AssemblyScript specific
-            //"abort" => Function::new_typed_with_env(&mut store, &host_env, abort_implementation),
+            "abort" => Function::new_typed_with_env(&mut store, &host_env, abort_implementation),
             //"seed" => Global::new(&mut store, Value::F64(mapenv.map_get(atoms::seedf64())?.decode::<f64>()?)),
         }
     };
 
     let instance = Instance::new(&mut store, &module, &import_object).unwrap_or_else(|e| {
+        log_line(env, e.to_string().into_bytes());
         eprintln!("Error creating WASM instance: {}", e);
         panic_any("wasm_instance")
     });

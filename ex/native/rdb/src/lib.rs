@@ -692,7 +692,7 @@ fn apply_entry<'a>(env: Env<'a>, db: ResourceArc<DbResource>, next_entry_trimmed
     let write_opts = WriteOptions::default();
     let txn = db.db.transaction_opt(&write_opts, &txn_opts);
 
-    let (txn, muts, muts_rev, result_log, root_receipts, root_contractstate) =
+    let (txn, muts, muts_rev, result_log, receipts, root_receipts, root_contractstate) =
         consensus::consensus_apply::apply_entry(&db.db, pk.as_slice(), sk.as_slice(), &entry_signer, &entry_prev_hash,
             entry_slot, entry_prev_slot, entry_height, entry_epoch, &entry_vr, &entry_vr_b3, &entry_dr, txus, txn,
             testnet, testnet_peddlebikes.iter().map(|bin| bin.as_slice().to_vec()).collect()
@@ -709,8 +709,20 @@ fn apply_entry<'a>(env: Env<'a>, db: ResourceArc<DbResource>, next_entry_trimmed
     let mut ob2 = OwnedBinary::new(root_contractstate.len()).ok_or_else(|| Error::Term(Box::new("alloc failed"))).unwrap();
     ob2.as_mut_slice().copy_from_slice(&root_contractstate);
 
+    let mut receipts_list = Vec::new();
+    for r in receipts {
+        let mut map = Term::map_new(env);
+        map = map.map_put(atoms::txid(), to_binary2(env, &r.txid)).ok().unwrap();
+        map = map.map_put(atoms::error(), to_binary2(env, &r.error)).ok().unwrap();
+        map = map.map_put(atoms::exec_used(), to_binary2(env, &r.exec_used)).ok().unwrap();
+        let logs_list: Vec<Binary> = r.logs.iter().map(|log| {
+            to_binary2(env, log)
+        }).collect();
+        map = map.map_put(atoms::logs(), logs_list).ok().unwrap();
+        receipts_list.push(map);
+    }
 
-    Ok((term_txn, consensus_muts::mutations_to_map(muts), consensus_muts::mutations_to_map(muts_rev), result_log,
+    Ok((term_txn, consensus_muts::mutations_to_map(muts), consensus_muts::mutations_to_map(muts_rev), result_log, receipts_list,
         Binary::from_owned(ob1, env).encode(env), Binary::from_owned(ob2, env).encode(env)).encode(env))
 }
 

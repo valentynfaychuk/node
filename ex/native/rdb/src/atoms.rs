@@ -85,4 +85,8 @@ rustler::atoms! {
 
     cost_per_sol,
     cost_per_new_leaf_merkle,
+
+    txid,
+    exec_used,
+    logs,
 }

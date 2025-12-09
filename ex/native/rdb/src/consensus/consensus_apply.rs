@@ -85,6 +85,7 @@ pub struct ApplyEnv<'db> {
     pub exec_left: i128,
     pub exec_max: i128,
     pub result_log: Vec<HashMap<String, String>>,
+    pub receipts: Vec<protocol::ExecutionReceipt>,
     pub logs: Vec<Vec<u8>>,
     pub logs_size: usize,
     pub testnet: bool,
@@ -100,10 +101,11 @@ impl<'db> ApplyEnv<'db> {
         Vec<consensus_muts::Mutation>,
         Vec<consensus_muts::Mutation>,
         Vec<HashMap<String, String>>,
+        Vec<protocol::ExecutionReceipt>,
         [u8; 32],
         [u8; 32],
     ) {
-        (self.txn, self.muts_final, self.muts_final_rev, self.result_log, root_receipts, root_contractstate)
+        (self.txn, self.muts_final, self.muts_final_rev, self.result_log, self.receipts, root_receipts, root_contractstate)
     }
 }
 
@@ -131,6 +133,7 @@ pub fn make_apply_env<'db>(db: &'db TransactionDB<MultiThreaded>, txn: Transacti
         exec_left: 0,
         exec_max: protocol::AMA_10_CENT,
         result_log: Vec::new(),
+        receipts: Vec::new(),
         logs: Vec::new(),
         logs_size: 0,
         testnet: testnet,
@@ -152,12 +155,12 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
     entry_vr: &[u8; 96], entry_vr_b3: &[u8; 32], entry_dr: &[u8; 32],
     txus: Vec<rustler::Term<'a>>, txn: Transaction<'db, TransactionDB<MultiThreaded>>,
     testnet: bool, testnet_peddlebikes: Vec<Vec<u8>>,
-) -> (Transaction<'db, TransactionDB<MultiThreaded>>, Vec<consensus_muts::Mutation>, Vec<consensus_muts::Mutation>, Vec<HashMap<String, String>>, [u8; 32], [u8; 32]) {
+) -> (Transaction<'db, TransactionDB<MultiThreaded>>, Vec<consensus_muts::Mutation>, Vec<consensus_muts::Mutation>, Vec<HashMap<String, String>>, Vec<protocol::ExecutionReceipt>, [u8; 32], [u8; 32]) {
     let cf_h = db.cf_handle("contractstate").unwrap();
     let cf2_h = db.cf_handle("contractstate").unwrap();
     let cf_tree_h = db.cf_handle("contractstate_tree").unwrap();
-    let mut applyenv = make_apply_env(db, txn, cf_h, b"contractstate".to_vec(), cf2_h, cf_tree_h, 
-        entry_signer, entry_prev_hash, entry_slot, entry_prev_slot, entry_height, entry_epoch, entry_vr, entry_vr_b3, entry_dr, 
+    let mut applyenv = make_apply_env(db, txn, cf_h, b"contractstate".to_vec(), cf2_h, cf_tree_h,
+        entry_signer, entry_prev_hash, entry_slot, entry_prev_slot, entry_height, entry_epoch, entry_vr, entry_vr_b3, entry_dr,
         testnet, testnet_peddlebikes);
 
     call_txs_pre_upfront_cost(&mut applyenv, &txus);
@@ -252,6 +255,14 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
                     applyenv.result_log.push(m)
                 }
 */
+                let receipt = protocol::ExecutionReceipt {
+                    txid: tx_hash.into(),
+                    error: "ok".to_string().into(),
+                    exec_used: exec_cost_total.clone().into(),
+                    logs: applyenv.logs.clone(),
+                };
+                applyenv.receipts.push(receipt);
+
                 let mut m = std::collections::HashMap::new();
                 m.insert("error".to_string(), "ok".to_string());
                 m.insert("exec_used".to_string(), exec_cost_total.clone());
@@ -263,11 +274,27 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
                 refund_exec_deposit(&mut applyenv);
 
                 if let Some(&s) = payload.downcast_ref::<&'static str>() {
+                    let receipt = protocol::ExecutionReceipt {
+                        txid: tx_hash.into(),
+                        error: s.to_string().into(),
+                        exec_used: exec_cost_total.clone().into(),
+                        logs: applyenv.logs.clone(),
+                    };
+                    applyenv.receipts.push(receipt);
+
                     let mut m = std::collections::HashMap::new();
                     m.insert("error".to_string(), s.to_string());
                     m.insert("exec_used".to_string(), exec_cost_total.clone());
                     applyenv.result_log.push(m);
                 } else {
+                    let receipt = protocol::ExecutionReceipt {
+                        txid: tx_hash.into(),
+                        error: "unknown".to_string().into(),
+                        exec_used: exec_cost_total.clone().into(),
+                        logs: applyenv.logs.clone(),
+                    };
+                    applyenv.receipts.push(receipt);
+
                     let mut m = std::collections::HashMap::new();
                     m.insert("error".to_string(), "unknown".to_string());
                     m.insert("exec_used".to_string(), exec_cost_total.clone());

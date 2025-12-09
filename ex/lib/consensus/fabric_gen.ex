@@ -308,7 +308,7 @@ defmodule FabricGen do
 
       txus = Enum.map(entry.txs, & Map.merge(&1, %{tx_cost: TX.exec_cost(0, &1), tx_size: byte_size(RDB.vecpak_encode(&1)),
         tx_historical_cost: TX.historical_cost(&1) }))
-      {rtx, m, m_rev, l, root_receipts, root_contractstate} = RDB.apply_entry(db, next_entry_trimmed_map,
+      {rtx, m, m_rev, l, receipts, root_receipts, root_contractstate} = RDB.apply_entry(db, next_entry_trimmed_map,
         Application.fetch_env!(:ama, :trainer_pk), Application.fetch_env!(:ama, :trainer_sk), txus,
         !!Application.fetch_env!(:ama, :testnet), Map.keys(Application.fetch_env!(:ama, :keys_by_pk))
       )
@@ -332,6 +332,7 @@ defmodule FabricGen do
       m_rev = rebuild_m_fn.(m_rev)
       l = rebuild_l_fn.(l)
 
+      #IO.inspect receipts
       #IO.inspect {entry.header.height, :erlang.crc32(root_receipts), :erlang.crc32(root_contractstate)}
       #IO.inspect Enum.map(m, & Map.put(&1, :key, RocksDB.ascii_dump(&1.key))), limit: 11111111111
 
