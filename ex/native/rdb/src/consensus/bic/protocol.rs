@@ -20,12 +20,10 @@ pub const COST_PER_DB_READ_BYTE: i128 = 50;
 pub const COST_PER_DB_WRITE_BASE: i128 = 25_000;
 pub const COST_PER_DB_WRITE_BYTE: i128 = 250;
 
-/*
-pub const COST_PER_DB_READ_BASE: i128 = 5_000 * 10;
-pub const COST_PER_DB_READ_BYTE: i128 = 50 * 10;
-pub const COST_PER_DB_WRITE_BASE: i128 = 25_000 * 10;
-pub const COST_PER_DB_WRITE_BYTE: i128 = 250 * 10;
-*/
+pub const COST_PER_DB_READ_BASE2: i128 = 5_000 * 10;
+pub const COST_PER_DB_READ_BYTE2: i128 = 50 * 10;
+pub const COST_PER_DB_WRITE_BASE2: i128 = 25_000 * 10;
+pub const COST_PER_DB_WRITE_BYTE2: i128 = 250 * 10;
 
 pub const COST_PER_DEPLOY: i128 = AMA_1_CENT; //cost to deploy contract
 pub const COST_PER_SOL: i128 = AMA_1_CENT; //cost to submit_sol
