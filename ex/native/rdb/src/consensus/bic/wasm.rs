@@ -1,10 +1,13 @@
 use crate::consensus::bic::protocol;
 use crate::consensus::consensus_apply::{ApplyEnv};
+use crate::consensus::consensus_kv::{kv_get, kv_get_next, kv_put, kv_exists, kv_delete, kv_set_bit, kv_increment, kv_get_prev_or_first};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, SystemTime};
 use std::panic::panic_any;
-
+use std::time::Instant;
+use lazy_static::lazy_static;
+use sha2::{Sha256, Digest};
 
 use wasmer::{
     imports,
@@ -34,117 +37,160 @@ impl ApplyEnvPtr {
 }
 
 struct HostEnv {
+    applyenv_ptr: ApplyEnvPtr,
+    instance: Option<Instance>,
     memory: Memory,
     readonly: bool,
-    applyenv_ptr: ApplyEnvPtr,
-
-    //error: Option<Vec<u8>>,
-    //return_value: Option<Vec<u8>>,
-    //logs: Vec<Vec<u8>>,
-    //current_account: Vec<u8>,
-    //instance: Option<Arc<Instance>>,
-
-    //attached_symbol: Vec<u8>,
-    //attached_amount: Vec<u8>,
 }
 
-fn cost_function(operator: &Operator) -> u64 {
-    match operator {
-        Operator::Loop { .. }
-        | Operator::Block { .. }
-        | Operator::End { .. }
-        | Operator::Br { .. } => 1,
+lazy_static! {
+    static ref ARTIFACT_CACHE: Mutex<HashMap<Vec<u8>, Vec<u8>>> = Mutex::new(HashMap::new());
+}
 
-        Operator::I32Load { .. }
-        | Operator::I64Load { .. }
-        | Operator::I32Store { .. }
-        | Operator::I64Store { .. } => 3,
-
-        Operator::F32Load { .. }
-        | Operator::F64Load { .. }
-        | Operator::F32Store { .. }
-        | Operator::F64Store { .. } => 10,
-
-        Operator::Call { .. }
-        | Operator::CallIndirect { .. } => 10,
-
-        //TODO: middleware based on bytes copied
-        Operator::MemoryCopy { .. }
-        | Operator::MemoryFill { .. } => 1000,
-        Operator::MemoryGrow { .. } => 2000,
-
-        Operator::If { .. }
-        | Operator::Else { .. }
-        | Operator::BrIf { .. }
-        | Operator::Return { .. }
-        | Operator::Unreachable { .. } => 2,
-        _ => 2,
+fn set_return_value(applyenv: &mut ApplyEnv, return_value: Vec<u8>) {
+    if return_value.len() > protocol::WASM_MAX_PANIC_MSG_SIZE {
+        panic_any("exec_return_value_too_large")
     }
+    applyenv.caller_env.call_return_value = return_value
 }
 
 fn import_log_implementation(mut env: FunctionEnvMut<HostEnv>, ptr: i32, len: i32) {
-    println!("called");
-    let (data, store) = env.data_and_store_mut();
-    let view = data.memory.clone().view(&store);
+    let (data, mut store) = env.data_and_store_mut();
+    let instance = data.instance.clone().unwrap_or_else(|| panic_any("exec_instance_not_injected"));
     let applyenv = unsafe { data.applyenv_ptr.as_mut() };
     let len = len as usize;
 
     if len > protocol::WASM_MAX_PTR_LEN {
-        panic_any("wasm_ptr_term_too_long")
+        panic_any("exec_ptr_term_too_long")
     }
 
+    crate::consensus::consensus_kv::exec_budget_decr(applyenv, protocol::COST_PER_BYTE_HISTORICAL * len as i128);
+    set_remaining_points(&mut store, &instance, applyenv.exec_left.max(0) as u64);
+
+    let view = data.memory.clone().view(&store);
+
     let mut buffer = vec![0u8; len as usize];
-    if view.read(ptr as u64, &mut buffer).is_ok() {
-        log_line(applyenv, buffer.to_vec())
-    } else {
-        panic_any("wasm_log_invalid_ptr")
+    view.read(ptr as u64, &mut buffer).unwrap_or_else(|_| panic_any("exec_log_invalid_ptr"));
+    log_line(applyenv, buffer.to_vec())
+}
+
+fn import_return_implementation(mut env: FunctionEnvMut<HostEnv>, ptr: i32, len: i32) -> Result<(), RuntimeError> {
+    let (data, mut store) = env.data_and_store_mut();
+    let instance = data.instance.clone().unwrap_or_else(|| panic_any("exec_instance_not_injected"));
+    let applyenv = unsafe { data.applyenv_ptr.as_mut() };
+    let len = len as usize;
+
+    if len > protocol::WASM_MAX_PTR_LEN {
+        panic_any("exec_ptr_term_too_long")
     }
+
+    crate::consensus::consensus_kv::exec_budget_decr(applyenv, protocol::COST_PER_BYTE_HISTORICAL * len as i128);
+    set_remaining_points(&mut store, &instance, applyenv.exec_left.max(0) as u64);
+
+    let view = data.memory.clone().view(&store);
+
+    let mut buffer = vec![0u8; len as usize];
+    view.read(ptr as u64, &mut buffer).unwrap_or_else(|_| panic_any("exec_log_invalid_ptr"));
+    set_return_value(applyenv, buffer.to_vec());
+    Err(RuntimeError::new("EXIT_IMPORT_RETURN"))
+}
+
+fn build_prefixed_key(applyenv: &mut ApplyEnv, view: &MemoryView, ptr: i32, len: i32) -> Vec<u8> {
+    let mut key = vec![0u8; len as usize];
+    view.read(ptr as u64, &mut key).unwrap_or_else(|_| panic_any("exec_log_invalid_ptr"));
+
+    crate::bcat(&[&b"account:"[..], &applyenv.caller_env.account_current, &b":storage:"[..], &key])
+}
+
+fn import_storage_kv_get_implementation(mut env: FunctionEnvMut<HostEnv>, ptr: i32, len: i32) -> Result<i32, RuntimeError> {
+    let (data, mut store) = env.data_and_store_mut();
+    let instance = data.instance.clone().unwrap_or_else(|| panic_any("exec_instance_not_injected"));
+    let applyenv = unsafe { data.applyenv_ptr.as_mut() };
+
+    if len as usize > protocol::WASM_MAX_PTR_LEN {
+        panic_any("exec_ptr_term_too_long")
+    }
+
+    let view = data.memory.clone().view(&store);
+    let key = build_prefixed_key(applyenv, &view, ptr, len);
+    match kv_get(applyenv, &key) {
+        None => {
+            view.write(10_000, &(-1i32).to_le_bytes()).unwrap_or_else(|_| panic_any("exec_memwrite"));
+        },
+        Some(value) => {
+            view.write(10_000, &value.len().to_le_bytes()).unwrap_or_else(|_| panic_any("exec_memwrite"));
+            view.write(10_004, &value).unwrap_or_else(|_| panic_any("exec_memwrite"));
+        }
+    }
+    set_remaining_points(&mut store, &instance, applyenv.exec_left.max(0) as u64);
+    Ok(10_000)
 }
 
 //AssemblyScript specific
-fn abort_implementation(mut env: FunctionEnvMut<HostEnv>, msg_ptr: i32, filename_ptr: i32, line: i32, column: i32) -> Result<(), RuntimeError> {
-/*
+fn as_read_string(view: &MemoryView, ptr: i32) -> String {
+    if ptr == 0 { return "null".to_string(); }
+
+    let ptr = ptr as u64;
+
+    // 1. Read Length (stored at ptr - 4)
+    // AssemblyScript stores length in BYTES (not characters) at offset -4
+    let mut len_buf = [0u8; 4];
+    if view.read(ptr - 4, &mut len_buf).is_err() {
+        return "<invalid-ptr>".to_string();
+    }
+    let len_bytes = u32::from_le_bytes(len_buf) as u64;
+
+    // 2. Read UTF-16 Bytes
+    let mut str_buf = vec![0u8; len_bytes as usize];
+    if view.read(ptr, &mut str_buf).is_err() {
+        return "<invalid-mem>".to_string();
+    }
+
+    // 3. Convert [u8] -> [u16] -> String
+    let u16_vec: Vec<u16> = str_buf
+        .chunks_exact(2)
+        .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+        .collect();
+
+    String::from_utf16_lossy(&u16_vec)
+}
+
+fn as_abort_implementation(mut env: FunctionEnvMut<HostEnv>, msg_ptr: i32, filename_ptr: i32, line: i32, column: i32) -> Result<(), RuntimeError> {
     let (data, mut store) = env.data_and_store_mut();
-    let Some(memory) = &data.memory else { return Err(RuntimeError::new("invalid_memory")) };
-    let view: MemoryView = memory.view(&store);
+    let instance = data.instance.clone().unwrap_or_else(|| panic_any("exec_instance_not_injected"));
+    let view = data.memory.clone().view(&store);
+    let applyenv = unsafe { data.applyenv_ptr.as_mut() };
 
-    //I kill thee
-    let mut msg_size_bytes = [0u8; 4];
-    let Ok(_) = view.read((msg_ptr as u64) - 4, &mut msg_size_bytes) else { return Err(RuntimeError::new("invalid_memory")) };
-    let msg_size: i32 = i32::from_le_bytes(msg_size_bytes);
-    let mut msg_buff_utf16 = vec![0u8; msg_size as usize];
-    let Ok(_) = view.read(msg_ptr as u64, &mut msg_buff_utf16) else { return Err(RuntimeError::new("invalid_memory")) };
-    let msg_buff_utf16_b4collect = msg_buff_utf16.chunks_exact(2).map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]));
-    let msg_buff_utf16_collected: Vec<u16> = msg_buff_utf16_b4collect.collect();
+    //set_return_value(applyenv, b"as_abort".to_vec());
 
-    let mut filename_size_bytes = [0u8; 4];
-    let Ok(_) = view.read((filename_ptr as u64) - 4, &mut filename_size_bytes) else { return Err(RuntimeError::new("invalid_memory")) };
-    let filename_size: i32 = i32::from_le_bytes(filename_size_bytes);
-    let mut filename_buff_utf16 = vec![0u8; filename_size as usize];
-    let Ok(_) = view.read(filename_ptr as u64, &mut filename_buff_utf16) else { return Err(RuntimeError::new("invalid_memory")) };
-    let filename_buff_utf16_b4collect = filename_buff_utf16.chunks_exact(2).map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]));
-    let filename_buff_utf16_collected: Vec<u16> = filename_buff_utf16_b4collect.collect();
+    let msg = as_read_string(&view, msg_ptr);
+    let filename = as_read_string(&view, filename_ptr);
 
-    let msg_utf8 = match String::from_utf16(&msg_buff_utf16_collected) { Ok(s) => s, Err(_) => { return Err(RuntimeError::new("invalid_memory")); }};
-    let filename_utf8 = match String::from_utf16(&filename_buff_utf16_collected) { Ok(s) => s, Err(_) => { return Err(RuntimeError::new("invalid_memory")); }};
+    let full_error_msg = format!("as_abort: '{}' at {}:{}:{}",
+        msg, filename, line, column
+    );
 
-    let formatted = format!("{} | {} {} {}", msg_utf8, filename_utf8, line, column);
-    data.return_value = Some(formatted.into_bytes());
+    crate::consensus::consensus_kv::exec_budget_decr(applyenv, protocol::COST_PER_BYTE_HISTORICAL * full_error_msg.len() as i128);
+    set_remaining_points(&mut store, &instance, applyenv.exec_left.max(0) as u64);
 
-    //println!("{} {} {} {}", msg_utf8, filename_utf8, line, column);
+    log_line(applyenv, full_error_msg.as_bytes().to_vec());
 
-    Err(RuntimeError::new("abort"))
- */
-  Err(RuntimeError::new("abort"))
+    //TODO: is this OK?
+    panic_any("as_abort");
+    Ok(())
+    //Err(RuntimeError::new("as_abort"))
 }
 
 fn log_line(applyenv: &mut ApplyEnv, line: Vec<u8>) {
     let len = line.len();
     if len > protocol::LOG_MSG_SIZE {
-        panic_any("wasm_log_msg_size_exceeded")
+        panic_any("exec_log_msg_size_exceeded")
     }
     if (applyenv.logs_size.saturating_add(len)) > protocol::LOG_TOTAL_SIZE {
-        panic_any("wasm_logs_total_size_exceeded")
+        panic_any("exec_logs_total_size_exceeded")
+    }
+    if applyenv.logs.len() > protocol::LOG_TOTAL_ELEMENTS {
+        panic_any("exec_logs_total_elements_exceeded")
     }
 
     applyenv.logs.push(line);
@@ -153,7 +199,7 @@ fn log_line(applyenv: &mut ApplyEnv, line: Vec<u8>) {
 
 pub fn check_module_limits(wasm_bytes: &[u8]) -> Result<(), String> {
     if wasm_bytes.len() > protocol::WASM_MAX_BINARY_SIZE {
-        return Err("binary_size_exceeds_limit".to_string());
+        return Err("wasmparser_binary_size_exceeds_limit".to_string());
     }
 
     for payload in Parser::new(0).parse_all(wasm_bytes) {
@@ -211,10 +257,53 @@ pub fn validate_contract(env: &mut ApplyEnv, wasm_bytes: &[u8]) {
         panic_any(e)
     }
 
-    let metering = Arc::new(Metering::new(env.exec_left.max(0) as u64, cost_function));
+    let engine = make_engine(env.exec_left.max(0) as u64);
+    let mut store = Store::new(engine);
+
+    let module = Module::new(&store, wasm_bytes).unwrap_or_else(|_| panic_any("exec_invalid_module"));
+
+    setup_wasm_instance(env, &module, &mut store, true, &[]);
+}
+
+fn cost_function(operator: &Operator) -> u64 {
+    match operator {
+        Operator::Loop { .. }
+        | Operator::Block { .. }
+        | Operator::End { .. }
+        | Operator::Br { .. } => 1,
+
+        Operator::I32Load { .. }
+        | Operator::I64Load { .. }
+        | Operator::I32Store { .. }
+        | Operator::I64Store { .. } => 3,
+
+        Operator::F32Load { .. }
+        | Operator::F64Load { .. }
+        | Operator::F32Store { .. }
+        | Operator::F64Store { .. } => 10,
+
+        Operator::Call { .. }
+        | Operator::CallIndirect { .. } => 10,
+
+        //TODO: middleware based on bytes copied
+        Operator::MemoryCopy { .. }
+        | Operator::MemoryFill { .. } => 1000,
+        Operator::MemoryGrow { .. } => 2000,
+
+        Operator::If { .. }
+        | Operator::Else { .. }
+        | Operator::BrIf { .. }
+        | Operator::Return { .. }
+        | Operator::Unreachable { .. } => 2,
+        _ => 2,
+    }
+}
+
+fn make_engine(exec_remaining: u64) -> Engine {
+    let metering = Arc::new(Metering::new(exec_remaining, cost_function));
+
     let mut compiler = Singlepass::default();
     compiler.canonicalize_nans(true);
-
     compiler.push_middleware(metering);
 
     let mut features = Features::new();
@@ -225,67 +314,62 @@ pub fn validate_contract(env: &mut ApplyEnv, wasm_bytes: &[u8]) {
     features.tail_call(false);
     features.module_linking(false);
     features.memory64(false);
-
-    //required for modern compilers to WASM
     features.bulk_memory(true);
 
-    let engine = EngineBuilder::new(compiler).set_features(Some(features));
-    let mut store = Store::new(engine);
-    let module = Module::new(&store, wasm_bytes).unwrap_or_else(|_| panic_any("wasm_invalid_module"));
+    EngineBuilder::new(compiler)
+        .set_features(Some(features))
+        .into()
+}
 
-    let memory = Memory::new(&mut store, MemoryType::new(Pages(2), Some(Pages(20)), false)).unwrap_or_else(|_| panic_any("wasm_memory_alloc"));
-    let view = memory.view(&mut store);
+pub fn setup_wasm_instance(env: &mut ApplyEnv, module: &Module, store: &mut Store, readonly: bool, function_args: &[Vec<u8>]) -> (Instance, Vec<Value>) {
+    // Setup Memory
+    let memory = Memory::new(store, MemoryType::new(Pages(2), Some(Pages(30)), false)).unwrap_or_else(|_| panic_any("exec_memory_alloc"));
 
-    //Reserve first 1024 bytes
-    //Reserve first page 65536 bytes
-    view.write(1_100, &env.caller_env.seed.len().to_le_bytes()).unwrap_or_else(|_| panic_any("wasm_init_memwrite"));
-    view.write(1_104, &env.caller_env.seed).unwrap_or_else(|_| panic_any("wasm_init_memwrite"));
+    let mut wasm_arg_ptrs = Vec::new();
+    {
+        let view = memory.view(store);
+        inject_env_data(&view, env);
+        let mut current_offset: u64 = 10_000;
+        for arg_bytes in function_args {
+            // Write the bytes
+            view.write(current_offset, arg_bytes).unwrap_or_else(|_| panic_any("exec_arg_write"));
 
-    // Entry
-    view.write(2_000, &env.caller_env.entry_slot.to_le_bytes()).unwrap_or_else(|_| panic_any("wasm_init_memwrite"));
-    view.write(2_010, &env.caller_env.entry_height.to_le_bytes()).unwrap_or_else(|_| panic_any("wasm_init_memwrite"));
-    view.write(2_020, &env.caller_env.entry_epoch.to_le_bytes()).unwrap_or_else(|_| panic_any("wasm_init_memwrite"));
-    //
-    view.write(2_100, &env.caller_env.entry_signer.len().to_le_bytes()).unwrap_or_else(|_| panic_any("wasm_init_memwrite"));
-    view.write(2_104, &env.caller_env.entry_signer).unwrap_or_else(|_| panic_any("wasm_init_memwrite"));
-    view.write(2_200, &env.caller_env.entry_prev_hash.len().to_le_bytes()).unwrap_or_else(|_| panic_any("wasm_init_memwrite"));
-    view.write(2_204, &env.caller_env.entry_prev_hash).unwrap_or_else(|_| panic_any("wasm_init_memwrite"));
-    view.write(2_300, &env.caller_env.entry_vr.len().to_le_bytes()).unwrap_or_else(|_| panic_any("wasm_init_memwrite"));
-    view.write(2_304, &env.caller_env.entry_vr).unwrap_or_else(|_| panic_any("wasm_init_memwrite"));
-    view.write(2_400, &env.caller_env.entry_dr.len().to_le_bytes()).unwrap_or_else(|_| panic_any("wasm_init_memwrite"));
-    view.write(2_404, &env.caller_env.entry_dr).unwrap_or_else(|_| panic_any("wasm_init_memwrite"));
+            // NULL terminate for C / ZIG compat
+            let null_term_offset = current_offset + arg_bytes.len() as u64;
+            view.write(null_term_offset, &[0]).unwrap_or_else(|_| panic_any("exec_arg_null_write"));
 
-    // TX
-    view.write(3_000, &env.caller_env.tx_nonce.to_le_bytes()).unwrap_or_else(|_| panic_any("wasm_init_memwrite"));
-    //
-    view.write(3_100, &env.caller_env.tx_signer.len().to_le_bytes()).unwrap_or_else(|_| panic_any("wasm_init_memwrite"));
-    view.write(3_104, &env.caller_env.tx_signer).unwrap_or_else(|_| panic_any("wasm_init_memwrite"));
-    //
-    view.write(4_000, &env.caller_env.account_current.len().to_le_bytes()).unwrap_or_else(|_| panic_any("wasm_init_memwrite"));
-    view.write(4_004, &env.caller_env.account_current).unwrap_or_else(|_| panic_any("wasm_init_memwrite"));
-    view.write(4_100, &env.caller_env.account_caller.len().to_le_bytes()).unwrap_or_else(|_| panic_any("wasm_init_memwrite"));
-    view.write(4_104, &env.caller_env.account_caller).unwrap_or_else(|_| panic_any("wasm_init_memwrite"));
-    view.write(4_200, &env.caller_env.account_origin.len().to_le_bytes()).unwrap_or_else(|_| panic_any("wasm_init_memwrite"));
-    view.write(4_204, &env.caller_env.account_origin).unwrap_or_else(|_| panic_any("wasm_init_memwrite"));
-    //
-    view.write(5_000, &env.caller_env.attached_symbol.len().to_le_bytes()).unwrap_or_else(|_| panic_any("wasm_init_memwrite"));
-    view.write(5_004, &env.caller_env.attached_symbol).unwrap_or_else(|_| panic_any("wasm_init_memwrite"));
-    view.write(5_100, &env.caller_env.attached_amount.len().to_le_bytes()).unwrap_or_else(|_| panic_any("wasm_init_memwrite"));
-    view.write(5_104, &env.caller_env.attached_amount).unwrap_or_else(|_| panic_any("wasm_init_memwrite"));
+            // Save the POINTER (i32) to pass to the function call later
+            wasm_arg_ptrs.push(Value::I32(current_offset as i32));
 
+            // Advance offset (Add +1 if you need null-termination for C-strings)
+            current_offset += (arg_bytes.len() as u64) + 1;
+        }
+    }
+
+    // Setup Host Environment
     let apply_ptr = env as *mut ApplyEnv as *mut c_void;
     let applyenv_ptr = ApplyEnvPtr { ptr: apply_ptr };
 
-    let host_env = FunctionEnv::new(&mut store, HostEnv {
-        memory: memory.clone(), readonly: true, applyenv_ptr: applyenv_ptr,
-    });
+    let host_env_data = HostEnv {
+        memory: memory.clone(),
+        instance: None,
+        readonly,
+        applyenv_ptr,
+    };
 
+    let host_env = FunctionEnv::new(store, host_env_data);
+
+    // Imports
     let import_object = imports! {
         "env" => {
             "memory" => memory,
-            "import_log" => Function::new_typed_with_env(&mut store, &host_env, import_log_implementation),
+            "import_log" => Function::new_typed_with_env(store, &host_env, import_log_implementation),
+            "import_return" => Function::new_typed_with_env(store, &host_env, import_return_implementation),
+
+            //Storage
+            "import_kv_get" => Function::new_typed_with_env(store, &host_env, import_storage_kv_get_implementation),
+
 /*
-            "import_return" => Function::new_typed_with_env(&mut store, &host_env, import_return_implementation),
 
 
             "import_attach" => Function::new_typed_with_env(&mut store, &host_env, import_attach_implementation),
@@ -303,7 +387,6 @@ pub fn validate_contract(env: &mut ApplyEnv, wasm_bytes: &[u8]) {
             "import_kv_delete" => Function::new_typed_with_env(&mut store, &host_env, import_storage_kv_delete_implementation),
             "import_kv_clear" => Function::new_typed_with_env(&mut store, &host_env, import_storage_kv_clear_implementation),
 
-            "import_kv_get" => Function::new_typed_with_env(&mut store, &host_env, import_storage_kv_get_implementation),
             "import_kv_exists" => Function::new_typed_with_env(&mut store, &host_env, import_storage_kv_exists_implementation),
             "import_kv_get_prev" => Function::new_typed_with_env(&mut store, &host_env, import_storage_kv_get_prev_implementation),
             "import_kv_get_next" => Function::new_typed_with_env(&mut store, &host_env, import_storage_kv_get_next_implementation),
@@ -312,14 +395,119 @@ pub fn validate_contract(env: &mut ApplyEnv, wasm_bytes: &[u8]) {
             //"import_kv_get_prefix" => Function::new_typed(&mut store, || println!("called_kv_get_in_rust")),
 
             //AssemblyScript specific
-            "abort" => Function::new_typed_with_env(&mut store, &host_env, abort_implementation),
+            "abort" => Function::new_typed_with_env(store, &host_env, as_abort_implementation),
             //"seed" => Global::new(&mut store, Value::F64(mapenv.map_get(atoms::seedf64())?.decode::<f64>()?)),
         }
     };
 
-    let instance = Instance::new(&mut store, &module, &import_object).unwrap_or_else(|e| {
+    // Create Instance
+    let instance = Instance::new(store, module, &import_object).unwrap_or_else(|e| {
         log_line(env, e.to_string().into_bytes());
-        eprintln!("Error creating WASM instance: {}", e);
-        panic_any("wasm_instance")
+        panic_any("exec_instance")
     });
+    host_env.as_mut(store).instance = Some(instance.clone());
+    (instance, wasm_arg_ptrs)
+}
+
+fn inject_env_data(view: &MemoryView, env: &ApplyEnv) {
+    let mut w = |offset: u64, data: &[u8]| {
+        view.write(offset, data).unwrap_or_else(|_| panic_any("exec_init_memwrite"))
+    };
+
+    //Reserve first 1024 bytes
+    //Reserve first page 65536 bytes
+    w(1_100, &env.caller_env.seed.len().to_le_bytes());
+    w(1_104, &env.caller_env.seed);
+
+    // Entry
+    w(2_000, &env.caller_env.entry_slot.to_le_bytes());
+    w(2_010, &env.caller_env.entry_height.to_le_bytes());
+    w(2_020, &env.caller_env.entry_epoch.to_le_bytes());
+    //
+    w(2_100, &env.caller_env.entry_signer.len().to_le_bytes());
+    w(2_104, &env.caller_env.entry_signer);
+    w(2_200, &env.caller_env.entry_prev_hash.len().to_le_bytes());
+    w(2_204, &env.caller_env.entry_prev_hash);
+    w(2_300, &env.caller_env.entry_vr.len().to_le_bytes());
+    w(2_304, &env.caller_env.entry_vr);
+    w(2_400, &env.caller_env.entry_dr.len().to_le_bytes());
+    w(2_404, &env.caller_env.entry_dr);
+
+    // TX
+    w(3_000, &env.caller_env.tx_nonce.to_le_bytes());
+    //
+    w(3_100, &env.caller_env.tx_signer.len().to_le_bytes());
+    w(3_104, &env.caller_env.tx_signer);
+
+    // Accounts
+    w(4_000, &env.caller_env.account_current.len().to_le_bytes());
+    w(4_004, &env.caller_env.account_current);
+    w(4_100, &env.caller_env.account_caller.len().to_le_bytes());
+    w(4_104, &env.caller_env.account_caller);
+    w(4_200, &env.caller_env.account_origin.len().to_le_bytes());
+    w(4_204, &env.caller_env.account_origin);
+
+    // Assets
+    w(5_000, &env.caller_env.attached_symbol.len().to_le_bytes());
+    w(5_004, &env.caller_env.attached_symbol);
+    w(5_100, &env.caller_env.attached_amount.len().to_le_bytes());
+    w(5_104, &env.caller_env.attached_amount);
+}
+
+pub fn call_contract(env: &mut ApplyEnv, wasm_bytes: &[u8], function_name: String, function_args: Vec<Vec<u8>>) -> Vec<u8> {
+    env.caller_env.call_return_value = Vec::new();
+
+    let engine = make_engine(env.exec_left.max(0) as u64);
+    let mut store = Store::new(engine);
+
+    // Load Module (From Cache or Compile)
+    let wasm_hash = Sha256::digest(wasm_bytes).to_vec();
+    let module = {
+        let mut cache = ARTIFACT_CACHE.lock().unwrap();
+
+        //TODO: fix this to be more deterministic, as caches are node local
+        if let Some(artifact_bytes) = cache.get(&wasm_hash) {
+            // FAST PATH: Deserialize from cache
+            unsafe { Module::deserialize(&store, artifact_bytes) }
+                .unwrap_or_else(|_| panic_any("exec_deserialize_err"))
+        } else {
+            // SLOW PATH: Compile from scratch
+            let new_module = Module::new(&store, wasm_bytes).unwrap_or_else(|_| panic_any("exec_invalid_module"));
+
+            // Serialize and Cache
+            let artifact = new_module.serialize().unwrap_or_else(|_| panic_any("exec_serialize_err"));
+            cache.insert(wasm_hash, artifact.to_vec());
+
+            new_module
+        }
+    };
+
+    let (instance, wasm_args) = setup_wasm_instance(env, &module, &mut store, false, &[]);
+
+    let entry_to_call = instance.exports.get_function(&function_name).unwrap_or_else(|e| {
+        log_line(env, e.to_string().into_bytes());
+        panic_any("exec_function_not_found")
+    });
+    let start = Instant::now();
+    let call_result = entry_to_call.call(&mut store, &wasm_args);
+    let duration = start.elapsed();
+    println!("call result {} {:?}", duration.as_millis(), call_result);
+
+    let remaining = match get_remaining_points(&mut store, &instance) {
+        MeteringPoints::Remaining(v) => v,
+        MeteringPoints::Exhausted => {
+            env.exec_left = 0;
+            panic_any("exec_insufficient_exec_budget")
+        },
+    };
+    env.exec_left = remaining as i128;
+
+    match call_result {
+        Ok(_) => env.caller_env.call_return_value.clone(),
+        Err(ref e) if e.message() == "EXIT_IMPORT_RETURN" => env.caller_env.call_return_value.clone(),
+        Err(err) => {
+            log_line(env, err.message().into_bytes());
+            panic_any("exec_error");
+        }
+    }
 }

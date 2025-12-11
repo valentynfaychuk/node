@@ -8,7 +8,7 @@ use consensus_muts::Mutation;
 
 pub fn exec_budget_decr(env: &mut ApplyEnv, amount: i128) {
     if amount < 0 {
-         panic_any("invalid_exec_amount_negative");
+         panic_any("exec_invalid_amount_negative");
     }
 
     if env.exec_track {
@@ -16,29 +16,48 @@ pub fn exec_budget_decr(env: &mut ApplyEnv, amount: i128) {
             Some(new_budget) => {
                 if new_budget < 0 {
                     env.exec_left = 0;
-                    panic_any("insufficient_exec_budget");
+                    panic_any("exec_insufficient_exec_budget");
                 }
                 env.exec_left = new_budget;
             },
-            None => panic_any("critical_exec_underflow")
+            None => panic_any("exec_critical_underflow")
+        }
+    }
+}
+
+pub fn storage_budget_decr(env: &mut ApplyEnv, amount: i128) {
+    if amount < 0 {
+         panic_any("exec_storage_invalid_amount_negative");
+    }
+
+    if env.exec_track {
+        match env.storage_left.checked_sub(amount) {
+            Some(new_budget) => {
+                if new_budget < 0 {
+                    env.storage_left = 0;
+                    panic_any("exec_insufficient_storage_budget");
+                }
+                env.storage_left = new_budget;
+            },
+            None => panic_any("exec_storage_critical_underflow")
         }
     }
 }
 
 pub fn exec_kv_size(key: &[u8], value: Option<&[u8]>) {
     if key.len() > protocol::MAX_DB_KEY_SIZE {
-         panic_any("too_large_key_size");
+         panic_any("exec_too_large_key_size");
     }
     if let Some(v) = value {
         if v.len() > protocol::MAX_DB_VALUE_SIZE {
-             panic_any("too_large_value_size");
+             panic_any("exec_too_large_value_size");
         }
     }
 }
 
 pub fn kv_put(env: &mut ApplyEnv, key: &[u8], value: &[u8]) {
     if env.readonly {
-        panic!("cannot_write_during_view");
+        panic!("exec_cannot_write_during_view");
     }
 
     exec_kv_size(key, Some(value));
@@ -52,7 +71,7 @@ pub fn kv_put(env: &mut ApplyEnv, key: &[u8], value: &[u8]) {
             env.muts_rev.push(Mutation::Delete { op: b"delete".to_vec(), table: env.cf_name.to_vec(), key: key.to_vec() });
 
             env.muts.push(Mutation::Put { op: b"put".to_vec(), table: env.cf_name.to_vec(), key: key.to_vec(), value: value.to_vec() });
-            env.txn.put_cf(&env.cf, key, value).unwrap_or_else(|_| panic_any("kv_put_failed"))
+            env.txn.put_cf(&env.cf, key, value).unwrap_or_else(|_| panic_any("exec_kv_put_failed"))
         },
         Some(old) => {
             //TODO: consider gas refund on delete? gas-token attack?
@@ -60,14 +79,14 @@ pub fn kv_put(env: &mut ApplyEnv, key: &[u8], value: &[u8]) {
             env.muts_rev.push(Mutation::Put { op: b"put".to_vec(), table: env.cf_name.to_vec(), key: key.to_vec(), value: old.to_vec() });
 
             env.muts.push(Mutation::Put { op: b"put".to_vec(), table: env.cf_name.to_vec(), key: key.to_vec(), value: value.to_vec() });
-            env.txn.put_cf(&env.cf, key, value).unwrap_or_else(|_| panic_any("kv_put_failed"))
+            env.txn.put_cf(&env.cf, key, value).unwrap_or_else(|_| panic_any("exec_kv_put_failed"))
         }
     }
 }
 
 pub fn kv_increment(env: &mut ApplyEnv, key: &[u8], value: i128) -> i128 {
     if env.readonly {
-        panic!("cannot_write_during_view");
+        panic!("exec_cannot_write_during_view");
     }
 
     let value_str = value.to_string().into_bytes();
@@ -80,12 +99,12 @@ pub fn kv_increment(env: &mut ApplyEnv, key: &[u8], value: i128) -> i128 {
             exec_budget_decr(env, protocol::COST_PER_BYTE_STATE * (key.len() + value_str.len()) as i128);
             env.muts.push(Mutation::Put { op: b"put".to_vec(), table: env.cf_name.to_vec(), key: key.to_vec(), value: value.to_string().into_bytes() });
             env.muts_rev.push(Mutation::Delete { op: b"delete".to_vec(), table: env.cf_name.to_vec(), key: key.to_vec() });
-            env.txn.put_cf(&env.cf, key, value_str).unwrap_or_else(|_| panic_any("kv_put_failed"));
+            env.txn.put_cf(&env.cf, key, value_str).unwrap_or_else(|_| panic_any("exec_kv_increment_failed"));
             value
         },
         Some(old) => {
-            let old_int: i128 = atoi::atoi::<i128>(&old).unwrap_or_else(|| panic_any("invalid_integer"));
-            let new_value = old_int.checked_add(value).unwrap_or_else(|| panic_any("integer_overflow"));
+            let old_int: i128 = atoi::atoi::<i128>(&old).unwrap_or_else(|| panic_any("exec_kv_increment_invalid_integer"));
+            let new_value = old_int.checked_add(value).unwrap_or_else(|| panic_any("exec_kv_increment_integer_overflow"));
             let new_value_str = new_value.to_string().into_bytes();
             exec_kv_size(key, Some(&new_value_str));
             exec_budget_decr(env, protocol::COST_PER_BYTE_STATE * new_value_str.len().saturating_sub(old.len()) as i128);
@@ -99,7 +118,7 @@ pub fn kv_increment(env: &mut ApplyEnv, key: &[u8], value: i128) -> i128 {
 
 pub fn kv_delete(env: &mut ApplyEnv, key: &[u8]) {
     if env.readonly {
-        panic!("cannot_write_during_view");
+        panic!("exec_cannot_write_during_view");
     }
 
     exec_budget_decr(env, protocol::COST_PER_DB_WRITE_BASE + protocol::COST_PER_DB_WRITE_BYTE * (key.len()) as i128);
@@ -111,12 +130,12 @@ pub fn kv_delete(env: &mut ApplyEnv, key: &[u8]) {
             env.muts_rev.push(Mutation::Put { op: b"put".to_vec(), table: env.cf_name.to_vec(), key: key.to_vec(), value: old.to_vec() })
         }
     }
-    env.txn.delete_cf(&env.cf, key).unwrap_or_else(|_| panic_any("kv_put_failed"));
+    env.txn.delete_cf(&env.cf, key).unwrap_or_else(|_| panic_any("exec_kv_delete_failed"));
 }
 
 pub fn kv_set_bit(env: &mut ApplyEnv, key: &[u8], bit_idx: u64) -> bool {
     if env.readonly {
-        panic!("cannot_write_during_view");
+        panic!("exec_cannot_write_during_view");
     }
 
     exec_budget_decr(env, protocol::COST_PER_DB_WRITE_BASE + protocol::COST_PER_DB_WRITE_BYTE * (key.len()) as i128);
@@ -139,7 +158,7 @@ pub fn kv_set_bit(env: &mut ApplyEnv, key: &[u8], bit_idx: u64) -> bool {
             false => env.muts_rev.push(Mutation::Delete { op: b"delete".to_vec(), table: env.cf_name.to_vec(), key: key.to_vec()})
         };
         old[byte_idx] |= mask;
-        env.txn.put_cf(&env.cf, key, &old).unwrap();
+        env.txn.put_cf(&env.cf, key, &old).unwrap_or_else(|_| panic_any("exec_kv_set_bit_failed"));
         true
     }
 }
