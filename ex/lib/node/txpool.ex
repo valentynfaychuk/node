@@ -110,14 +110,9 @@ defmodule TXPool do
       good
     end
 
-    def grab_next_valid(height, amt \\ 1) do
+    def grab_next_valid(chain_height, amt \\ 1) do
         try do
-            chain_epoch = DB.Chain.epoch()
-            chain_height = DB.Chain.height()
-
-            {chain_epoch, chain_height} = if height >= 433_00001 do
-              {div(height, 100_000), height}
-            else {chain_epoch, chain_height} end
+            chain_epoch = div(chain_height, 100_000)
 
             segment_vr_hash = DB.Chain.segment_vr_hash()
             {acc, state} = :ets.foldl(fn({key, txu}, {acc, state_old})->
