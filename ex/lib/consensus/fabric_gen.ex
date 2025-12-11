@@ -246,7 +246,7 @@ defmodule FabricGen do
   end
 
   def produce_entry(seed, cur_entry) do
-    txs = TXPool.grab_next_valid(100)
+    txs = TXPool.grab_next_valid(cur_entry.header.height + 1, 100)
     next_entry = Entry.build_next(seed, cur_entry, txs)
     next_entry = Entry.sign(seed, next_entry)
     next_entry
@@ -306,8 +306,8 @@ defmodule FabricGen do
           entry_epoch: div(entry.header.height, 100_000),
       }
 
-      txus = Enum.map(entry.txs, & Map.merge(&1, %{tx_cost: TX.exec_cost(0, &1), tx_size: byte_size(RDB.vecpak_encode(&1)),
-        tx_historical_cost: TX.historical_cost(&1) }))
+      txus = Enum.map(entry.txs, & Map.merge(&1, %{tx_size: byte_size(RDB.vecpak_encode(&1)), tx_historical_cost: TX.historical_cost(entry.header.height, &1) }))
+      #IO.inspect txus, limit: 1111111111
       {rtx, m, m_rev, l, receipts, root_receipts, root_contractstate} = RDB.apply_entry(db, next_entry_trimmed_map,
         Application.fetch_env!(:ama, :trainer_pk), Application.fetch_env!(:ama, :trainer_sk), txus,
         !!Application.fetch_env!(:ama, :testnet), Map.keys(Application.fetch_env!(:ama, :keys_by_pk))
@@ -332,7 +332,7 @@ defmodule FabricGen do
       m_rev = rebuild_m_fn.(m_rev)
       l = rebuild_l_fn.(l)
 
-      #IO.inspect receipts
+      #receipts != [] && IO.inspect receipts
       #IO.inspect {entry.header.height, :erlang.crc32(root_receipts), :erlang.crc32(root_contractstate)}
       #IO.inspect Enum.map(m, & Map.put(&1, :key, RocksDB.ascii_dump(&1.key))), limit: 11111111111
 
@@ -343,7 +343,11 @@ defmodule FabricGen do
       #m = m ++ m_exit
       #m_rev = m_rev ++ m_exit_rev
 
-      mutations_hash = RDB.vecpak_encode(l ++ m) |> Blake3.hash()
+      mutations_hash = if entry.header.height >= RDBProtocol.forkheight() do
+        RDB.vecpak_encode(receipts ++ m) |> Blake3.hash()
+      else
+        RDB.vecpak_encode(l ++ m) |> Blake3.hash()
+      end
 
       RocksDB.put("temporal_tip", next_entry.hash, %{rtx: rtx, cf: cf.sysconf})
 

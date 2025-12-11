@@ -61,11 +61,20 @@ defmodule RDB do
 end
 
 defmodule RDBProtocol do
-  def reserve_ama_per_tx() do
-    const = :persistent_term.get({ProtocolConstant, :reserve_ama_per_tx}, nil)
+  def reserve_ama_per_tx_exec() do
+    const = :persistent_term.get({ProtocolConstant, :reserve_ama_per_tx_exec}, nil)
     if const do const else
-      const = RDB.protocol_constants().reserve_ama_per_tx
-      :persistent_term.put({ProtocolConstant, :reserve_ama_per_tx}, const)
+      const = RDB.protocol_constants().reserve_ama_per_tx_exec
+      :persistent_term.put({ProtocolConstant, :reserve_ama_per_tx_exec}, const)
+      const
+    end
+  end
+
+  def reserve_ama_per_tx_storage() do
+    const = :persistent_term.get({ProtocolConstant, :reserve_ama_per_tx_storage}, nil)
+    if const do const else
+      const = RDB.protocol_constants().reserve_ama_per_tx_storage
+      :persistent_term.put({ProtocolConstant, :reserve_ama_per_tx_storage}, const)
       const
     end
   end

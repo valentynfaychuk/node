@@ -63,8 +63,11 @@ defmodule TXPool do
         batch_state = Map.put(batch_state, {:chain_nonce, txu.tx.signer}, txu.tx.nonce)
 
         balance = Map.get_lazy(batch_state, {:balance, txu.tx.signer}, fn()-> DB.Chain.balance(txu.tx.signer) end)
-        balance = balance - (RDBProtocol.reserve_ama_per_tx() * 2)
-        balance = balance - TX.historical_cost(txu)
+        balance = balance - (RDBProtocol.reserve_ama_per_tx_exec() * 2)
+        balance = if chain_height >= RDBProtocol.forkheight() do
+          balance = balance - RDBProtocol.reserve_ama_per_tx_storage()
+        else balance end
+        balance = balance - TX.historical_cost(chain_height, txu)
         if balance < 0, do: throw(%{error: :not_enough_tx_exec_balance, key: {txu.tx.nonce, txu.hash}})
         batch_state = Map.put(batch_state, {:balance, txu.tx.signer}, balance)
 
@@ -89,13 +92,14 @@ defmodule TXPool do
     def event_tx_validate(txu) when is_map(txu) do event_tx_validate([txu]) end
     def event_tx_validate(txus) when is_list(txus) do
       chain_epoch = DB.Chain.epoch()
+      chain_height = DB.Chain.height()
       segment_vr_hash = DB.Chain.segment_vr_hash()
       diff_bits = DB.Chain.diff_bits()
 
       {good, _} = Enum.reduce(txus, {[], %{}}, fn(txu, {acc, batch_state})->
         case TX.validate(txu) do
           %{error: :ok, txu: txu} ->
-            case TXPool.validate_tx(txu, %{epoch: chain_epoch, segment_vr_hash: segment_vr_hash, diff_bits: diff_bits, batch_state: batch_state}) do
+            case TXPool.validate_tx(txu, %{epoch: chain_epoch, height: chain_height, segment_vr_hash: segment_vr_hash, diff_bits: diff_bits, batch_state: batch_state}) do
               %{error: :ok, batch_state: batch_state} -> {acc ++ [txu], batch_state}
               %{error: error} -> {acc, batch_state}
             end
@@ -106,17 +110,22 @@ defmodule TXPool do
       good
     end
 
-    def grab_next_valid(amt \\ 1) do
+    def grab_next_valid(height, amt \\ 1) do
         try do
             chain_epoch = DB.Chain.epoch()
             chain_height = DB.Chain.height()
+
+            {chain_epoch, chain_height} = if height >= 433_00001 do
+              {div(height, 100_000), height}
+            else {chain_epoch, chain_height} end
+
             segment_vr_hash = DB.Chain.segment_vr_hash()
             {acc, state} = :ets.foldl(fn({key, txu}, {acc, state_old})->
                 try do
                   #TODO: remove this redundant validate
                   case TX.validate(txu) do
                     %{error: :ok, txu: txu} ->
-                      case validate_tx(txu, %{epoch: chain_epoch, segment_vr_hash: segment_vr_hash, batch_state: state_old}) do
+                      case validate_tx(txu, %{epoch: chain_epoch, height: chain_height, segment_vr_hash: segment_vr_hash, batch_state: state_old}) do
                         %{error: :ok, batch_state: batch_state} ->
                           acc = acc ++ [txu]
                           if length(acc) == amt do
