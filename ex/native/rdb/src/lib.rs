@@ -714,7 +714,7 @@ fn apply_entry<'a>(env: Env<'a>, db: ResourceArc<DbResource>, next_entry_trimmed
         let mut map = Term::map_new(env);
         map = map.map_put(atoms::success(), r.success).ok().unwrap();
         map = map.map_put(atoms::txid(), to_binary2(env, &r.txid)).ok().unwrap();
-        map = map.map_put(atoms::error(), to_binary2(env, &r.error)).ok().unwrap();
+        map = map.map_put(atoms::result(), to_binary2(env, &r.result)).ok().unwrap();
         map = map.map_put(atoms::exec_used(), to_binary2(env, &r.exec_used)).ok().unwrap();
         let logs_list: Vec<Binary> = r.logs.iter().map(|log| {
             to_binary2(env, log)

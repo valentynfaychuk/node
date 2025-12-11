@@ -90,5 +90,6 @@ rustler::atoms! {
     txid,
     success,
     exec_used,
+    result,
     logs,
 }

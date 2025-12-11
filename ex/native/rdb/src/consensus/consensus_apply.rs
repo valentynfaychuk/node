@@ -222,10 +222,12 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
                 false => {
                     //println!("{:?}->{:?} {:?} {:?}", String::from_utf8_lossy(&contract), String::from_utf8_lossy(&function), attached_amount, attached_symbol);
                     call_bic(&mut applyenv, contract, function, args, attached_symbol, attached_amount);
+                    b"ok".to_vec()
                 }
                 true => {
                     //println!("{:?}->{:?} {:?} {:?}", bs58::encode(&contract).into_string(), String::from_utf8_lossy(&function), attached_amount, attached_symbol);
-                    call_wasmvm(&mut applyenv, contract, function, args, attached_symbol, attached_amount);
+                    let result = call_wasmvm(&mut applyenv, contract, function, args, attached_symbol, attached_amount);
+                    result
                 }
             }
         }));
@@ -239,7 +241,7 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
         }
 
         match res {
-            Ok(_) => {
+            Ok(result) => {
                 applyenv.muts_final.append(&mut applyenv.muts);
                 applyenv.muts_final_rev.append(&mut applyenv.muts_rev);
                 refund_exec_storage_deposit(&mut applyenv);
@@ -268,7 +270,7 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
                 let receipt = protocol::ExecutionReceipt {
                     txid: tx_hash.into(),
                     success: true,
-                    error: "ok".to_string().into(),
+                    result: result.into(),
                     exec_used: exec_cost_total.clone().into(),
                     logs: applyenv.logs.clone(),
                 };
@@ -288,7 +290,7 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
                     let receipt = protocol::ExecutionReceipt {
                         txid: tx_hash.into(),
                         success: false,
-                        error: s.to_string().into(),
+                        result: s.to_string().into(),
                         exec_used: exec_cost_total.clone().into(),
                         logs: applyenv.logs.clone(),
                     };
@@ -302,7 +304,7 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
                     let receipt = protocol::ExecutionReceipt {
                         txid: tx_hash.into(),
                         success: false,
-                        error: "unknown".to_string().into(),
+                        result: b"unknown".into(),
                         exec_used: exec_cost_total.clone().into(),
                         logs: applyenv.logs.clone(),
                     };
@@ -696,7 +698,7 @@ fn call_bic(env: &mut ApplyEnv, contract: Vec<u8>, function: Vec<u8>, args: Vec<
     }
 }
 
-fn call_wasmvm(env: &mut ApplyEnv, contract: Vec<u8>, function: Vec<u8>, args: Vec<Vec<u8>>, attached_symbol: Option<Vec<u8>>, attached_amount: Option<Vec<u8>>) {
+fn call_wasmvm(env: &mut ApplyEnv, contract: Vec<u8>, function: Vec<u8>, args: Vec<Vec<u8>>, attached_symbol: Option<Vec<u8>>, attached_amount: Option<Vec<u8>>) -> Vec<u8> {
     let function = String::from_utf8(function).unwrap_or_else(|_| panic_any("invalid_function"));
 
     env.caller_env.attached_symbol = Vec::new();
@@ -722,11 +724,6 @@ fn call_wasmvm(env: &mut ApplyEnv, contract: Vec<u8>, function: Vec<u8>, args: V
     }
 
     std::panic::panic_any("wasm_noop");
-
     let error = consensus::bic::wasm::call_contract(env, bytecode.as_deref().unwrap_or_else(|| panic_any("invalid_bytecode")), function, args);
-
-    //let result = ();
-
-    //exec used
-    //muts
+    error
 }

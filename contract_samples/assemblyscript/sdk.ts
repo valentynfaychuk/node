@@ -236,6 +236,20 @@ export function ret<T>(retv: T): void {
   }
 }
 
+@external("env", "import_kv_put")
+declare function import_kv_put(key_ptr: i32, key_len: i32, val_ptr: i32, val_len: i32): i32;
+export function kv_put<T>(key: T, val: T): void {
+  if (isString<T>()) {
+    let bkey = String.UTF8.encode(key, false);
+    let bval = String.UTF8.encode(val, false);
+    import_kv_put(changetype<i32>(bkey), bkey.byteLength, changetype<i32>(bval), bval.byteLength);
+  } else if (key instanceof Uint8Array) {
+    import_kv_put(changetype<i32>(key.dataStart), key.byteLength, changetype<i32>(val.dataStart), val.byteLength);
+  } else {
+    abort("kv_put_invalid_type")
+  }
+}
+
 @external("env", "import_kv_increment")
 declare function import_kv_increment(key_ptr: i32, key_len: i32, val_ptr: i32, val_len: i32): i32;
 export function kv_increment<T>(key: T, val: string): string {
@@ -253,10 +267,16 @@ export function kv_increment<T>(key: T, val: string): string {
   }
 }
 
+@external("env", "import_kv_exists")
+declare function import_kv_exists(ptr: i32, len: i32): i32;
+export function kv_exists(key: Uint8Array): bool {
+  const result = import_kv_exists(changetype<i32>(key.dataStart), key.byteLength);
+  return result == 1
+}
+
 @external("env", "import_kv_get")
 declare function import_kv_get(ptr: i32, len: i32): i32;
 function __kv_get<T>(ptr: i32, len: i32): T {
-
   const termPtr = import_kv_get(ptr, len);
   const size = load<i32>(termPtr);
   const dataPtr = termPtr + 4;

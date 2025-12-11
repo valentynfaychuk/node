@@ -20,6 +20,13 @@ pub const COST_PER_DB_READ_BYTE: i128 = 50;
 pub const COST_PER_DB_WRITE_BASE: i128 = 25_000;
 pub const COST_PER_DB_WRITE_BYTE: i128 = 250;
 
+/*
+pub const COST_PER_DB_READ_BASE: i128 = 5_000 * 10;
+pub const COST_PER_DB_READ_BYTE: i128 = 50 * 10;
+pub const COST_PER_DB_WRITE_BASE: i128 = 25_000 * 10;
+pub const COST_PER_DB_WRITE_BYTE: i128 = 250 * 10;
+*/
+
 pub const COST_PER_DEPLOY: i128 = AMA_1_CENT; //cost to deploy contract
 pub const COST_PER_SOL: i128 = AMA_1_CENT; //cost to submit_sol
 pub const COST_PER_NEW_LEAF_MERKLE: i128 = COST_PER_BYTE_STATE * 128; //cost to grow the merkle tree
@@ -27,8 +34,8 @@ pub const COST_PER_NEW_LEAF_MERKLE: i128 = COST_PER_BYTE_STATE * 128; //cost to 
 pub const LOG_MSG_SIZE: usize = 4096; //max log line length
 pub const LOG_TOTAL_SIZE: usize = 16384; //max log total size
 pub const LOG_TOTAL_ELEMENTS: usize = 32; //max elements in list
-//pub const WASM_MAX_PTR_LEN: usize = 1048576; //largest term passable from inside WASM to HOST
-pub const WASM_MAX_PTR_LEN: usize = 32768; //dont smash passed first page
+pub const WASM_MAX_PTR_LEN: usize = 1048576; //largest term passable from inside WASM to HOST
+//pub const WASM_MAX_PTR_LEN: usize = 32768; //dont smash passed first page
 pub const WASM_MAX_PANIC_MSG_SIZE: usize = 128;
 
 pub const MAX_DB_KEY_SIZE: usize = 512;
@@ -44,7 +51,7 @@ pub const WASM_MAX_IMPORTS: u32 = 50;
 pub struct ExecutionReceipt {
     pub txid: Vec<u8>,
     pub success: bool,
-    pub error: Vec<u8>,
+    pub result: Vec<u8>,
     pub exec_used: Vec<u8>,
     pub logs: Vec<Vec<u8>>,
 }
