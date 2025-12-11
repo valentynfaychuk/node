@@ -34,6 +34,13 @@ TESTNET=true WORKFOLDER=/tmp/testnet HTTP_IPV4=127.0.0.1 HTTP_PORT=80  ./amadeus
 pk = Application.fetch_env!(:ama, :trainer_pk)
 sk = Application.fetch_env!(:ama, :trainer_sk)
 Testnet.call(sk, "Coin", "transfer", [pk,"1","AMA"])
+
+# Deploy contract (default account is :trainer_pk)
+
+pk = Application.fetch_env!(:ama, :trainer_pk)
+sk = Application.fetch_env!(:ama, :trainer_sk)
+Testnet.deploy "/home/user/project/node/contract_samples/assemblyscript/counter.wasm"
+Testnet.call sk, pk, "get", []
 ```
 
 ### AutoUpdates + Running as a systemd service

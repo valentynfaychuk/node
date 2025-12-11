@@ -2,10 +2,16 @@ import * as sdk from "./sdk";
 import { b, b58 } from "./sdk";
 
 export function get(): void {
-  sdk.log(`deposit`)
+  sdk.log(`get called`)
+  let cur_counter = sdk.kv_get_or<i64>(b("the_counter"), 0)
+  assert(cur_counter > 10, "counter is over 10")
+  sdk.ret(cur_counter)
+}
 
-//  let cur_counter = sdk.kv_get_or<i64>(b("the_counter"), 0);
-//  sdk.return_value(cur_counter);
+function loop(num: i32): void {
+  while(1) {
+    num = num + 1;
+  }
 }
 
 export function increment(amount_ptr: i32): void {

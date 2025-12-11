@@ -217,22 +217,22 @@ export function log(line: string): void {
   import_log(keyPtr, keyBytes.byteLength)
 }
 
-@external("env", "import_return_value")
-declare function import_return_value(ptr: i32, len: i32): void;
-export function return_value<T>(ret: T): void {
+@external("env", "import_return")
+declare function import_return(ptr: i32, len: i32): void;
+export function ret<T>(retv: T): void {
   if (isInteger<T>() || isFloat<T>()) {
-    let inner = String.UTF8.encode(ret.toString(), false);
-    return import_return_value(changetype<i32>(inner), inner.byteLength);
+    let inner = String.UTF8.encode(retv.toString(), false);
+    return import_return(changetype<i32>(inner), inner.byteLength);
   } else if (isString<T>()) {
-    let inner = String.UTF8.encode(changetype<string>(ret), false);
-    return import_return_value(changetype<i32>(inner), inner.byteLength);
-  } else if (ret instanceof Uint8Array) {
-    return import_return_value(changetype<i32>(ret), ret.byteLength);
-  } else if (ret instanceof Array<u8>) {
-    let data = Uint8Array.wrap(ret.buffer);
-    return import_return_value(changetype<i32>(data), data.byteLength);
+    let inner = String.UTF8.encode(changetype<string>(retv), false);
+    return import_return(changetype<i32>(inner), inner.byteLength);
+  } else if (retv instanceof Uint8Array) {
+    return import_return(changetype<i32>(retv), retv.byteLength);
+  } else if (retv instanceof Array<u8>) {
+    let data = Uint8Array.wrap(retv.buffer);
+    return import_return(changetype<i32>(data), data.byteLength);
   } else {
-    return import_return_value(0, 0);
+    return import_return(0, 0);
   }
 }
 
