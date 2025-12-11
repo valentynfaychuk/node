@@ -66,8 +66,13 @@ pub fn kv_put(env: &mut ApplyEnv, key: &[u8], value: &[u8]) {
     let old_value = env.txn.get_cf(&env.cf, key).unwrap();
     match old_value {
         None => {
+            if env.caller_env.entry_height >= protocol::FORKHEIGHT {
+            storage_budget_decr(env, protocol::COST_PER_NEW_LEAF_MERKLE);
+            storage_budget_decr(env, protocol::COST_PER_BYTE_STATE * (key.len() + value.len()) as i128);
+            } else {
             exec_budget_decr(env, protocol::COST_PER_NEW_LEAF_MERKLE);
             exec_budget_decr(env, protocol::COST_PER_BYTE_STATE * (key.len() + value.len()) as i128);
+            }
             env.muts_rev.push(Mutation::Delete { op: b"delete".to_vec(), table: env.cf_name.to_vec(), key: key.to_vec() });
 
             env.muts.push(Mutation::Put { op: b"put".to_vec(), table: env.cf_name.to_vec(), key: key.to_vec(), value: value.to_vec() });
@@ -75,7 +80,11 @@ pub fn kv_put(env: &mut ApplyEnv, key: &[u8], value: &[u8]) {
         },
         Some(old) => {
             //TODO: consider gas refund on delete? gas-token attack?
+            if env.caller_env.entry_height >= protocol::FORKHEIGHT {
+                storage_budget_decr(env, protocol::COST_PER_BYTE_STATE * value.len().saturating_sub(old.len()) as i128);
+            } else {
             exec_budget_decr(env, protocol::COST_PER_BYTE_STATE * value.len().saturating_sub(old.len()) as i128);
+            }
             env.muts_rev.push(Mutation::Put { op: b"put".to_vec(), table: env.cf_name.to_vec(), key: key.to_vec(), value: old.to_vec() });
 
             env.muts.push(Mutation::Put { op: b"put".to_vec(), table: env.cf_name.to_vec(), key: key.to_vec(), value: value.to_vec() });
@@ -95,8 +104,13 @@ pub fn kv_increment(env: &mut ApplyEnv, key: &[u8], value: i128) -> i128 {
     match env.txn.get_cf(&env.cf, key).unwrap() {
         None => {
             exec_kv_size(key, Some(&value_str));
+            if env.caller_env.entry_height >= protocol::FORKHEIGHT {
+                storage_budget_decr(env, protocol::COST_PER_NEW_LEAF_MERKLE);
+                storage_budget_decr(env, protocol::COST_PER_BYTE_STATE * (key.len() + value_str.len()) as i128);
+            } else {
             exec_budget_decr(env, protocol::COST_PER_NEW_LEAF_MERKLE);
             exec_budget_decr(env, protocol::COST_PER_BYTE_STATE * (key.len() + value_str.len()) as i128);
+            }
             env.muts.push(Mutation::Put { op: b"put".to_vec(), table: env.cf_name.to_vec(), key: key.to_vec(), value: value.to_string().into_bytes() });
             env.muts_rev.push(Mutation::Delete { op: b"delete".to_vec(), table: env.cf_name.to_vec(), key: key.to_vec() });
             env.txn.put_cf(&env.cf, key, value_str).unwrap_or_else(|_| panic_any("exec_kv_increment_failed"));
@@ -107,7 +121,11 @@ pub fn kv_increment(env: &mut ApplyEnv, key: &[u8], value: i128) -> i128 {
             let new_value = old_int.checked_add(value).unwrap_or_else(|| panic_any("exec_kv_increment_integer_overflow"));
             let new_value_str = new_value.to_string().into_bytes();
             exec_kv_size(key, Some(&new_value_str));
+            if env.caller_env.entry_height >= protocol::FORKHEIGHT {
+                storage_budget_decr(env, protocol::COST_PER_BYTE_STATE * new_value_str.len().saturating_sub(old.len()) as i128);
+            } else {
             exec_budget_decr(env, protocol::COST_PER_BYTE_STATE * new_value_str.len().saturating_sub(old.len()) as i128);
+            }
             env.muts.push(Mutation::Put { op: b"put".to_vec(), table: env.cf_name.to_vec(), key: key.to_vec(), value: new_value.to_string().into_bytes() });
             env.muts_rev.push(Mutation::Put { op: b"put".to_vec(), table: env.cf_name.to_vec(), key: key.to_vec(), value: old });
             env.txn.put_cf(&env.cf, key, new_value.to_string().into_bytes()).unwrap_or_else(|_| panic_any("kv_put_failed"));
