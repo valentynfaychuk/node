@@ -1400,6 +1400,7 @@ dependencies = [
  "blst",
  "bs58",
  "group",
+ "lazy_static",
  "rand",
  "rayon",
  "rust-librocksdb-sys",

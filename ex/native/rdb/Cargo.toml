@@ -31,6 +31,7 @@ vecpak_ex = { git = "https://github.com/amadeusprotocol/chain", package = "vecpa
 wasmer = "6.1.0"
 wasmer-compiler-singlepass = "6.1.0"
 wasmer-middlewares = "6.1.0"
+lazy_static = "1.4"
 
 [dependencies.rust-rocksdb]
 git = "https://github.com/vans163/rust-rocksdb"

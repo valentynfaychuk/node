@@ -72,7 +72,8 @@ rustler::atoms! {
     ama_10_cent,
     ama_1_cent,
 
-    reserve_ama_per_tx,
+    reserve_ama_per_tx_exec,
+    reserve_ama_per_tx_storage,
 
     cost_per_byte_historical,
     cost_per_byte_state,
@@ -87,6 +88,7 @@ rustler::atoms! {
     cost_per_new_leaf_merkle,
 
     txid,
+    success,
     exec_used,
     logs,
 }

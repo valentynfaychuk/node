@@ -1,14 +1,15 @@
 use crate::consensus::bic::coin;
 use crate::consensus::consensus_kv;
 
-pub const FORKHEIGHT: u64 = 419_00000;
-//pub const FORKHEIGHT: u64 = 100;
+pub const FORKHEIGHT: u64 = 434_00000;
+//pub const FORKHEIGHT: u64 = 0;
 
 pub const AMA_1_DOLLAR: i128 = 1_000_000_000;
 pub const AMA_10_CENT: i128 =    100_000_000;
 pub const AMA_1_CENT: i128 =      10_000_000;
 
-pub const RESERVE_AMA_PER_TX: i128 = AMA_10_CENT; //reserved for exec balance (refunded at end of TX execution)
+pub const RESERVE_AMA_PER_TX_EXEC: i128 = AMA_10_CENT; //reserved for exec balance (refunded at end of TX execution)
+pub const RESERVE_AMA_PER_TX_STORAGE: i128 = AMA_1_DOLLAR; //reserved for storage writes
 
 pub const COST_PER_BYTE_HISTORICAL: i128 = 6_666; //cost to increase the ledger size
 pub const COST_PER_BYTE_STATE: i128 = 16_666; //cost to grow the contract state
@@ -25,7 +26,9 @@ pub const COST_PER_NEW_LEAF_MERKLE: i128 = COST_PER_BYTE_STATE * 128; //cost to 
 
 pub const LOG_MSG_SIZE: usize = 4096; //max log line length
 pub const LOG_TOTAL_SIZE: usize = 16384; //max log total size
-pub const WASM_MAX_PTR_LEN: usize = 1048576; //largest term passable from inside WASM to HOST
+pub const LOG_TOTAL_ELEMENTS: usize = 32; //max elements in list
+//pub const WASM_MAX_PTR_LEN: usize = 1048576; //largest term passable from inside WASM to HOST
+pub const WASM_MAX_PTR_LEN: usize = 32768; //dont smash passed first page
 pub const WASM_MAX_PANIC_MSG_SIZE: usize = 128;
 
 pub const MAX_DB_KEY_SIZE: usize = 512;
@@ -40,6 +43,7 @@ pub const WASM_MAX_IMPORTS: u32 = 50;
 #[derive(Clone, Debug)]
 pub struct ExecutionReceipt {
     pub txid: Vec<u8>,
+    pub success: bool,
     pub error: Vec<u8>,
     pub exec_used: Vec<u8>,
     pub logs: Vec<Vec<u8>>,

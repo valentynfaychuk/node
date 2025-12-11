@@ -712,6 +712,7 @@ fn apply_entry<'a>(env: Env<'a>, db: ResourceArc<DbResource>, next_entry_trimmed
     let mut receipts_list = Vec::new();
     for r in receipts {
         let mut map = Term::map_new(env);
+        map = map.map_put(atoms::success(), r.success).ok().unwrap();
         map = map.map_put(atoms::txid(), to_binary2(env, &r.txid)).ok().unwrap();
         map = map.map_put(atoms::error(), to_binary2(env, &r.error)).ok().unwrap();
         map = map.map_put(atoms::exec_used(), to_binary2(env, &r.exec_used)).ok().unwrap();
@@ -963,7 +964,8 @@ fn protocol_constants<'a>(env: Env<'a>) -> Term<'a> {
     map = map.map_put(atoms::ama_10_cent(), protocol::AMA_10_CENT).ok().unwrap();
     map = map.map_put(atoms::ama_1_cent(), protocol::AMA_1_CENT).ok().unwrap();
 
-    map = map.map_put(atoms::reserve_ama_per_tx(), protocol::RESERVE_AMA_PER_TX).ok().unwrap();
+    map = map.map_put(atoms::reserve_ama_per_tx_exec(), protocol::RESERVE_AMA_PER_TX_EXEC).ok().unwrap();
+    map = map.map_put(atoms::reserve_ama_per_tx_storage(), protocol::RESERVE_AMA_PER_TX_STORAGE).ok().unwrap();
 
     map = map.map_put(atoms::cost_per_byte_historical(), protocol::COST_PER_BYTE_HISTORICAL).ok().unwrap();
     map = map.map_put(atoms::cost_per_byte_state(), protocol::COST_PER_BYTE_STATE).ok().unwrap();

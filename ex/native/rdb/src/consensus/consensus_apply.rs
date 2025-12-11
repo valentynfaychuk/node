@@ -34,6 +34,7 @@ pub struct CallerEnv {
     pub call_counter: u32,
     pub call_exec_points: u64,
     pub call_exec_points_remaining: u64,
+    pub call_return_value: Vec<u8>,
 }
 
 pub fn make_caller_env(
@@ -66,6 +67,7 @@ pub fn make_caller_env(
         call_counter: 0,
         call_exec_points: 10_000_000,
         call_exec_points_remaining: 10_000_000,
+        call_return_value: Vec::new(),
     }
 }
 
@@ -84,6 +86,8 @@ pub struct ApplyEnv<'db> {
     pub exec_track: bool,
     pub exec_left: i128,
     pub exec_max: i128,
+    pub storage_left: i128,
+    pub storage_max: i128,
     pub result_log: Vec<HashMap<String, String>>,
     pub receipts: Vec<protocol::ExecutionReceipt>,
     pub logs: Vec<Vec<u8>>,
@@ -132,6 +136,8 @@ pub fn make_apply_env<'db>(db: &'db TransactionDB<MultiThreaded>, txn: Transacti
         exec_track: false,
         exec_left: 0,
         exec_max: protocol::AMA_10_CENT,
+        storage_left: 0,
+        storage_max: protocol::AMA_1_DOLLAR,
         result_log: Vec::new(),
         receipts: Vec::new(),
         logs: Vec::new(),
@@ -182,6 +188,7 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
         //let op = action.map_get(crate::atoms::op()).unwrap().decode::<rustler::Binary>().unwrap().as_slice();
         let contract = action.map_get(crate::atoms::contract()).unwrap().decode::<rustler::Binary>().unwrap().to_vec();
         let function = action.map_get(crate::atoms::function()).unwrap().decode::<rustler::Binary>().unwrap().to_vec();
+
         let args = action.map_get(crate::atoms::args()).unwrap().decode::<Vec<rustler::Binary>>().unwrap().into_iter().map(|b| b.as_slice().to_vec()).collect();
         let attached_symbol = match action.map_get(crate::atoms::attached_symbol()).ok() {
             None => None,
@@ -206,6 +213,8 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
         applyenv.exec_track = true;
         applyenv.exec_left = protocol::AMA_10_CENT;
         applyenv.exec_max = protocol::AMA_10_CENT;
+        applyenv.storage_left = protocol::AMA_1_DOLLAR;
+        applyenv.storage_max = protocol::AMA_1_DOLLAR;
 
         std::panic::set_hook(Box::new(|_| {}));
         let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -223,16 +232,17 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
 
         applyenv.exec_track = false;
 
-        let tx_cost = txu.map_get(crate::atoms::tx_cost()).unwrap().decode::<i128>().unwrap();
         let tx_historical_cost = txu.map_get(crate::atoms::tx_historical_cost()).unwrap().decode::<i128>().unwrap();
-        let exec_cost_total = ((tx_historical_cost + (applyenv.exec_max - applyenv.exec_left)) as u64).to_string();
-        let tx_cost = (tx_cost as u64).to_string();
+        let mut exec_cost_total = ((tx_historical_cost + (applyenv.exec_max - applyenv.exec_left)) as u64).to_string();
+        if applyenv.caller_env.entry_height >= protocol::FORKHEIGHT {
+            exec_cost_total = ((tx_historical_cost + (applyenv.exec_max - applyenv.exec_left) + (applyenv.storage_max - applyenv.storage_left)) as u64).to_string();
+        }
 
         match res {
             Ok(_) => {
                 applyenv.muts_final.append(&mut applyenv.muts);
                 applyenv.muts_final_rev.append(&mut applyenv.muts_rev);
-                refund_exec_deposit(&mut applyenv);
+                refund_exec_storage_deposit(&mut applyenv);
 
                 //max logs 100
                 //max logs size 1024bytes
@@ -257,6 +267,7 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
 */
                 let receipt = protocol::ExecutionReceipt {
                     txid: tx_hash.into(),
+                    success: true,
                     error: "ok".to_string().into(),
                     exec_used: exec_cost_total.clone().into(),
                     logs: applyenv.logs.clone(),
@@ -271,11 +282,12 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
             Err(payload) => {
                 //TODO: refund storage costs on revert?
                 consensus_kv::revert(&mut applyenv);
-                refund_exec_deposit(&mut applyenv);
+                refund_exec_storage_deposit(&mut applyenv);
 
                 if let Some(&s) = payload.downcast_ref::<&'static str>() {
                     let receipt = protocol::ExecutionReceipt {
                         txid: tx_hash.into(),
+                        success: false,
                         error: s.to_string().into(),
                         exec_used: exec_cost_total.clone().into(),
                         logs: applyenv.logs.clone(),
@@ -289,6 +301,7 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
                 } else {
                     let receipt = protocol::ExecutionReceipt {
                         txid: tx_hash.into(),
+                        success: false,
                         error: "unknown".to_string().into(),
                         exec_used: exec_cost_total.clone().into(),
                         logs: applyenv.logs.clone(),
@@ -431,19 +444,35 @@ impl ToTerm for Vec<HashMap<String, String>> {
     }
 }
 
-fn refund_exec_deposit(applyenv: &mut ApplyEnv) {
-    //Refund remainer of the exec budget
+fn refund_exec_storage_deposit(applyenv: &mut ApplyEnv) {
     applyenv.muts = Vec::new();
     applyenv.muts_rev = Vec::new();
-    let refund = applyenv.exec_left.max(0);
-    if refund > 0 {
-        let key = &crate::bcat(&[b"account:", &applyenv.caller_env.account_origin, b":balance:AMA"]);
-        consensus_kv::kv_increment(applyenv, key, refund);
+
+    //Refund remainder of the exec deposit
+    {
+        let refund = applyenv.exec_left.max(0);
+        if refund > 0 {
+            let key = &crate::bcat(&[b"account:", &applyenv.caller_env.account_origin, b":balance:AMA"]);
+            consensus_kv::kv_increment(applyenv, key, refund);
+        }
+        // Increment validator / burn
+        let cost = applyenv.exec_max - refund;
+        consensus_kv::kv_increment(applyenv, &crate::bcat(&[b"account:", &applyenv.caller_env.entry_signer, b":balance:AMA"]), cost/2);
+        consensus_kv::kv_increment(applyenv, &crate::bcat(&[b"account:", &consensus::bic::coin::BURN_ADDRESS, b":balance:AMA"]), cost/2);
     }
-    // Increment validator / burn
-    let cost = applyenv.exec_max - refund;
-    consensus_kv::kv_increment(applyenv, &crate::bcat(&[b"account:", &applyenv.caller_env.entry_signer, b":balance:AMA"]), cost/2);
-    consensus_kv::kv_increment(applyenv, &crate::bcat(&[b"account:", &consensus::bic::coin::BURN_ADDRESS, b":balance:AMA"]), cost/2);
+
+    //Refund remainder of the storage deposit
+    if applyenv.caller_env.entry_height >= protocol::FORKHEIGHT {
+        let refund = applyenv.storage_left.max(0);
+        if refund > 0 {
+            let key = &crate::bcat(&[b"account:", &applyenv.caller_env.account_origin, b":balance:AMA"]);
+            consensus_kv::kv_increment(applyenv, key, refund);
+        }
+        // Increment validator / burn
+        let cost = applyenv.storage_max - refund;
+        consensus_kv::kv_increment(applyenv, &crate::bcat(&[b"account:", &applyenv.caller_env.entry_signer, b":balance:AMA"]), cost/2);
+        consensus_kv::kv_increment(applyenv, &crate::bcat(&[b"account:", &consensus::bic::coin::BURN_ADDRESS, b":balance:AMA"]), cost/2);
+    }
 
     applyenv.muts_final.append(&mut applyenv.muts);
     applyenv.muts_final_rev.append(&mut applyenv.muts_rev);
@@ -463,7 +492,6 @@ fn call_txs_pre_upfront_cost<'a>(env: &mut ApplyEnv, txus: &[rustler::Term<'a>])
         // Update nonce
         consensus_kv::kv_put(env, &crate::bcat(&[b"account:", &tx_signer, b":attribute:nonce"]), &tx_nonce.to_string().into_bytes());
 
-
         // Deduct tx historical cost
         let tx_historical_cost = txu.map_get(crate::atoms::tx_historical_cost()).unwrap().decode::<i128>().unwrap();
         protocol::pay_cost(env, tx_historical_cost);
@@ -472,14 +500,26 @@ fn call_txs_pre_upfront_cost<'a>(env: &mut ApplyEnv, txus: &[rustler::Term<'a>])
         let contract = action.map_get(crate::atoms::contract()).unwrap().decode::<rustler::Binary>().unwrap().to_vec();
         let function = action.map_get(crate::atoms::function()).unwrap().decode::<rustler::Binary>().unwrap().to_vec();
         match (contract.as_slice(), function.as_slice()) {
-            //TODO: add later via scheduled fork
-            //(b"Epoch", b"submit_sol") => protocol::pay_cost(env, protocol::COST_PER_SOL),
-            (b"Contract", b"deploy") => protocol::pay_cost(env, protocol::COST_PER_DEPLOY),
+            //(b"Epoch", b"submit_sol") => {
+            //    if env.caller_env.entry_height >= protocol::FORKHEIGHT {
+            //        protocol::pay_cost(env, protocol::COST_PER_SOL)
+            //    }
+            //},
+            (b"Contract", b"deploy") => {
+                if env.caller_env.entry_height >= protocol::FORKHEIGHT {
+                } else {
+                protocol::pay_cost(env, protocol::COST_PER_DEPLOY)
+                }
+            },
             (_, _) => ()
         }
 
         //lock 0.1 AMA during execution
         consensus_kv::kv_increment(env, &crate::bcat(&[b"account:", &env.caller_env.account_origin, b":balance:AMA"]), -protocol::AMA_10_CENT);
+        if env.caller_env.entry_height >= protocol::FORKHEIGHT {
+            //lock 1.0 storage AMA during execution
+            consensus_kv::kv_increment(env, &crate::bcat(&[b"account:", &env.caller_env.account_origin, b":balance:AMA"]), -protocol::AMA_1_DOLLAR);
+        }
     }
     env.muts_final.append(&mut env.muts);
     env.muts_final_rev.append(&mut env.muts_rev);
@@ -640,7 +680,14 @@ fn call_bic(env: &mut ApplyEnv, contract: Vec<u8>, function: Vec<u8>, args: Vec<
             consensus::bic::epoch::call_submit_sol(env, args)
         },
         (b"Epoch", b"slash_trainer") => consensus::bic::epoch::call_slash_trainer(env, args),
-        (b"Contract", b"deploy") => consensus::bic::contract::call_deploy(env, args),
+        (b"Contract", b"deploy") => {
+            if env.caller_env.entry_height >= protocol::FORKHEIGHT {
+                consensus_kv::exec_budget_decr(env, protocol::COST_PER_DEPLOY);
+                consensus::bic::contract::call_deploy(env, args)
+            } else {
+                consensus::bic::contract::call_deploy(env, args)
+            }
+        },
         //(b"Lockup", b"unlock") => consensus::bic::lockup::call_unlock(env, args),
         //(b"LockupPrime", b"lock") => consensus::bic::lockup_prime::call_lock(env, args),
         //(b"LockupPrime", b"unlock") => consensus::bic::lockup_prime::call_unlock(env, args),
@@ -650,6 +697,8 @@ fn call_bic(env: &mut ApplyEnv, contract: Vec<u8>, function: Vec<u8>, args: Vec<
 }
 
 fn call_wasmvm(env: &mut ApplyEnv, contract: Vec<u8>, function: Vec<u8>, args: Vec<Vec<u8>>, attached_symbol: Option<Vec<u8>>, attached_amount: Option<Vec<u8>>) {
+    let function = String::from_utf8(function).unwrap_or_else(|_| panic_any("invalid_function"));
+
     env.caller_env.attached_symbol = Vec::new();
     env.caller_env.attached_amount = Vec::new();
     //TODO: wrap this into a neat entry func prepare_wasm_call(env..)
@@ -672,7 +721,10 @@ fn call_wasmvm(env: &mut ApplyEnv, contract: Vec<u8>, function: Vec<u8>, args: V
         _ => ()
     }
 
-    std::panic::panic_any("wasm_noop")
+    std::panic::panic_any("wasm_noop");
+
+    let error = consensus::bic::wasm::call_contract(env, bytecode.as_deref().unwrap_or_else(|| panic_any("invalid_bytecode")), function, args);
+
     //let result = ();
 
     //exec used
