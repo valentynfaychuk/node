@@ -1,6 +1,6 @@
 use crate::consensus::bic::protocol;
 use crate::consensus::consensus_apply::{ApplyEnv};
-use crate::consensus::consensus_kv::{kv_get, kv_get_next, kv_put, kv_exists, kv_delete, kv_set_bit, kv_increment, kv_get_prev_or_first};
+use crate::consensus::consensus_kv::{kv_get, kv_get_prev, kv_get_next, kv_put, kv_exists, kv_delete, kv_set_bit, kv_increment, kv_get_prev_or_first};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, SystemTime};
@@ -153,10 +153,25 @@ fn import_storage_kv_increment_implementation(mut env: FunctionEnvMut<HostEnv>, 
 
     view.write(10_000, &new_value.len().to_le_bytes()).unwrap_or_else(|_| panic_any("exec_memwrite"));
     view.write(10_004, &new_value).unwrap_or_else(|_| panic_any("exec_memwrite"));
-    //For C / ZIG
-    view.write(10_004 + new_value.len() as u64, &[0]).unwrap_or_else(|_| panic_any("exec_memwrite"));
 
     Ok(10_000)
+}
+
+fn import_storage_kv_delete_implementation(mut env: FunctionEnvMut<HostEnv>, key_ptr: i32, key_len: i32) -> Result<i32, RuntimeError> {
+    let (data, mut store) = env.data_and_store_mut();
+    let instance = data.instance.clone().unwrap_or_else(|| panic_any("exec_instance_not_injected"));
+    let applyenv = unsafe { data.applyenv_ptr.as_mut() };
+
+    if key_len as usize > protocol::WASM_MAX_PTR_LEN {
+        panic_any("exec_ptr_term_too_long")
+    }
+
+    let view = data.memory.clone().view(&store);
+    let key = build_prefixed_key(applyenv, &view, key_ptr, key_len);
+
+    kv_delete(applyenv, &key);
+
+    Ok(1)
 }
 
 fn import_storage_kv_get_implementation(mut env: FunctionEnvMut<HostEnv>, ptr: i32, len: i32) -> Result<i32, RuntimeError> {
@@ -177,8 +192,72 @@ fn import_storage_kv_get_implementation(mut env: FunctionEnvMut<HostEnv>, ptr: i
         Some(value) => {
             view.write(10_000, &value.len().to_le_bytes()).unwrap_or_else(|_| panic_any("exec_memwrite"));
             view.write(10_004, &value).unwrap_or_else(|_| panic_any("exec_memwrite"));
-            // For C / ZIG
-            view.write(10_004 + value.len() as u64, &[0]).unwrap_or_else(|_| panic_any("exec_memwrite"));
+        }
+    }
+    set_remaining_points(&mut store, &instance, applyenv.exec_left.max(0) as u64);
+    Ok(10_000)
+}
+
+fn import_storage_kv_get_prev_implementation(mut env: FunctionEnvMut<HostEnv>, prefix_ptr: i32, prefix_len: i32, key_ptr: i32, key_len: i32) -> Result<i32, RuntimeError> {
+    let (data, mut store) = env.data_and_store_mut();
+    let instance = data.instance.clone().unwrap_or_else(|| panic_any("exec_instance_not_injected"));
+    let applyenv = unsafe { data.applyenv_ptr.as_mut() };
+
+    if prefix_len as usize > protocol::WASM_MAX_PTR_LEN {
+        panic_any("exec_ptr_term_too_long")
+    }
+    if key_len as usize > protocol::WASM_MAX_PTR_LEN {
+        panic_any("exec_ptr_term_too_long")
+    }
+
+    let view = data.memory.clone().view(&store);
+    let prefix = build_prefixed_key(applyenv, &view, prefix_ptr, prefix_len);
+    let mut key = vec![0u8; key_len as usize];
+    view.read(key_ptr as u64, &mut key).unwrap_or_else(|_| panic_any("exec_log_invalid_ptr"));
+
+    match kv_get_prev(applyenv, &prefix, &key) {
+        None => {
+            view.write(10_000, &(-1i32).to_le_bytes()).unwrap_or_else(|_| panic_any("exec_memwrite"));
+        },
+        Some((prev_key, value)) => {
+            view.write(10_000, &prev_key.len().to_le_bytes()).unwrap_or_else(|_| panic_any("exec_memwrite"));
+            view.write(10_000 + 4, &prev_key).unwrap_or_else(|_| panic_any("exec_memwrite"));
+
+            view.write(10_000 + 4 + prev_key.len() as u64, &value.len().to_le_bytes()).unwrap_or_else(|_| panic_any("exec_memwrite"));
+            view.write(10_000 + 4 + prev_key.len() as u64 + 4, &value).unwrap_or_else(|_| panic_any("exec_memwrite"));
+        }
+    }
+    set_remaining_points(&mut store, &instance, applyenv.exec_left.max(0) as u64);
+    Ok(10_000)
+}
+
+fn import_storage_kv_get_next_implementation(mut env: FunctionEnvMut<HostEnv>, prefix_ptr: i32, prefix_len: i32, key_ptr: i32, key_len: i32) -> Result<i32, RuntimeError> {
+    let (data, mut store) = env.data_and_store_mut();
+    let instance = data.instance.clone().unwrap_or_else(|| panic_any("exec_instance_not_injected"));
+    let applyenv = unsafe { data.applyenv_ptr.as_mut() };
+
+    if prefix_len as usize > protocol::WASM_MAX_PTR_LEN {
+        panic_any("exec_ptr_term_too_long")
+    }
+    if key_len as usize > protocol::WASM_MAX_PTR_LEN {
+        panic_any("exec_ptr_term_too_long")
+    }
+
+    let view = data.memory.clone().view(&store);
+    let prefix = build_prefixed_key(applyenv, &view, prefix_ptr, prefix_len);
+    let mut key = vec![0u8; key_len as usize];
+    view.read(key_ptr as u64, &mut key).unwrap_or_else(|_| panic_any("exec_log_invalid_ptr"));
+
+    match kv_get_next(applyenv, &prefix, &key) {
+        None => {
+            view.write(10_000, &(-1i32).to_le_bytes()).unwrap_or_else(|_| panic_any("exec_memwrite"));
+        },
+        Some((next_key, value)) => {
+            view.write(10_000, &next_key.len().to_le_bytes()).unwrap_or_else(|_| panic_any("exec_memwrite"));
+            view.write(10_000 + 4, &next_key).unwrap_or_else(|_| panic_any("exec_memwrite"));
+
+            view.write(10_000 + 4 + next_key.len() as u64, &value.len().to_le_bytes()).unwrap_or_else(|_| panic_any("exec_memwrite"));
+            view.write(10_000 + 4 + next_key.len() as u64 + 4, &value).unwrap_or_else(|_| panic_any("exec_memwrite"));
         }
     }
     set_remaining_points(&mut store, &instance, applyenv.exec_left.max(0) as u64);
@@ -410,18 +489,14 @@ pub fn setup_wasm_instance(env: &mut ApplyEnv, module: &Module, store: &mut Stor
         inject_env_data(&view, env);
         let mut current_offset: u64 = 10_000;
         for arg_bytes in function_args {
-            // Write the length
+            // Write the length + bytes
             let len = arg_bytes.len() as i32;
             view.write(current_offset, &len.to_le_bytes()).unwrap_or_else(|_| panic_any("exec_arg_len_write"));
-            // Write the bytes
             view.write(current_offset + 4, arg_bytes).unwrap_or_else(|_| panic_any("exec_arg_write"));
-            // NULL terminate for C / ZIG compat
-            let null_term_offset = current_offset + 4 + arg_bytes.len() as u64;
-            view.write(null_term_offset, &[0]).unwrap_or_else(|_| panic_any("exec_arg_null_write"));
             // Save the POINTER (i32) to pass to the function call later
             wasm_arg_ptrs.push(Value::I32(current_offset as i32));
-            // Advance offset (Add +1 if you need null-termination for C-strings)
-            current_offset += 4 + (arg_bytes.len() as u64) + 1;
+            // Advance offset
+            current_offset += 4 + (arg_bytes.len() as u64);
         }
     }
 
@@ -448,9 +523,12 @@ pub fn setup_wasm_instance(env: &mut ApplyEnv, module: &Module, store: &mut Stor
             //Storage
             "import_kv_put" => Function::new_typed_with_env(store, &host_env, import_storage_kv_put_implementation),
             "import_kv_increment" => Function::new_typed_with_env(store, &host_env, import_storage_kv_increment_implementation),
+            "import_kv_delete" => Function::new_typed_with_env(store, &host_env, import_storage_kv_delete_implementation),
 
             "import_kv_get" => Function::new_typed_with_env(store, &host_env, import_storage_kv_get_implementation),
             "import_kv_exists" => Function::new_typed_with_env(store, &host_env, import_storage_kv_exists_implementation),
+            "import_kv_get_prev" => Function::new_typed_with_env(store, &host_env, import_storage_kv_get_prev_implementation),
+            "import_kv_get_next" => Function::new_typed_with_env(store, &host_env, import_storage_kv_get_next_implementation),
 
 
 /*
@@ -464,11 +542,8 @@ pub fn setup_wasm_instance(env: &mut ApplyEnv, module: &Module, store: &mut Stor
             "import_call_4" => Function::new_typed_with_env(&mut store, &host_env, import_call_4_implementation),
 
             //storage
-            "import_kv_delete" => Function::new_typed_with_env(&mut store, &host_env, import_storage_kv_delete_implementation),
             "import_kv_clear" => Function::new_typed_with_env(&mut store, &host_env, import_storage_kv_clear_implementation),
 
-            "import_kv_get_prev" => Function::new_typed_with_env(&mut store, &host_env, import_storage_kv_get_prev_implementation),
-            "import_kv_get_next" => Function::new_typed_with_env(&mut store, &host_env, import_storage_kv_get_next_implementation),
  */
 
             //AssemblyScript specific

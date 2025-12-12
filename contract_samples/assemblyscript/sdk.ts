@@ -1,3 +1,31 @@
+@inline
+function toBytes<T>(val: T): Uint8Array {
+  if (isInteger<T>()) {
+      const str = val.toString();
+      return Uint8Array.wrap(String.UTF8.encode(str));
+  }
+  else if (idof<T>() == idof<string>()) {
+    // If T is a String, encode it to UTF-8 bytes
+    return Uint8Array.wrap(String.UTF8.encode(changetype<string>(val)));
+  }
+  else if (idof<T>() == idof<Uint8Array>()) {
+    // If T is already Uint8Array, cast and return
+    return changetype<Uint8Array>(val);
+  }
+  else {
+    // Optional: compile-time error if they pass a number or bool
+    ERROR("toBytes only accepts String or Uint8Array");
+    return new Uint8Array(0); // Unreachable but satisfies compiler
+  }
+}
+
+class KeyValuePair {
+  constructor(
+    public key: Uint8Array | null,
+    public value: Uint8Array | null
+  ) {}
+}
+
 export function toHexString(bytes: Uint8Array): string {
   const hexChars = "0123456789ABCDEF";
 
@@ -129,6 +157,12 @@ export function b(str: string): Uint8Array {
   return Uint8Array.wrap(String.UTF8.encode(str, false));
 }
 
+export function bToI64(data: Uint8Array | null, defaultVal: i64 = 0): i64 {
+  if (!data) return defaultVal;
+  const str = String.UTF8.decodeUnsafe(data.dataStart, data.byteLength);
+  return I64.parseInt(str);
+}
+
 export function concat(...chunks: Uint8Array[]): Uint8Array {
   let total = 0;
   for (let i = 0; i < chunks.length; i++) {
@@ -211,125 +245,99 @@ export function attach(symbol: string, amount: string): void {
 
 @external("env", "import_log")
 declare function import_log(ptr: i32, len: i32): void;
-export function log(line: string): void {
-  let keyBytes = String.UTF8.encode(line);
-  let keyPtr   = changetype<i32>(keyBytes);
-  import_log(keyPtr, keyBytes.byteLength)
+export function log<T>(line: T): void {
+  if (!line) { return }
+  const line_not_null = line;
+  const bytes = toBytes<T>(line_not_null);
+  import_log(changetype<i32>(bytes.dataStart), bytes.byteLength)
 }
 
 @external("env", "import_return")
 declare function import_return(ptr: i32, len: i32): void;
 export function ret<T>(retv: T): void {
-  if (isInteger<T>() || isFloat<T>()) {
-    let inner = String.UTF8.encode(retv.toString(), false);
-    return import_return(changetype<i32>(inner), inner.byteLength);
-  } else if (isString<T>()) {
-    let inner = String.UTF8.encode(changetype<string>(retv), false);
-    return import_return(changetype<i32>(inner), inner.byteLength);
-  } else if (retv instanceof Uint8Array) {
-    return import_return(changetype<i32>(retv), retv.byteLength);
-  } else if (retv instanceof Array<u8>) {
-    let data = Uint8Array.wrap(retv.buffer);
-    return import_return(changetype<i32>(data), data.byteLength);
-  } else {
-    return import_return(0, 0);
-  }
+  const retvBytes = toBytes<T>(retv);
+  return import_return(changetype<i32>(retvBytes.dataStart), retvBytes.byteLength);
 }
 
 @external("env", "import_kv_put")
 declare function import_kv_put(key_ptr: i32, key_len: i32, val_ptr: i32, val_len: i32): i32;
-export function kv_put<T>(key: T, val: T): void {
-  if (isString<T>()) {
-    let bkey = String.UTF8.encode(key, false);
-    let bval = String.UTF8.encode(val, false);
-    import_kv_put(changetype<i32>(bkey), bkey.byteLength, changetype<i32>(bval), bval.byteLength);
-  } else if (key instanceof Uint8Array) {
-    import_kv_put(changetype<i32>(key.dataStart), key.byteLength, changetype<i32>(val.dataStart), val.byteLength);
-  } else {
-    abort("kv_put_invalid_type")
-  }
+export function kv_put<K, V>(key: K, value: V): void {
+  const keyBytes = toBytes<K>(key);
+  const valueBytes = toBytes<V>(value);
+  import_kv_put(changetype<i32>(keyBytes.dataStart), keyBytes.byteLength, changetype<i32>(valueBytes.dataStart), valueBytes.byteLength);
 }
 
 @external("env", "import_kv_increment")
 declare function import_kv_increment(key_ptr: i32, key_len: i32, val_ptr: i32, val_len: i32): i32;
-export function kv_increment<T>(key: T, val: string): string {
-  if (isString<T>()) {
-    let bkey = String.UTF8.encode(key, false);
-    let bval = String.UTF8.encode(val, false);
-    let rptr = import_kv_increment(changetype<i32>(bkey), bkey.byteLength, changetype<i32>(bval), bval.byteLength);
-    return memory_read_string(rptr);
-  } else if (key instanceof Uint8Array) {
-    let bval = String.UTF8.encode(val, false);
-    let rptr = import_kv_increment(changetype<i32>(key.dataStart), key.byteLength, changetype<i32>(bval), bval.byteLength);
-    return memory_read_string(rptr);
-  } else {
-    abort("kv_increment_invalid_type")
-  }
+export function kv_increment<K, V>(key: K, value: V): string {
+  const keyBytes = toBytes<K>(key);
+  const valueBytes = toBytes<V>(value);
+  let rptr = import_kv_increment(changetype<i32>(keyBytes.dataStart), keyBytes.byteLength, changetype<i32>(valueBytes.dataStart), valueBytes.byteLength);
+  return memory_read_string(rptr);
+}
+
+@external("env", "import_kv_delete")
+declare function import_kv_delete(key_ptr: i32, key_len: i32): i32;
+export function kv_delete<K>(key: K): void {
+  const keyBytes = toBytes<K>(key)
+  import_kv_delete(changetype<i32>(keyBytes.dataStart), keyBytes.byteLength)
 }
 
 @external("env", "import_kv_exists")
 declare function import_kv_exists(ptr: i32, len: i32): i32;
-export function kv_exists(key: Uint8Array): bool {
-  const result = import_kv_exists(changetype<i32>(key.dataStart), key.byteLength);
+export function kv_exists<K>(key: K): bool {
+  const keyBytes = toBytes<K>(key)
+  const result = import_kv_exists(changetype<i32>(keyBytes.dataStart), keyBytes.byteLength)
   return result == 1
 }
 
 @external("env", "import_kv_get")
 declare function import_kv_get(ptr: i32, len: i32): i32;
-function __kv_get<T>(ptr: i32, len: i32): T {
-  const termPtr = import_kv_get(ptr, len);
+export function kv_get<K>(key: K): Uint8Array | null {
+  const keyBytes = toBytes<K>(key);
+  const termPtr = import_kv_get(changetype<i32>(keyBytes.dataStart), keyBytes.byteLength);
   const size = load<i32>(termPtr);
-  const dataPtr = termPtr + 4;
 
   if (size == -1) {
-    exit("kv_get_key_does_not_exist");
+    return null;
   }
-
-  if (isInteger<T>()) {
-    // all int<32
-    let s = String.UTF8.decodeUnsafe(dataPtr, size, false);
-    return parseInt(s, 10) as T;
-  } else if (idof<T>() == idof<i64>()) {
-    let s = String.UTF8.decodeUnsafe(dataPtr, size, false);
-    return parseI64(s) as unknown as T;
-  } else if (idof<T>() == idof<string>()) {
-    return String.UTF8.decodeUnsafe(dataPtr, size, false) as unknown as T;
-  } else if (idof<T>() == idof<Uint8Array>()) {
-    return memory_read_bytes(termPtr) as unknown as T;
-  } else {
-    abort("kv_get_invalid_return_type");
-  }
-}
-export function kv_get<T>(key: Uint8Array): T {
-  return __kv_get<T>(changetype<i32>(key.dataStart), key.byteLength);
+  return memory_read_bytes(termPtr);
 }
 
-function __kv_get_or<T>(ptr: i32, len: i32, vdefault: T): T {
-  const termPtr = import_kv_get(ptr, len);
+@external("env", "import_kv_get_prev")
+declare function import_kv_get_prev(prefix_ptr: i32, prefix_len: i32, key_ptr: i32, key_len: i32): i32;
+export function kv_get_prev<K, V>(prefix: K, key: V): KeyValuePair {
+  const prefixBytes = toBytes<K>(prefix);
+  const keyBytes = toBytes<V>(key);
+
+  const termPtr = import_kv_get_prev(changetype<i32>(prefixBytes.dataStart), prefixBytes.byteLength, changetype<i32>(keyBytes.dataStart), keyBytes.byteLength);
   const size = load<i32>(termPtr);
-  const dataPtr = termPtr + 4;
 
   if (size == -1) {
-    return vdefault;
+    return new KeyValuePair(null, null);
   }
 
-  if (isInteger<T>()) {
-    // all int<32
-    let s = String.UTF8.decodeUnsafe(dataPtr, size, false);
-    return parseInt(s, 10) as T;
-  } else if (idof<T>() == idof<i64>()) {
-    let s = String.UTF8.decodeUnsafe(dataPtr, size, false);
-    return parseI64(s) as unknown as T;
-  } else if (idof<T>() == idof<string>()) {
-    return String.UTF8.decodeUnsafe(dataPtr, size, false) as unknown as T;
-  } else if (idof<T>() == idof<Uint8Array>()) {
-    return memory_read_bytes(termPtr) as unknown as T;
-  } else {
-    abort("kv_get_invalid_return_type");
-  }
+  let prev_key = memory_read_bytes(termPtr);
+  let value = memory_read_bytes(termPtr + 4 + size);
+  return new KeyValuePair(prev_key, value);
 }
-export function kv_get_or<T>(key: Uint8Array, vdefault: T): T {
-  return __kv_get_or<T>(changetype<i32>(key.dataStart), key.byteLength, vdefault);
+
+@external("env", "import_kv_get_next")
+declare function import_kv_get_next(prefix_ptr: i32, prefix_len: i32, key_ptr: i32, key_len: i32): i32;
+export function kv_get_next<K, V>(prefix: K, key: V): KeyValuePair {
+  const prefixBytes = toBytes<K>(prefix);
+  const keyBytes = toBytes<V>(key);
+
+  const termPtr = import_kv_get_next(changetype<i32>(prefixBytes.dataStart), prefixBytes.byteLength, changetype<i32>(keyBytes.dataStart), keyBytes.byteLength);
+  const size = load<i32>(termPtr);
+
+  if (size == -1) {
+    return new KeyValuePair(null, null);
+  }
+
+  let prev_key = memory_read_bytes(termPtr);
+  let value = memory_read_bytes(termPtr + 4 + size);
+  return new KeyValuePair(prev_key, value);
 }
 
 @external("env", "import_call_0")
