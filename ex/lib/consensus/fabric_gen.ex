@@ -343,11 +343,7 @@ defmodule FabricGen do
       #m = m ++ m_exit
       #m_rev = m_rev ++ m_exit_rev
 
-      mutations_hash = if entry.header.height >= RDBProtocol.forkheight() do
-        RDB.vecpak_encode(receipts ++ m) |> Blake3.hash()
-      else
-        RDB.vecpak_encode(l ++ m) |> Blake3.hash()
-      end
+      mutations_hash = RDB.vecpak_encode(receipts ++ m) |> Blake3.hash()
 
       RocksDB.put("temporal_tip", next_entry.hash, %{rtx: rtx, cf: cf.sysconf})
 

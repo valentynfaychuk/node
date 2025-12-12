@@ -67,11 +67,7 @@ fn import_log_implementation(mut env: FunctionEnvMut<HostEnv>, ptr: i32, len: i3
         panic_any("exec_ptr_term_too_long")
     }
 
-    if applyenv.caller_env.entry_height >= protocol::FORKHEIGHT {
     crate::consensus::consensus_kv::storage_budget_decr(applyenv, protocol::COST_PER_BYTE_HISTORICAL * len as i128);
-    } else {
-    crate::consensus::consensus_kv::exec_budget_decr(applyenv, protocol::COST_PER_BYTE_HISTORICAL * len as i128);
-    }
     set_remaining_points(&mut store, &instance, applyenv.exec_left.max(0) as u64);
 
     let view = data.memory.clone().view(&store);

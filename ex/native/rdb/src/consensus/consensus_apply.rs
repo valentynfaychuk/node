@@ -235,10 +235,7 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
         applyenv.exec_track = false;
 
         let tx_historical_cost = txu.map_get(crate::atoms::tx_historical_cost()).unwrap().decode::<i128>().unwrap();
-        let mut exec_cost_total = ((tx_historical_cost + (applyenv.exec_max - applyenv.exec_left)) as u64).to_string();
-        if applyenv.caller_env.entry_height >= protocol::FORKHEIGHT {
-            exec_cost_total = ((tx_historical_cost + (applyenv.exec_max - applyenv.exec_left) + (applyenv.storage_max - applyenv.storage_left)) as u64).to_string();
-        }
+        let exec_cost_total = ((tx_historical_cost + (applyenv.exec_max - applyenv.exec_left) + (applyenv.storage_max - applyenv.storage_left)) as u64).to_string();
 
         match res {
             Ok(result) => {
@@ -464,7 +461,7 @@ fn refund_exec_storage_deposit(applyenv: &mut ApplyEnv) {
     }
 
     //Refund remainder of the storage deposit
-    if applyenv.caller_env.entry_height >= protocol::FORKHEIGHT {
+    {
         let refund = applyenv.storage_left.max(0);
         if refund > 0 {
             let key = &crate::bcat(&[b"account:", &applyenv.caller_env.account_origin, b":balance:AMA"]);
@@ -475,7 +472,6 @@ fn refund_exec_storage_deposit(applyenv: &mut ApplyEnv) {
         consensus_kv::kv_increment(applyenv, &crate::bcat(&[b"account:", &applyenv.caller_env.entry_signer, b":balance:AMA"]), cost/2);
         consensus_kv::kv_increment(applyenv, &crate::bcat(&[b"account:", &consensus::bic::coin::BURN_ADDRESS, b":balance:AMA"]), cost/2);
     }
-
     applyenv.muts_final.append(&mut applyenv.muts);
     applyenv.muts_final_rev.append(&mut applyenv.muts_rev);
 }
@@ -501,27 +497,11 @@ fn call_txs_pre_upfront_cost<'a>(env: &mut ApplyEnv, txus: &[rustler::Term<'a>])
         let action = tx.map_get(crate::atoms::action()).unwrap().decode::<rustler::Term<'a>>().unwrap();
         let contract = action.map_get(crate::atoms::contract()).unwrap().decode::<rustler::Binary>().unwrap().to_vec();
         let function = action.map_get(crate::atoms::function()).unwrap().decode::<rustler::Binary>().unwrap().to_vec();
-        match (contract.as_slice(), function.as_slice()) {
-            //(b"Epoch", b"submit_sol") => {
-            //    if env.caller_env.entry_height >= protocol::FORKHEIGHT {
-            //        protocol::pay_cost(env, protocol::COST_PER_SOL)
-            //    }
-            //},
-            (b"Contract", b"deploy") => {
-                if env.caller_env.entry_height >= protocol::FORKHEIGHT {
-                } else {
-                protocol::pay_cost(env, protocol::COST_PER_DEPLOY)
-                }
-            },
-            (_, _) => ()
-        }
 
         //lock 0.1 AMA during execution
         consensus_kv::kv_increment(env, &crate::bcat(&[b"account:", &env.caller_env.account_origin, b":balance:AMA"]), -protocol::AMA_10_CENT);
-        if env.caller_env.entry_height >= protocol::FORKHEIGHT {
-            //lock 1.0 storage AMA during execution
-            consensus_kv::kv_increment(env, &crate::bcat(&[b"account:", &env.caller_env.account_origin, b":balance:AMA"]), -protocol::AMA_1_DOLLAR);
-        }
+        //lock 1.0 storage AMA during execution
+        consensus_kv::kv_increment(env, &crate::bcat(&[b"account:", &env.caller_env.account_origin, b":balance:AMA"]), -protocol::AMA_1_DOLLAR);
     }
     env.muts_final.append(&mut env.muts);
     env.muts_final_rev.append(&mut env.muts_rev);
@@ -683,12 +663,8 @@ fn call_bic(env: &mut ApplyEnv, contract: Vec<u8>, function: Vec<u8>, args: Vec<
         },
         (b"Epoch", b"slash_trainer") => consensus::bic::epoch::call_slash_trainer(env, args),
         (b"Contract", b"deploy") => {
-            if env.caller_env.entry_height >= protocol::FORKHEIGHT {
                 consensus_kv::exec_budget_decr(env, protocol::COST_PER_DEPLOY);
                 consensus::bic::contract::call_deploy(env, args)
-            } else {
-                consensus::bic::contract::call_deploy(env, args)
-            }
         },
         //(b"Lockup", b"unlock") => consensus::bic::lockup::call_unlock(env, args),
         //(b"LockupPrime", b"lock") => consensus::bic::lockup_prime::call_lock(env, args),

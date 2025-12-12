@@ -153,17 +153,9 @@ defmodule TX do
    end
 
    def historical_cost(height, txu) do
-     if height >= RDBProtocol.forkheight() do
-        max(
-          RDBProtocol.ama_1_cent(),
-          RDBProtocol.cost_per_byte_historical() * byte_size(RDB.vecpak_encode(txu.tx)))
-     else
-      min(
+      max(
         RDBProtocol.ama_1_cent(),
-        max(
-          RDBProtocol.ama_1_cent(),
-          RDBProtocol.cost_per_byte_historical() * byte_size(RDB.vecpak_encode(txu.tx))))
-     end
+        RDBProtocol.cost_per_byte_historical() * byte_size(RDB.vecpak_encode(txu.tx)))
    end
 
    def action(%{tx: %{actions: [action|_]}}), do: action
