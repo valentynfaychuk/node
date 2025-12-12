@@ -1,7 +1,7 @@
 use crate::consensus::bic::coin;
 use crate::consensus::consensus_kv;
 
-pub const FORKHEIGHT: u64 = 434_00000;
+pub const FORKHEIGHT: u64 = 435_00000;
 //pub const FORKHEIGHT: u64 = 0;
 
 pub const AMA_1_DOLLAR: i128 = 1_000_000_000;

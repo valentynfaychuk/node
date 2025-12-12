@@ -88,7 +88,7 @@ defmodule DB.Entry do
     db_opts[:rtx_commit] && RocksDB.transaction_commit(db_opts.rtx)
   end
 
-  def apply_into_main_chain(entry, muts_hash, muts_rev, receipts, root_receipts, root_contractstate, db_opts = %{rtx: _}) do
+  def apply_into_main_chain(entry, muts_hash, muts_rev, {logs, receipts}, root_receipts, root_contractstate, db_opts = %{rtx: _}) do
     entry_packed = Entry.pack_for_db(entry)
     RocksDB.put(entry.hash, entry_packed, db_handle(db_opts, :entry, %{}))
     RocksDB.put("by_height:#{pad_integer(entry.header.height)}:#{entry.hash}", entry.hash, db_handle(db_opts, :entry_meta, %{}))
@@ -102,21 +102,41 @@ defmodule DB.Entry do
     RocksDB.put("entry:#{entry.hash}:root_receipts", root_receipts, db_handle(db_opts, :entry_meta, %{}))
     RocksDB.put("entry:#{entry.hash}:root_contractstate", root_contractstate, db_handle(db_opts, :entry_meta, %{}))
 
-    Enum.each(Enum.zip(entry.txs, receipts), fn({txu, result})->
-      case :binary.match(entry_packed, TX.pack(txu)) do
-          {index_start, index_size} ->
-            tx_ptr = %{entry_hash: entry.hash, result: result, index_start: index_start, index_size: index_size}
-            |> RDB.vecpak_encode()
-            RocksDB.put(txu.hash, tx_ptr, db_handle(db_opts, :tx, %{}))
+    if entry.header.height >= RDBProtocol.forkheight() do
+      receipts_by_txid = Map.new(receipts, fn r -> {r.txid, Map.drop(r, [:txid])} end)
+      Enum.each(entry.txs, fn(txu)->
+        receipt = Map.fetch!(receipts_by_txid, txu.hash)
+        case :binary.match(entry_packed, TX.pack(txu)) do
+            {index_start, index_size} ->
+              tx_ptr = %{entry_hash: entry.hash, receipt: receipt, index_start: index_start, index_size: index_size}
+              |> RDB.vecpak_encode()
+              RocksDB.put(txu.hash, tx_ptr, db_handle(db_opts, :tx, %{}))
 
-            nonce_padded = pad_integer_20(txu.tx.nonce)
-            RocksDB.put("#{txu.tx.signer}:#{nonce_padded}", txu.hash, db_handle(db_opts, :tx_account_nonce, %{}))
-            TX.known_receivers(txu)
-            |> Enum.each(fn(receiver)->
-                RocksDB.put("#{receiver}:#{nonce_padded}", txu.hash, db_handle(db_opts, :tx_receiver_nonce, %{}))
-            end)
-        end
-    end)
+              nonce_padded = pad_integer_20(txu.tx.nonce)
+              RocksDB.put("#{txu.tx.signer}:#{nonce_padded}", txu.hash, db_handle(db_opts, :tx_account_nonce, %{}))
+              TX.known_receivers(txu)
+              |> Enum.each(fn(receiver)->
+                  RocksDB.put("#{receiver}:#{nonce_padded}", txu.hash, db_handle(db_opts, :tx_receiver_nonce, %{}))
+              end)
+          end
+      end)
+    else
+      Enum.each(Enum.zip(entry.txs, logs), fn({txu, result})->
+        case :binary.match(entry_packed, TX.pack(txu)) do
+            {index_start, index_size} ->
+              tx_ptr = %{entry_hash: entry.hash, result: result, index_start: index_start, index_size: index_size}
+              |> RDB.vecpak_encode()
+              RocksDB.put(txu.hash, tx_ptr, db_handle(db_opts, :tx, %{}))
+
+              nonce_padded = pad_integer_20(txu.tx.nonce)
+              RocksDB.put("#{txu.tx.signer}:#{nonce_padded}", txu.hash, db_handle(db_opts, :tx_account_nonce, %{}))
+              TX.known_receivers(txu)
+              |> Enum.each(fn(receiver)->
+                  RocksDB.put("#{receiver}:#{nonce_padded}", txu.hash, db_handle(db_opts, :tx_receiver_nonce, %{}))
+              end)
+          end
+      end)
+    end
   end
 
   def apply_into_main_chain_muts(hash, muts, db_opts = %{rtx: _}) do

@@ -347,7 +347,7 @@ defmodule FabricGen do
 
       RocksDB.put("temporal_tip", next_entry.hash, %{rtx: rtx, cf: cf.sysconf})
 
-      DB.Entry.apply_into_main_chain(next_entry, mutations_hash, m_rev, l, root_receipts, root_contractstate, %{rtx: rtx})
+      DB.Entry.apply_into_main_chain(next_entry, mutations_hash, m_rev, {l, receipts}, root_receipts, root_contractstate, %{rtx: rtx})
       if Application.fetch_env!(:ama, :archival_node) do
           DB.Entry.apply_into_main_chain_muts(next_entry.hash, m, %{rtx: rtx})
       end
