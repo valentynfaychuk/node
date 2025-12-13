@@ -9,10 +9,10 @@ defmodule API.TX do
         entry_hash = if byte_size(entry_hash) != 32, do: Base58.decode(entry_hash), else: entry_hash
         case DB.Entry.by_hash(entry_hash) do
             nil -> nil
-            %{hash: entry_hash, header: %{slot: slot}, txs: txs} ->
+            %{hash: entry_hash, header: %{height: height}, txs: txs} ->
                 Enum.map(txs, fn(txu)->
                     txu = TX.unpack(txu)
-                    |> Map.put(:metadata, %{entry_hash: entry_hash, entry_slot: slot})
+                    |> Map.put(:metadata, %{entry_hash: entry_hash, entry_height: height})
                     format_tx_for_client(txu)
                 end)
         end
@@ -110,23 +110,8 @@ defmodule API.TX do
         result = TX.validate(tx_packed |> TX.unpack())
         if result[:error] == :ok do
             txu = result.txu
-            if tx_packed =~ "deploy" do
-                action = TX.action(txu)
-                if action.contract == "Contract" and action.function == "deploy" do
-                    case BIC.Contract.validate(List.first(action.args)) do
-                        %{error: :ok} ->
-                            TXPool.insert_and_broadcast(txu)
-                            %{error: :ok, hash: Base58.encode(result.txu.hash)}
-                        error -> error
-                    end
-                else
-                    TXPool.insert_and_broadcast(txu)
-                    %{error: :ok, hash: Base58.encode(result.txu.hash)}
-                end
-            else
-                TXPool.insert_and_broadcast(txu)
-                %{error: :ok, hash: Base58.encode(result.txu.hash)}
-            end
+            TXPool.insert_and_broadcast(txu)
+            %{error: :ok, hash: Base58.encode(result.txu.hash)}
         else
             %{error: result.error}
         end
@@ -136,26 +121,9 @@ defmodule API.TX do
       result = TX.validate(tx_packed |> TX.unpack())
       if result[:error] == :ok do
           txu = result.txu
-          if tx_packed =~ "deployyy" do
-              action = TX.action(txu)
-              if action.contract == "Contract" and action.function == "deploy" do
-                  case BIC.Contract.validate(List.first(action.args)) do
-                      %{error: :ok} ->
-                          if broadcast do TXPool.insert_and_broadcast(txu) else TXPool.insert(txu) end
-                          txres = submit_and_wait_1(result.txu.hash)
-                          %{error: :ok, hash: Base58.encode(result.txu.hash), entry_hash: txres.metadata.entry_hash, result: txres[:result], receipt: txres[:receipt]}
-                      error -> error
-                  end
-              else
-                  if broadcast do TXPool.insert_and_broadcast(txu) else TXPool.insert(txu) end
-                  txres = submit_and_wait_1(result.txu.hash)
-                  %{error: :ok, hash: Base58.encode(result.txu.hash), entry_hash: txres.metadata.entry_hash, result: txres[:result], receipt: txres[:receipt]}
-              end
-          else
-              if broadcast do TXPool.insert_and_broadcast(txu) else TXPool.insert(txu) end
-              txres = submit_and_wait_1(result.txu.hash)
-              %{error: :ok, hash: Base58.encode(result.txu.hash), entry_hash: txres.metadata.entry_hash, result: txres[:result], receipt: txres[:receipt]}
-          end
+          if broadcast do TXPool.insert_and_broadcast(txu) else TXPool.insert(txu) end
+          txres = submit_and_wait_1(result.txu.hash)
+          %{error: :ok, hash: Base58.encode(result.txu.hash), metadata: txres.metadata, receipt: txres.receipt}
       else
           %{error: result.error}
       end

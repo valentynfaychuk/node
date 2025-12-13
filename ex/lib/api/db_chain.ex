@@ -54,16 +54,17 @@ defmodule DB.Chain do
           entry_bytes = RocksDB.get(map.entry_hash, db_handle(db_opts, :entry, %{}))
           entry = DB.Entry.by_hash(map.entry_hash, db_opts)
           tx_bytes = binary_part(entry_bytes, map.index_start, map.index_size)
-          receipt = if map[:result] do map[:result] else
-            r = map.receipt
-            result = RocksDB.ascii_dump(r.result)
-            logs = Enum.map(r.logs, & RocksDB.ascii_dump(&1))
-            Map.merge(r, %{result: result, logs: logs})
+
+          receipt = if map[:result] do map.result else
+            receipt = map.receipt
+            result = RocksDB.ascii_dump(receipt.result)
+            logs = Enum.map(receipt.logs, & RocksDB.ascii_dump(&1))
+            Map.merge(receipt, %{result: result, logs: logs})
           end
+
           TX.unpack(tx_bytes)
-          |> Map.put(:result, receipt)
           |> Map.put(:receipt, receipt)
-          |> Map.put(:metadata, %{entry_hash: map.entry_hash, entry_height: entry.header.height, entry_slot: entry.header.slot})
+          |> Map.put(:metadata, %{entry_hash: map.entry_hash, entry_height: entry.header.height})
       end
   end
 
