@@ -98,6 +98,105 @@ fn import_return_implementation(mut env: FunctionEnvMut<HostEnv>, ptr: i32, len:
     Err(RuntimeError::new("EXIT_IMPORT_RETURN"))
 }
 
+fn import_call_implementation(mut env: FunctionEnvMut<HostEnv>, table_ptr: i32, extra_table_ptr: i32) -> Result<i32, RuntimeError> {
+    let (contract, function, args, attached_symbol, attached_amount) = {
+        let (data, store) = env.data_and_store_mut();
+        let view = data.memory.view(&store);
+
+        // Read table
+        let mut count_buf = [0u8; 4];
+        view.read(table_ptr as u64, &mut count_buf).unwrap_or_else(|_| panic_any("exec_call_table_invalid_ptr"));
+        let arg_count = i32::from_le_bytes(count_buf) as usize;
+        if arg_count > 16 { panic_any("exec_call_too_many_args") }
+
+        let mut final_args: Vec<Vec<u8>> = Vec::with_capacity(arg_count);
+        for i in 0..arg_count {
+            let offset = (table_ptr as u64) + 4 + (i as u64 * 8);
+            let mut row_buf = [0u8; 8];
+            view.read(offset, &mut row_buf).unwrap_or_else(|_| panic_any("exec_read_call_table_error"));
+            let arg_ptr = i32::from_le_bytes(row_buf[0..4].try_into().unwrap());
+            let arg_len = i32::from_le_bytes(row_buf[4..8].try_into().unwrap());
+
+            if arg_len as usize > protocol::WASM_MAX_PTR_LEN { panic_any("exec_call_ptr_term_too_long") }
+
+            let mut arg_data = vec![0u8; arg_len as usize];
+            view.read(arg_ptr as u64, &mut arg_data).unwrap_or_else(|_| panic_any("exec_read_call_table_data_error"));
+            final_args.push(arg_data);
+        }
+
+        // Read extra table
+        let mut final_args_extra: Vec<Vec<u8>> = Vec::new();
+        if extra_table_ptr != 0 {
+            view.read(extra_table_ptr as u64, &mut count_buf).unwrap_or_else(|_| panic_any("exec_call_extra_invalid"));
+            let extra_count = i32::from_le_bytes(count_buf) as usize;
+            if extra_count > 16 { panic_any("exec_call_extra_too_many") }
+
+            for i in 0..extra_count {
+                let offset = (extra_table_ptr as u64) + 4 + (i as u64 * 8);
+                let mut row_buf = [0u8; 8];
+                view.read(offset, &mut row_buf).unwrap_or_else(|_| panic_any("exec_read_extra_row"));
+                let arg_ptr = i32::from_le_bytes(row_buf[0..4].try_into().unwrap());
+                let arg_len = i32::from_le_bytes(row_buf[4..8].try_into().unwrap());
+
+                let mut arg_data = vec![0u8; arg_len as usize];
+                view.read(arg_ptr as u64, &mut arg_data).unwrap_or_else(|_| panic_any("exec_read_extra_data"));
+                final_args_extra.push(arg_data);
+            }
+        }
+
+        // Process Arguments
+        if final_args.len() < 2 { panic_any("exec_call_missing_args"); }
+        let contract = final_args[0].clone();
+        let function = final_args[1].clone();
+        let args = final_args[2..].to_vec();
+
+        let (attached_symbol, attached_amount) = if final_args_extra.len() == 2 {
+            (Some(final_args_extra[0].clone()), Some(final_args_extra[1].clone()))
+        } else {
+            (None, None)
+        };
+
+        (contract, function, args, attached_symbol, attached_amount)
+    };
+
+
+    let (data, mut store) = env.data_and_store_mut();
+    let instance = data.instance.clone().unwrap_or_else(|| panic_any("exec_instance_not_injected"));
+    let applyenv = unsafe { data.applyenv_ptr.as_mut() };
+
+    crate::consensus::consensus_kv::exec_budget_decr(applyenv, protocol::COST_PER_CALL);
+    set_remaining_points(&mut store, &instance, applyenv.exec_left.max(0) as u64);
+
+    let og_account_caller = applyenv.caller_env.account_caller.clone();
+    let og_account_current = applyenv.caller_env.account_current.clone();
+
+    applyenv.caller_env.account_caller = og_account_current.clone();
+    applyenv.caller_env.account_current = contract.clone();
+    applyenv.caller_env.call_counter += 1;
+    applyenv.caller_env.call_return_value = Vec::new();
+
+    let result = match crate::consensus::bls12_381::validate_public_key(contract.as_slice()) {
+        false => {
+            crate::consensus::consensus_apply::call_bic(applyenv, contract, function, args, attached_symbol, attached_amount);
+            b"ok".to_vec()
+        }
+        true => {
+            crate::consensus::consensus_apply::call_wasmvm(applyenv, contract, function, args, attached_symbol, attached_amount)
+        }
+    };
+
+    set_remaining_points(&mut store, &instance, applyenv.exec_left.max(0) as u64);
+
+    applyenv.caller_env.account_caller = og_account_caller;
+    applyenv.caller_env.account_current = og_account_current;
+
+    let view = data.memory.clone().view(&store);
+    view.write(10_000, &result.len().to_le_bytes()).unwrap_or_else(|_| panic_any("exec_memwrite"));
+    view.write(10_004, &result).unwrap_or_else(|_| panic_any("exec_memwrite"));
+
+    Ok(10_000)
+}
+
 fn build_prefixed_key(applyenv: &mut ApplyEnv, view: &MemoryView, ptr: i32, len: i32) -> Vec<u8> {
     let mut key = vec![0u8; len as usize];
     view.read(ptr as u64, &mut key).unwrap_or_else(|_| panic_any("exec_log_invalid_ptr"));
@@ -335,6 +434,13 @@ fn as_abort_implementation(mut env: FunctionEnvMut<HostEnv>, msg_ptr: i32, filen
     //Err(RuntimeError::new("as_abort"))
 }
 
+fn as_seed_implementation(mut env: FunctionEnvMut<HostEnv>) -> Result<f64, RuntimeError> {
+    let (data, _store) = env.data_and_store_mut();
+    let applyenv = unsafe { data.applyenv_ptr.as_mut() };
+
+    Ok(applyenv.caller_env.seedf64)
+}
+
 fn log_line(applyenv: &mut ApplyEnv, line: Vec<u8>) {
     let len = line.len();
     if len > protocol::LOG_MSG_SIZE {
@@ -515,6 +621,7 @@ pub fn setup_wasm_instance(env: &mut ApplyEnv, module: &Module, store: &mut Stor
             "memory" => memory,
             "import_log" => Function::new_typed_with_env(store, &host_env, import_log_implementation),
             "import_return" => Function::new_typed_with_env(store, &host_env, import_return_implementation),
+            "import_call" => Function::new_typed_with_env(store, &host_env, import_call_implementation),
 
             //Storage
             "import_kv_put" => Function::new_typed_with_env(store, &host_env, import_storage_kv_put_implementation),
@@ -527,11 +634,10 @@ pub fn setup_wasm_instance(env: &mut ApplyEnv, module: &Module, store: &mut Stor
             "import_kv_get_next" => Function::new_typed_with_env(store, &host_env, import_storage_kv_get_next_implementation),
 
 
+
 /*
             "import_attach" => Function::new_typed_with_env(&mut store, &host_env, import_attach_implementation),
 
-
-            "import_call_0" => Function::new_typed_with_env(&mut store, &host_env, import_call_0_implementation),
             "import_call_1" => Function::new_typed_with_env(&mut store, &host_env, import_call_1_implementation),
             "import_call_2" => Function::new_typed_with_env(&mut store, &host_env, import_call_2_implementation),
             "import_call_3" => Function::new_typed_with_env(&mut store, &host_env, import_call_3_implementation),
@@ -544,7 +650,7 @@ pub fn setup_wasm_instance(env: &mut ApplyEnv, module: &Module, store: &mut Stor
 
             //AssemblyScript specific
             "abort" => Function::new_typed_with_env(store, &host_env, as_abort_implementation),
-            //"seed" => Global::new(&mut store, Value::F64(mapenv.map_get(atoms::seedf64())?.decode::<f64>()?)),
+            "seed" => Function::new_typed_with_env(store, &host_env, as_seed_implementation),
         }
     };
 

@@ -7,6 +7,7 @@ pub const FORKHEIGHT: u64 = 435_00000;
 pub const AMA_1_DOLLAR: i128 = 1_000_000_000;
 pub const AMA_10_CENT: i128 =    100_000_000;
 pub const AMA_1_CENT: i128 =      10_000_000;
+pub const AMA_01_CENT: i128 =      1_000_000;
 
 pub const RESERVE_AMA_PER_TX_EXEC: i128 = AMA_10_CENT; //reserved for exec balance (refunded at end of TX execution)
 pub const RESERVE_AMA_PER_TX_STORAGE: i128 = AMA_1_DOLLAR; //reserved for storage writes
@@ -20,6 +21,7 @@ pub const COST_PER_DB_READ_BYTE: i128 = 50 * 10;
 pub const COST_PER_DB_WRITE_BASE: i128 = 25_000 * 10;
 pub const COST_PER_DB_WRITE_BYTE: i128 = 250 * 10;
 
+pub const COST_PER_CALL: i128 = AMA_01_CENT;
 pub const COST_PER_DEPLOY: i128 = AMA_1_CENT; //cost to deploy contract
 pub const COST_PER_SOL: i128 = AMA_1_CENT; //cost to submit_sol
 pub const COST_PER_NEW_LEAF_MERKLE: i128 = COST_PER_BYTE_STATE * 128; //cost to grow the merkle tree

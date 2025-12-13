@@ -1,5 +1,5 @@
 @inline
-function toBytes<T>(val: T): Uint8Array {
+export function toBytes<T>(val: T): Uint8Array {
   if (isInteger<T>()) {
       const str = val.toString();
       return Uint8Array.wrap(String.UTF8.encode(str));
@@ -17,6 +17,10 @@ function toBytes<T>(val: T): Uint8Array {
     ERROR("toBytes only accepts String or Uint8Array");
     return new Uint8Array(0); // Unreachable but satisfies compiler
   }
+}
+
+export function b<T>(val: T): Uint8Array {
+  return toBytes(val)
 }
 
 class KeyValuePair {
@@ -121,7 +125,7 @@ function from_b58_1(S: string, A: string = MAP): Uint8Array | null {
   return result;
 }
 
-function memory_read_bytes(ptr: i32): Uint8Array {
+export function memory_read_bytes(ptr: i32): Uint8Array {
   let length = load<i32>(ptr);
   let result = new Uint8Array(length);
   memory.copy(changetype<usize>(result.buffer), ptr+4, length);
@@ -151,10 +155,6 @@ export function base58_decode(input: string): Uint8Array {
     out[zeros + i] = bytes[bytes.length - 1 - i];
   }
   return out;
-}
-
-export function b(str: string): Uint8Array {
-  return Uint8Array.wrap(String.UTF8.encode(str, false));
 }
 
 export function bToI64(data: Uint8Array | null, defaultVal: i64 = 0): i64 {
@@ -340,53 +340,56 @@ export function kv_get_next<K, V>(prefix: K, key: V): KeyValuePair {
   return new KeyValuePair(prev_key, value);
 }
 
-@external("env", "import_call_0")
-declare function import_call_0(module_ptr: i32, module_len: i32, function_ptr: i32, function_len: i32): i32;
-@external("env", "import_call_1")
-declare function import_call_1(module_ptr: i32, module_len: i32, function_ptr: i32, function_len: i32,
-  args_1_ptr: i32, args_1_len: i32): i32;
-@external("env", "import_call_2")
-declare function import_call_2(module_ptr: i32, module_len: i32, function_ptr: i32, function_len: i32,
-  args_1_ptr: i32, args_1_len: i32, args_2_ptr: i32, args_2_len: i32): i32;
-@external("env", "import_call_3")
-declare function import_call_3(module_ptr: i32, module_len: i32, function_ptr: i32, function_len: i32,
-  args_1_ptr: i32, args_1_len: i32, args_2_ptr: i32, args_2_len: i32, args_3_ptr: i32, args_3_len: i32): i32;
-@external("env", "import_call_4")
-declare function import_call_4(module_ptr: i32, module_len: i32, function_ptr: i32, function_len: i32,
-  args_1_ptr: i32, args_1_len: i32, args_2_ptr: i32, args_2_len: i32, args_3_ptr: i32, args_3_len: i32, args_4_ptr: i32, args_4_len: i32): i32;
+// One import to rule them all
+@external("env", "import_call")
+declare function import_call(args_ptr: i32, extra_args_ptr: i32): i32;
+export function call<C, F, T = Uint8Array>(contract: C, func: F, args: T[], extra_args: T[] | null = null): Uint8Array {
+  const contractBytes = toBytes<C>(contract);
+  const funcBytes = toBytes<F>(func);
 
-export function call(contract: Uint8Array, func: string, args: Uint8Array[]): string {
-  let funcBytes = String.UTF8.encode(func, false);
-  let funcPtr   = changetype<i32>(funcBytes);
+  const pinnedArgs = new Array<Uint8Array>(2 + args.length);
+  pinnedArgs[0] = contractBytes;
+  pinnedArgs[1] = funcBytes;
+  for (let j = 0; j < args.length; j++) { pinnedArgs[2 + j] = toBytes<T>(args[j]) }
 
-  let errorPtr = 30_000
-  switch (args.length) {
-    case 0:
-      errorPtr = import_call_0(changetype<i32>(contract.dataStart), contract.byteLength, funcPtr, funcBytes.byteLength);
-      break;
-    case 1:
-      errorPtr = import_call_1(changetype<i32>(contract.dataStart), contract.byteLength, funcPtr, funcBytes.byteLength,
-        changetype<i32>(args[0].dataStart), args[0].byteLength);
-      break;
-    case 2:
-      errorPtr = import_call_2(changetype<i32>(contract.dataStart), contract.byteLength, funcPtr, funcBytes.byteLength,
-        changetype<i32>(args[0].dataStart), args[0].byteLength, changetype<i32>(args[1].dataStart), args[1].byteLength);
-      break;
-    case 3:
-      errorPtr = import_call_3(changetype<i32>(contract.dataStart), contract.byteLength, funcPtr, funcBytes.byteLength,
-        changetype<i32>(args[0].dataStart), args[0].byteLength, changetype<i32>(args[1].dataStart), args[1].byteLength,
-        changetype<i32>(args[2].dataStart), args[2].byteLength);
-      break;
-    case 4:
-      errorPtr = import_call_4(changetype<i32>(contract.dataStart), contract.byteLength, funcPtr, funcBytes.byteLength,
-        changetype<i32>(args[0].dataStart), args[0].byteLength, changetype<i32>(args[1].dataStart), args[1].byteLength,
-        changetype<i32>(args[2].dataStart), args[2].byteLength, changetype<i32>(args[3].dataStart), args[3].byteLength);
-      break;
-    default:
-      abort("call_invalid_no_of_args");
+  //    4 bytes for Count
+  //    16 bytes for contract + func
+  //    8 bytes * args
+  const totalItems = 2 + args.length;
+  const tablePtr = __alloc(4 + 16 + (8 * totalItems));
+  store<i32>(tablePtr, totalItems);
+  for (let i = 0; i < pinnedArgs.length; i++) {
+    const arg = pinnedArgs[i];
+    const offset = 4 + (i * 8);
+
+    store<i32>(tablePtr + offset, changetype<i32>(arg.dataStart));
+    store<i32>(tablePtr + offset + 4, arg.byteLength);
   }
 
-  return memory_read_string(errorPtr);
+  //Extra args
+  let extraTablePtr = 0;
+  if (extra_args) {
+    const pinnedExtraArgs = new Array<Uint8Array>(extra_args.length);
+    for (let i = 0; i < extra_args.length; i++) { pinnedExtraArgs[i] = toBytes<T>(extra_args[i]) }
+
+    extraTablePtr = __alloc(4 + (8 * extra_args.length)) as i32;
+    store<i32>(extraTablePtr, extra_args.length);
+
+    for (let i = 0; i < extra_args.length; i++) {
+      const earg = pinnedExtraArgs[i];
+      const offset = 4 + (i * 8);
+
+      store<i32>(extraTablePtr + offset, changetype<i32>(earg.dataStart));
+      store<i32>(extraTablePtr + offset + 4, earg.byteLength);
+    }
+  }
+
+  const errorPtr = import_call(tablePtr as i32, extraTablePtr as i32);
+
+  // Cleanup (Optional, but good practice if you do this in a loop)
+  __free(tablePtr);
+
+  return memory_read_bytes(errorPtr);
 }
 
 /*
@@ -453,36 +456,3 @@ function kv_get<T,Y>(key: Y): T {
   }*/
 //return null as T;
 //}
-
-
-/*
-@external("env", "import_kv_increment")
-declare function import_kv_increment(keyPtr: i32, keyLen: i32, amount: i64): i64;
-function kv_increment(key: string, amount: i64): i64 {
-  let keyBytes = String.UTF8.encode(key);
-  let keyPtr   = changetype<i32>(keyBytes);
-  let keyLen   = keyBytes.byteLength;
-
-  return import_kv_increment(keyPtr, keyLen, amount);
-}
-
-@external("env", "import_kv_get")
-declare function import_kv_get(keyPtr: i32, keyLen: i32): i32;
-function kv_get(key: string): string {
-  let keyBytes = String.UTF8.encode(key);
-  let keyPtr   = changetype<i32>(keyBytes);
-  let keyLen   = keyBytes.byteLength;
-
-  const valPtr = import_kv_get(keyPtr, keyLen);
-  if (!valPtr) {
-    return "";
-  }
-
-  const valLen = load<u32>(valPtr);
-  const valBytesPtr = valPtr + 4;
-  //const valBytes = new Uint8Array(import_memory.buffer, valBytesPtr, valLen);
-  //return String.UTF8.decode(valBytes.buffer);
-  return "";
-}
-
-*/

@@ -143,18 +143,18 @@ defmodule API.TX do
                       %{error: :ok} ->
                           if broadcast do TXPool.insert_and_broadcast(txu) else TXPool.insert(txu) end
                           txres = submit_and_wait_1(result.txu.hash)
-                          %{error: :ok, hash: Base58.encode(result.txu.hash), entry_hash: txres.metadata.entry_hash, result: txres[:result]}
+                          %{error: :ok, hash: Base58.encode(result.txu.hash), entry_hash: txres.metadata.entry_hash, result: txres[:result], receipt: txres[:receipt]}
                       error -> error
                   end
               else
                   if broadcast do TXPool.insert_and_broadcast(txu) else TXPool.insert(txu) end
                   txres = submit_and_wait_1(result.txu.hash)
-                  %{error: :ok, hash: Base58.encode(result.txu.hash), entry_hash: txres.metadata.entry_hash, result: txres[:result]}
+                  %{error: :ok, hash: Base58.encode(result.txu.hash), entry_hash: txres.metadata.entry_hash, result: txres[:result], receipt: txres[:receipt]}
               end
           else
               if broadcast do TXPool.insert_and_broadcast(txu) else TXPool.insert(txu) end
               txres = submit_and_wait_1(result.txu.hash)
-              %{error: :ok, hash: Base58.encode(result.txu.hash), entry_hash: txres.metadata.entry_hash, result: txres[:result]}
+              %{error: :ok, hash: Base58.encode(result.txu.hash), entry_hash: txres.metadata.entry_hash, result: txres[:result], receipt: txres[:receipt]}
           end
       else
           %{error: result.error}

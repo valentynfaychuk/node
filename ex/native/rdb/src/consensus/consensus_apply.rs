@@ -650,7 +650,7 @@ pub fn valid_bic_action(contract: Vec<u8>, function: Vec<u8>) -> bool {
             || f == b"pause")
 }
 
-fn call_bic(env: &mut ApplyEnv, contract: Vec<u8>, function: Vec<u8>, args: Vec<Vec<u8>>, attached_symbol: Option<Vec<u8>>, attached_amount: Option<Vec<u8>>) {
+pub fn call_bic(env: &mut ApplyEnv, contract: Vec<u8>, function: Vec<u8>, args: Vec<Vec<u8>>, attached_symbol: Option<Vec<u8>>, attached_amount: Option<Vec<u8>>) {
     match (contract.as_slice(), function.as_slice()) {
         (b"Coin", b"transfer") => consensus::bic::coin::call_transfer(env, args),
         //(b"Coin", b"create_and_mint") => consensus::bic::coin::call_create_and_mint(env, args),
@@ -674,12 +674,25 @@ fn call_bic(env: &mut ApplyEnv, contract: Vec<u8>, function: Vec<u8>, args: Vec<
     }
 }
 
-fn call_wasmvm(env: &mut ApplyEnv, contract: Vec<u8>, function: Vec<u8>, args: Vec<Vec<u8>>, attached_symbol: Option<Vec<u8>>, attached_amount: Option<Vec<u8>>) -> Vec<u8> {
+pub fn call_wasmvm(env: &mut ApplyEnv, contract: Vec<u8>, function: Vec<u8>, args: Vec<Vec<u8>>, attached_symbol: Option<Vec<u8>>, attached_amount: Option<Vec<u8>>) -> Vec<u8> {
     let function = String::from_utf8(function).unwrap_or_else(|_| panic_any("invalid_function"));
 
+    //seed the rng
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(&env.caller_env.entry_vr);
+    hasher.update(&env.caller_env.call_counter.to_le_bytes());
+    let result_hash = hasher.finalize();
+
+    let mut buf = [0u8; 8];
+    buf.copy_from_slice(&result_hash.as_bytes()[0..8]);
+    let val_u64 = u64::from_le_bytes(buf);
+
+    env.caller_env.seed = result_hash.as_bytes().to_vec();
+    env.caller_env.seedf64 = val_u64 as f64;
+
+    //attachments
     env.caller_env.attached_symbol = Vec::new();
     env.caller_env.attached_amount = Vec::new();
-    //TODO: wrap this into a neat entry func prepare_wasm_call(env..)
 
     let bytecode = consensus::bic::contract::bytecode(env, contract.as_slice());
     if bytecode.is_none() { panic_any("account_has_no_bytecode") }
