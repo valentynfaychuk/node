@@ -293,11 +293,19 @@ defmodule FabricGen do
   def apply_entry_1(next_entry) do
       %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
 
+      start_contract_exec = :os.system_time(1000)
+
       entry = next_entry
       {rtx, m, m_rev, receipts, root_receipts, root_contractstate} = RDB.apply_entry(db, RDB.vecpak_encode(entry),
         Application.fetch_env!(:ama, :trainer_pk), Application.fetch_env!(:ama, :trainer_sk),
         !!Application.fetch_env!(:ama, :testnet), Map.keys(Application.fetch_env!(:ama, :keys_by_pk))
       )
+
+      took_contract_exec = :os.system_time(1000) - start_contract_exec
+      if took_contract_exec > 100 do
+        IO.puts "Contract Exec took #{took_contract_exec}ms"
+      end
+
       rebuild_m_fn = fn(m)->
         Enum.map(m, fn(inner)->
           op = :"#{IO.iodata_to_binary(inner[~c"op"])}"
