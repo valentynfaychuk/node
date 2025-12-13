@@ -636,12 +636,6 @@ pub fn setup_wasm_instance(env: &mut ApplyEnv, module: &Module, store: &mut Stor
 
 
 /*
-            "import_attach" => Function::new_typed_with_env(&mut store, &host_env, import_attach_implementation),
-
-            "import_call_1" => Function::new_typed_with_env(&mut store, &host_env, import_call_1_implementation),
-            "import_call_2" => Function::new_typed_with_env(&mut store, &host_env, import_call_2_implementation),
-            "import_call_3" => Function::new_typed_with_env(&mut store, &host_env, import_call_3_implementation),
-            "import_call_4" => Function::new_typed_with_env(&mut store, &host_env, import_call_4_implementation),
 
             //storage
             "import_kv_clear" => Function::new_typed_with_env(&mut store, &host_env, import_storage_kv_clear_implementation),
@@ -745,7 +739,7 @@ pub fn call_contract(env: &mut ApplyEnv, wasm_bytes: &[u8], function_name: Strin
     let start = Instant::now();
     let call_result = entry_to_call.call(&mut store, &wasm_args);
     let duration = start.elapsed();
-    println!("call result {} {:?}", duration.as_millis(), call_result);
+    //println!("call result {} {:?}", duration.as_millis(), call_result);
 
     let remaining = match get_remaining_points(&mut store, &instance) {
         MeteringPoints::Remaining(v) => v,

@@ -44,9 +44,9 @@ defmodule FabricEventGen do
     {:noreply, state}
   end
 
-  def handle_info({:entry, entry, muts_hash, muts, logs}, state) do
+  def handle_info({:entry, entry, muts_hash, muts, receipts}, state) do
     height = Entry.height(entry)
-    if logs != [] do
+    if receipts != [] do
       #IO.inspect {height, logs, muts}
     end
 

@@ -104,12 +104,11 @@ impl<'db> ApplyEnv<'db> {
         Transaction<'db, TransactionDB<MultiThreaded>>,
         Vec<consensus_muts::Mutation>,
         Vec<consensus_muts::Mutation>,
-        Vec<HashMap<String, String>>,
         Vec<protocol::ExecutionReceipt>,
         [u8; 32],
         [u8; 32],
     ) {
-        (self.txn, self.muts_final, self.muts_final_rev, self.result_log, self.receipts, root_receipts, root_contractstate)
+        (self.txn, self.muts_final, self.muts_final_rev, self.receipts, root_receipts, root_contractstate)
     }
 }
 
@@ -155,28 +154,37 @@ pub fn set_apply_env_tx<'db>(env: &mut ApplyEnv<'db>, tx_hash: &[u8; 32], tx_sig
     env.caller_env.account_origin = tx_signer.to_vec();
 }
 
-pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk: &[u8],
-    entry_signer: &[u8; 48], entry_prev_hash: &[u8; 32],
-    entry_slot: u64, entry_prev_slot: u64, entry_height: u64, entry_epoch: u64,
-    entry_vr: &[u8; 96], entry_vr_b3: &[u8; 32], entry_dr: &[u8; 32],
-    txus: Vec<rustler::Term<'a>>, txn: Transaction<'db, TransactionDB<MultiThreaded>>,
+pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, txn: Transaction<'db, TransactionDB<MultiThreaded>>,
+    entry: crate::model::entry::Entry, pk: &[u8], sk: &[u8],
     testnet: bool, testnet_peddlebikes: Vec<Vec<u8>>,
-) -> (Transaction<'db, TransactionDB<MultiThreaded>>, Vec<consensus_muts::Mutation>, Vec<consensus_muts::Mutation>, Vec<HashMap<String, String>>, Vec<protocol::ExecutionReceipt>, [u8; 32], [u8; 32]) {
+) -> (Transaction<'db, TransactionDB<MultiThreaded>>, Vec<consensus_muts::Mutation>, Vec<consensus_muts::Mutation>, Vec<protocol::ExecutionReceipt>, [u8; 32], [u8; 32]) {
     let cf_h = db.cf_handle("contractstate").unwrap();
     let cf2_h = db.cf_handle("contractstate").unwrap();
     let cf_tree_h = db.cf_handle("contractstate_tree").unwrap();
+
+    let entry_signer = entry.header.signer.as_slice().try_into().unwrap_or_else(|_| panic!("entry_signer_len_wrong"));
+    let entry_prev_hash = entry.header.prev_hash.as_slice().try_into().unwrap_or_else(|_| panic!("entry_prev_hash_len_wrong"));
+    let entry_vr = entry.header.vr.as_slice().try_into().unwrap_or_else(|_| panic!("entry_vr_len_wrong"));
+    let entry_vr_b3_binding = blake3::hash(&entry.header.vr);
+    let entry_vr_b3 = entry_vr_b3_binding.as_bytes().try_into().unwrap_or_else(|_| panic!("entry_vr_len_wrong"));
+    let entry_dr = entry.header.dr.as_slice().try_into().unwrap_or_else(|_| panic!("entry_dr_len_wrong"));
+
+
+    let entry_epoch = entry.header.height / 100_000;
     let mut applyenv = make_apply_env(db, txn, cf_h, b"contractstate".to_vec(), cf2_h, cf_tree_h,
-        entry_signer, entry_prev_hash, entry_slot, entry_prev_slot, entry_height, entry_epoch, entry_vr, entry_vr_b3, entry_dr,
+        entry_signer, entry_prev_hash, entry.header.slot, entry.header.prev_slot, entry.header.height,
+        entry_epoch, entry_vr, entry_vr_b3, entry_dr,
         testnet, testnet_peddlebikes);
 
-    call_txs_pre_upfront_cost(&mut applyenv, &txus);
+    call_txs_pre_upfront_cost(&mut applyenv, &entry.txs);
 
-    for (i, txu) in txus.clone().into_iter().enumerate() {
-        let tx_hash = crate::fixed::<32>(txu.map_get(crate::atoms::hash()).unwrap()).unwrap();
-        let tx = txu.map_get(crate::atoms::tx()).unwrap();
-        let tx_signer = crate::fixed::<48>(tx.map_get(crate::atoms::signer()).unwrap()).unwrap();
-        let tx_nonce = tx.map_get(crate::atoms::nonce()).unwrap().decode::<u64>().unwrap();
-        let action = tx.map_get(crate::atoms::action()).unwrap().decode::<rustler::Term<'a>>().unwrap();
+    for (i, txu) in entry.txs.clone().into_iter().enumerate() {
+        let tx_historical_cost = crate::consensus::bic::protocol::tx_historical_cost(&txu);
+
+        let tx_hash = txu.hash.as_slice().try_into().unwrap_or_else(|_| panic!("tx_hash_len_wrong"));
+        let tx_signer = txu.tx.signer.as_slice().try_into().unwrap_or_else(|_| panic!("tx_signer_len_wrong"));
+        let tx_nonce = txu.tx.nonce;
+        let action = txu.tx.action;
 
         applyenv.caller_env.tx_index = i as u64;
         applyenv.caller_env.tx_hash = tx_hash;
@@ -186,24 +194,11 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
         applyenv.caller_env.account_caller = tx_signer.to_vec();
 
         //let op = action.map_get(crate::atoms::op()).unwrap().decode::<rustler::Binary>().unwrap().as_slice();
-        let contract = action.map_get(crate::atoms::contract()).unwrap().decode::<rustler::Binary>().unwrap().to_vec();
-        let function = action.map_get(crate::atoms::function()).unwrap().decode::<rustler::Binary>().unwrap().to_vec();
-
-        let args = action.map_get(crate::atoms::args()).unwrap().decode::<Vec<rustler::Binary>>().unwrap().into_iter().map(|b| b.as_slice().to_vec()).collect();
-        let attached_symbol = match action.map_get(crate::atoms::attached_symbol()).ok() {
-            None => None,
-            Some(t) => match t.decode::<Option<rustler::Binary>>().ok().flatten() {
-                None => None,
-                Some(bin) => Some(bin.as_slice().to_vec()),
-            },
-        };
-        let attached_amount = match action.map_get(crate::atoms::attached_amount()).ok() {
-            None => None,
-            Some(t) => match t.decode::<Option<rustler::Binary>>().ok().flatten() {
-                None => None,
-                Some(bin) => Some(bin.as_slice().to_vec()),
-            },
-        };
+        let contract = action.contract;
+        let function = action.function;
+        let args = action.args;
+        let attached_symbol = action.attached_symbol.clone();
+        let attached_amount = action.attached_amount.clone();
 
         applyenv.caller_env.account_current = contract.to_vec();
         applyenv.muts = Vec::new();
@@ -234,7 +229,6 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
 
         applyenv.exec_track = false;
 
-        let tx_historical_cost = txu.map_get(crate::atoms::tx_historical_cost()).unwrap().decode::<i128>().unwrap();
         let exec_cost_total = ((tx_historical_cost + (applyenv.exec_max - applyenv.exec_left) + (applyenv.storage_max - applyenv.storage_left)) as u64).to_string();
 
         match res {
@@ -318,7 +312,7 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, pk: &[u8], sk
 
     call_exit(&mut applyenv);
 
-    let root_receipts = root_receipts(txus.clone(), applyenv.result_log.clone());
+    let root_receipts = root_receipts(entry.txs.clone(), applyenv.result_log.clone());
     let root_contractstate = update_and_root_contractstate(&mut applyenv);
 
     //println!("r{:?} {}", applyenv.caller_env.entry_height, root_receipts(txus.clone(), applyenv.result_log.clone()).iter().map(|b| format!("{:02x}", b)).collect::<String>() );
@@ -376,7 +370,7 @@ fn update_and_root_contractstate(applyenv: &mut ApplyEnv) -> [u8; 32] {
     root_contractstate
 }
 
-fn root_receipts(txus: Vec<rustler::Term>, result_log: Vec<HashMap<String, String>>) -> [u8; 32] {
+fn root_receipts(txus: Vec<crate::model::tx::TXU>, result_log: Vec<HashMap<String, String>>) -> [u8; 32] {
     use sha2::{Sha256, Digest};
     let mut hubt = bintree::Hubt::new();
     let mut kvs = Vec::new();
@@ -384,7 +378,7 @@ fn root_receipts(txus: Vec<rustler::Term>, result_log: Vec<HashMap<String, Strin
     let count = txus.len();
 
     for (txu, log) in txus.into_iter().zip(result_log.into_iter()) {
-        let tx_hash = crate::fixed::<32>(txu.map_get(crate::atoms::hash()).unwrap()).unwrap();
+        let tx_hash = txu.hash;
 
         let error = log.get("error")
             .expect("no_error_key_in_receipt")
@@ -476,14 +470,13 @@ fn refund_exec_storage_deposit(applyenv: &mut ApplyEnv) {
     applyenv.muts_final_rev.append(&mut applyenv.muts_rev);
 }
 
-fn call_txs_pre_upfront_cost<'a>(env: &mut ApplyEnv, txus: &[rustler::Term<'a>]) {
+fn call_txs_pre_upfront_cost<'a>(env: &mut ApplyEnv, txus: &[crate::model::tx::TXU]) {
     env.muts = Vec::new();
     env.muts_rev = Vec::new();
     for txu in txus {
-        let tx_hash = crate::fixed::<32>(txu.map_get(crate::atoms::hash()).unwrap()).unwrap();
-        let tx = txu.map_get(crate::atoms::tx()).unwrap();
-        let tx_signer = crate::fixed::<48>(tx.map_get(crate::atoms::signer()).unwrap()).unwrap();
-        let tx_nonce = tx.map_get(crate::atoms::nonce()).unwrap().decode::<u64>().unwrap();
+        let tx_hash = txu.hash.as_slice().try_into().unwrap_or_else(|_| panic!("tx_hash_len_wrong"));
+        let tx_signer = txu.tx.signer.as_slice().try_into().unwrap_or_else(|_| panic!("tx_signer_len_wrong"));
+        let tx_nonce = txu.tx.nonce;
 
         set_apply_env_tx(env, &tx_hash, &tx_signer, tx_nonce);
 
@@ -491,12 +484,8 @@ fn call_txs_pre_upfront_cost<'a>(env: &mut ApplyEnv, txus: &[rustler::Term<'a>])
         consensus_kv::kv_put(env, &crate::bcat(&[b"account:", &tx_signer, b":attribute:nonce"]), &tx_nonce.to_string().into_bytes());
 
         // Deduct tx historical cost
-        let tx_historical_cost = txu.map_get(crate::atoms::tx_historical_cost()).unwrap().decode::<i128>().unwrap();
+        let tx_historical_cost = crate::consensus::bic::protocol::tx_historical_cost(txu);
         protocol::pay_cost(env, tx_historical_cost);
-        // Deduct fixed call costs
-        let action = tx.map_get(crate::atoms::action()).unwrap().decode::<rustler::Term<'a>>().unwrap();
-        let contract = action.map_get(crate::atoms::contract()).unwrap().decode::<rustler::Binary>().unwrap().to_vec();
-        let function = action.map_get(crate::atoms::function()).unwrap().decode::<rustler::Binary>().unwrap().to_vec();
 
         //lock 0.1 AMA during execution
         consensus_kv::kv_increment(env, &crate::bcat(&[b"account:", &env.caller_env.account_origin, b":balance:AMA"]), -protocol::AMA_10_CENT);
@@ -633,7 +622,6 @@ fn migrate_db(env: &mut ApplyEnv) {
         cursor = next_key_wo_prefix;
     }
 }
-
 
 pub fn valid_bic_action(contract: Vec<u8>, function: Vec<u8>) -> bool {
     let c = contract.as_slice();

@@ -675,26 +675,17 @@ pub fn fixed<const N: usize>(t: Term<'_>) -> Result<[u8; N], Error> {
 }
 
 #[rustler::nif(schedule = "DirtyCpu")]
-fn apply_entry<'a>(env: Env<'a>, db: ResourceArc<DbResource>, next_entry_trimmed_map: Term<'a>, pk: Binary, sk: Binary, txus: Vec<Term<'a>>,
-    testnet: bool, testnet_peddlebikes: Vec<Binary>) -> Result<Term<'a>, Error> {
-    let entry_signer = fixed::<48>(next_entry_trimmed_map.map_get(atoms::entry_signer())?)?;
-    let entry_prev_hash = fixed::<32>(next_entry_trimmed_map.map_get(atoms::entry_prev_hash())?)?;
-    let entry_vr = fixed::<96>(next_entry_trimmed_map.map_get(atoms::entry_vr())?)?;
-    let entry_vr_b3 = fixed::<32>(next_entry_trimmed_map.map_get(atoms::entry_vr_b3())?)?;
-    let entry_dr = fixed::<32>(next_entry_trimmed_map.map_get(atoms::entry_dr())?)?;
-
-    let entry_slot = next_entry_trimmed_map.map_get(atoms::entry_slot())?.decode::<u64>()?;
-    let entry_prev_slot = next_entry_trimmed_map.map_get(atoms::entry_prev_slot())?.decode::<u64>()?;
-    let entry_height = next_entry_trimmed_map.map_get(atoms::entry_height())?.decode::<u64>()?;
-    let entry_epoch = next_entry_trimmed_map.map_get(atoms::entry_epoch())?.decode::<u64>()?;
+fn apply_entry<'a>(env: Env<'a>, db: ResourceArc<DbResource>, entry_vecpak: Binary, pk: Binary, sk: Binary,
+    testnet: bool, testnet_peddlebikes: Vec<Binary>) -> Result<Term<'a>, Error>
+{
+    let entry = crate::model::entry::from_bytes(entry_vecpak.as_slice()).map_err(|_| Error::BadArg)?;
 
     let txn_opts = TransactionOptions::default();
     let write_opts = WriteOptions::default();
     let txn = db.db.transaction_opt(&write_opts, &txn_opts);
 
-    let (txn, muts, muts_rev, result_log, receipts, root_receipts, root_contractstate) =
-        consensus::consensus_apply::apply_entry(&db.db, pk.as_slice(), sk.as_slice(), &entry_signer, &entry_prev_hash,
-            entry_slot, entry_prev_slot, entry_height, entry_epoch, &entry_vr, &entry_vr_b3, &entry_dr, txus, txn,
+    let (txn, muts, muts_rev, receipts, root_receipts, root_contractstate) =
+        consensus::consensus_apply::apply_entry(&db.db, txn, entry, pk.as_slice(), sk.as_slice(),
             testnet, testnet_peddlebikes.iter().map(|bin| bin.as_slice().to_vec()).collect()
         );
 
@@ -723,7 +714,7 @@ fn apply_entry<'a>(env: Env<'a>, db: ResourceArc<DbResource>, next_entry_trimmed
         receipts_list.push(map);
     }
 
-    Ok((term_txn, consensus_muts::mutations_to_map(muts), consensus_muts::mutations_to_map(muts_rev), result_log, receipts_list,
+    Ok((term_txn, consensus_muts::mutations_to_map(muts), consensus_muts::mutations_to_map(muts_rev), receipts_list,
         Binary::from_owned(ob1, env).encode(env), Binary::from_owned(ob2, env).encode(env)).encode(env))
 }
 
@@ -956,7 +947,6 @@ fn contract_view<'a>(env: Env<'a>, db: ResourceArc<DbResource>, cur_entry_trimme
 #[rustler::nif]
 fn protocol_constants<'a>(env: Env<'a>) -> Term<'a> {
     let mut map = Term::map_new(env);
-
 
     map = map.map_put(atoms::forkheight(), protocol::FORKHEIGHT).ok().unwrap();
 

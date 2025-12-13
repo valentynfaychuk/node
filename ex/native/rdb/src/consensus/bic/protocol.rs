@@ -57,3 +57,10 @@ pub fn pay_cost(env: &mut crate::consensus::consensus_apply::ApplyEnv, cost: i12
     consensus_kv::kv_increment(env, &crate::bcat(&[b"account:", &env.caller_env.entry_signer, b":balance:AMA"]), cost/2);
     consensus_kv::kv_increment(env, &crate::bcat(&[b"account:", &coin::BURN_ADDRESS, b":balance:AMA"]), cost/2);
 }
+
+pub fn tx_historical_cost(txu: &crate::model::tx::TXU) -> i128 {
+    std::cmp::max(
+            AMA_1_CENT,
+            COST_PER_BYTE_HISTORICAL * crate::model::tx::to_bytes_tx(&txu.tx).unwrap().len() as i128,
+        )
+}

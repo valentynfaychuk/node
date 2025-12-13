@@ -6,9 +6,9 @@ use vecpak::{Term};
 #[derive(Debug, Clone)]
 pub struct Header {
     pub prev_hash: Vec<u8>,
-    pub height: i128,
-    pub slot: i128,
-    pub prev_slot: i128,
+    pub height: u64,
+    pub slot: u64,
+    pub prev_slot: u64,
     pub signer: Vec<u8>,
     pub dr: Vec<u8>,
     pub vr: Vec<u8>,
@@ -31,9 +31,9 @@ impl EncodeToTerm for Header {
     fn to_term(&self) -> Result<Term, &'static str> {
         Ok(Term::PropList(vec![
             (Term::Binary(b"prev_hash".to_vec()),      Term::Binary(self.prev_hash.clone())),
-            (Term::Binary(b"height".to_vec()),         Term::VarInt(self.height)),
-            (Term::Binary(b"slot".to_vec()),           Term::VarInt(self.slot)),
-            (Term::Binary(b"prev_slot".to_vec()),      Term::VarInt(self.prev_slot)),
+            (Term::Binary(b"height".to_vec()),         Term::VarInt(self.height as i128)),
+            (Term::Binary(b"slot".to_vec()),           Term::VarInt(self.slot as i128)),
+            (Term::Binary(b"prev_slot".to_vec()),      Term::VarInt(self.prev_slot as i128)),
             (Term::Binary(b"signer".to_vec()),         Term::Binary(self.signer.clone())),
             (Term::Binary(b"dr".to_vec()),             Term::Binary(self.dr.clone())),
             (Term::Binary(b"vr".to_vec()),             Term::Binary(self.vr.clone())),
@@ -49,9 +49,9 @@ impl DecodeFromTerm for Header {
 
         Header {
             prev_hash:      codec::pl_get_bytes(pairs, b"prev_hash").to_vec(),
-            height:         codec::pl_get_varint(pairs, b"height"),
-            slot:           codec::pl_get_varint(pairs, b"slot"),
-            prev_slot:      codec::pl_get_varint(pairs, b"prev_slot"),
+            height:         codec::pl_get_varint(pairs, b"height") as u64,
+            slot:           codec::pl_get_varint(pairs, b"slot") as u64,
+            prev_slot:      codec::pl_get_varint(pairs, b"prev_slot") as u64,
             signer:         codec::pl_get_bytes(pairs, b"signer").to_vec(),
             dr:             codec::pl_get_bytes(pairs, b"dr").to_vec(),
             vr:             codec::pl_get_bytes(pairs, b"vr").to_vec(),

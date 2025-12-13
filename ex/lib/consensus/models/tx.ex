@@ -73,8 +73,7 @@ defmodule TX do
       if !BlsEx.verify?(txu.tx.signer, txu.signature, txu.hash, BLS12AggSig.dst_tx()), do: throw(%{error: :invalid_signature})
 
       if !is_integer(txu.tx.nonce), do: throw(%{error: :nonce_not_integer})
-      if txu.tx.nonce > 99_999_999_999_999_999_999, do: throw(%{error: :nonce_too_high})
-
+      if txu.tx.nonce > 18_446_744_073_709_551_615, do: throw(%{error: :nonce_too_high})
       if !is_map(action), do: throw(%{error: :action_must_be_map})
       if action[:op] != "call", do: throw %{error: :op_must_be_call}
       if !is_binary(action[:contract]), do: throw %{error: :contract_must_be_binary}

@@ -43,7 +43,7 @@ defmodule RDB do
   def transaction_iterator_cf(_tx, _cf), do: :erlang.nif_error(:nif_not_loaded)
   def transaction_iterator_move(_it, _action), do: :erlang.nif_error(:nif_not_loaded)
 
-  def apply_entry(_db, _next_entry_trimmed_map, _pk, _sk, _txus, _testnet, _testnet_peddlebike), do: :erlang.nif_error(:nif_not_loaded)
+  def apply_entry(_db, _entry, _pk, _sk, _testnet, _testnet_peddlebike), do: :erlang.nif_error(:nif_not_loaded)
 
   def vecpak_encode(_map), do: :erlang.nif_error(:nif_not_loaded)
   def vecpak_decode(_bin), do: :erlang.nif_error(:nif_not_loaded)

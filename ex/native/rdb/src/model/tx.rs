@@ -15,7 +15,7 @@ pub struct Action {
 #[derive(Debug, Clone)]
 pub struct TX {
     pub signer: Vec<u8>,
-    pub nonce: i128,
+    pub nonce: u64,
     pub action: Action,
 }
 
@@ -85,7 +85,7 @@ impl EncodeToTerm for TX {
     fn to_term(&self) -> Result<Term, &'static str> {
         Ok(Term::PropList(vec![
             (Term::Binary(b"signer".to_vec()), Term::Binary(self.signer.clone())),
-            (Term::Binary(b"nonce".to_vec()),  Term::VarInt(self.nonce)),
+            (Term::Binary(b"nonce".to_vec()),  Term::VarInt(self.nonce as i128)),
             (Term::Binary(b"action".to_vec()), self.action.to_term()?),
         ]))
     }
@@ -96,13 +96,18 @@ impl DecodeFromTerm for TX {
         let Term::PropList(pairs) = t else { unreachable!("Expected PropList for TX") };
 
         let signer = codec::pl_get_bytes(pairs, b"signer").to_vec();
-        let nonce  = codec::pl_get_varint(pairs, b"nonce");
+        let nonce  = codec::pl_get_varint(pairs, b"nonce") as u64;
 
         let action_term = codec::pl_find(pairs, b"action");
         let action = Action::from_term(action_term);
 
         TX { signer, nonce, action }
     }
+}
+
+pub fn to_bytes_tx(tx: &TX) -> Result<Vec<u8>, &'static str> {
+    let term = tx.to_term()?;
+    Ok(vecpak::encode(term))
 }
 
 impl EncodeToTerm for TXU {
