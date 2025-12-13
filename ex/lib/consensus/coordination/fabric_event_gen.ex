@@ -51,10 +51,14 @@ defmodule FabricEventGen do
     end
 
     #IO.inspect API.Chain.format_entry_for_client(entry), limit: 11111
-    entry_b58 = API.Chain.format_entry_for_client(entry)
-    txs = Enum.map(entry.txs, fn(txu)->
-      API.TX.format_tx_for_client(txu)
+    txs_task = Task.async(fn ->
+      entry.txs
+      |> Task.async_stream(fn txu -> API.TX.format_tx_for_client(txu) end)
+      |> Enum.map(fn {:ok, res} -> res end)
     end)
+    entry_b58 = API.Chain.format_entry_for_client(entry)
+    txs = Task.await(txs_task, :infinity)
+
     broadcast({:update_stats_entry_tx, API.Chain.stats(), entry_b58, txs})
 
     {:noreply, state}

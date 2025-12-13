@@ -55,12 +55,7 @@ defmodule DB.Chain do
           entry = DB.Entry.by_hash(map.entry_hash, db_opts)
           tx_bytes = binary_part(entry_bytes, map.index_start, map.index_size)
 
-          receipt = if map[:result] do map.result else
-            receipt = map.receipt
-            result = RocksDB.ascii_dump(receipt.result)
-            logs = Enum.map(receipt.logs, & RocksDB.ascii_dump(&1))
-            Map.merge(receipt, %{result: result, logs: logs})
-          end
+          receipt = if map[:result] do map.result else map.receipt end
 
           TX.unpack(tx_bytes)
           |> Map.put(:receipt, receipt)

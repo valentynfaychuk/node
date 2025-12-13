@@ -131,7 +131,7 @@ defmodule FabricGen do
                 :erlang.halt()
 
               true ->
-                FabricEventGen.event_rooted(best_entry, muts_hash)
+                Application.fetch_env!(:ama, :rpc_events) && FabricEventGen.event_rooted(best_entry, muts_hash)
                 %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
                 RocksDB.put("rooted_tip", best_entry.hash, %{db: db, cf: cf.sysconf})
                 proc_consensus()
@@ -187,7 +187,7 @@ defmodule FabricGen do
           result = %{error: :ok} -> result
         end
 
-        FabricEventGen.event_applied(entry, m_hash, m, r)
+        Application.fetch_env!(:ama, :rpc_events) && FabricEventGen.event_applied(entry, m_hash, m, r)
         TXPool.delete_packed(entry.txs)
 
         proc_entries()
