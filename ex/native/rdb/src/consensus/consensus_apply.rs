@@ -734,27 +734,18 @@ fn migrate_db(env: &mut ApplyEnv) {
     }
 }
 
-pub fn valid_bic_action(contract: Vec<u8>, function: Vec<u8>) -> bool {
-    let c = contract.as_slice();
-    let f = function.as_slice();
-
-    (c == b"Epoch" || c == b"Coin" || c == b"Contract")
-        && (f == b"submit_sol"
-            || f == b"transfer"
-            || f == b"set_emission_address"
-            || f == b"slash_trainer"
-            || f == b"deploy"
-            || f == b"create_and_mint"
-            || f == b"mint"
-            || f == b"pause")
-}
-
 pub fn call_bic(env: &mut ApplyEnv, contract: Vec<u8>, function: Vec<u8>, args: Vec<Vec<u8>>, attached_symbol: Option<Vec<u8>>, attached_amount: Option<Vec<u8>>) {
     match (contract.as_slice(), function.as_slice()) {
         (b"Coin", b"transfer") => consensus::bic::coin::call_transfer(env, args),
-        //(b"Coin", b"create_and_mint") => consensus::bic::coin::call_create_and_mint(env, args),
-        //(b"Coin", b"mint") => consensus::bic::coin::call_mint(env, args),
-        //(b"Coin", b"pause") => consensus::bic::coin::call_pause(env, args),
+        (b"Coin", b"create_and_mint") => consensus::bic::coin::call_create_and_mint(env, args),
+        (b"Coin", b"mint") => consensus::bic::coin::call_mint(env, args),
+        (b"Coin", b"pause") => consensus::bic::coin::call_pause(env, args),
+        (b"Nft", b"transfer") => consensus::bic::nft::call_transfer(env, args),
+        (b"Nft", b"create_collection") => consensus::bic::nft::call_create_collection(env, args),
+        (b"Nft", b"mint") => consensus::bic::nft::call_mint(env, args),
+        (b"Lockup", b"lock") => consensus::bic::lockup::call_lock(env, args),
+        (b"Lockup", b"unlock") => consensus::bic::lockup::call_unlock(env, args),
+
         (b"Epoch", b"set_emission_address") => consensus::bic::epoch::call_set_emission_address(env, args),
         (b"Epoch", b"submit_sol") => {
             consensus_kv::exec_budget_decr(env, protocol::COST_PER_SOL);
@@ -765,10 +756,11 @@ pub fn call_bic(env: &mut ApplyEnv, contract: Vec<u8>, function: Vec<u8>, args: 
                 consensus_kv::exec_budget_decr(env, protocol::COST_PER_DEPLOY);
                 consensus::bic::contract::call_deploy(env, args)
         },
-        //(b"Lockup", b"unlock") => consensus::bic::lockup::call_unlock(env, args),
+
         //(b"LockupPrime", b"lock") => consensus::bic::lockup_prime::call_lock(env, args),
         //(b"LockupPrime", b"unlock") => consensus::bic::lockup_prime::call_unlock(env, args),
         //(b"LockupPrime", b"daily_checkin") => consensus::bic::lockup_prime::call_daily_checkin(env, args),
+
         _ => std::panic::panic_any("invalid_bic_action")
     }
 }
