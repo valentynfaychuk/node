@@ -16,6 +16,25 @@ export function toBytes<T>(val: T): Uint8Array {
   }
 }
 
+export function bcat<T>(items: Array<T>): Uint8Array {
+  const parts = new Array<Uint8Array>(items.length);
+  let totalLen = 0;
+
+  for (let i = 0; i < items.length; i++) {
+    parts[i] = toBytes(items[i]);
+    totalLen += parts[i].length;
+  }
+
+  const out = new Uint8Array(totalLen);
+  let offset = 0;
+  for (let i = 0; i < parts.length; i++) {
+    out.set(parts[i], offset);
+    offset += parts[i].length;
+  }
+
+  return out;
+}
+
 export function b<T>(val: T): Uint8Array {
   return toBytes(val)
 }
@@ -129,6 +148,10 @@ export function memory_read_bytes(ptr: i32): Uint8Array {
   return result;
 }
 
+export function memory_read_string(ptr: i32): string {
+  return String.UTF8.decodeUnsafe(ptr+4, load<i32>(ptr), false)
+}
+
 export function base58_decode(input: string): Uint8Array {
   const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
   let bytes = new Array<u8>();
@@ -160,85 +183,49 @@ export function bToI64(data: Uint8Array | null, defaultVal: i64 = 0): i64 {
   return I64.parseInt(str);
 }
 
-export function concat(...chunks: Uint8Array[]): Uint8Array {
-  let total = 0;
-  for (let i = 0; i < chunks.length; i++) {
-    total += chunks[i].length;
-  }
-  const out = new Uint8Array(total);
-  let offset = 0;
-  for (let i = 0; i < chunks.length; i++) {
-    out.set(chunks[i], offset);
-    offset += chunks[i].length;
-  }
-  return out;
+export function bToU64(data: Uint8Array | null, defaultVal: u64 = 0): u64 {
+  if (!data) return defaultVal;
+  const str = String.UTF8.decodeUnsafe(data.dataStart, data.byteLength);
+  return U64.parseInt(str);
 }
 
-export function memory_read_string(ptr: i32): string {
-  return String.UTF8.decodeUnsafe(ptr+4, load<i32>(ptr), false)
+export function coin_raw(amount: u64, decimals: i32 = 9): Uint8Array {
+  let multiplier: u64 = 1;
+  for (let i = 0; i < decimals; i++) {
+    multiplier *= 10;
+  }
+  const total = amount * multiplier;
+  return Uint8Array.wrap(String.UTF8.encode(total.toString()));
 }
 
 export function exit(error: string): void {
   abort(error, "0", 0, 0);
 }
 
-@external("env", "entry_signer_ptr")
-declare const entry_signer_ptr: i32;
-export function entry_signer(): Uint8Array { return memory_read_bytes(entry_signer_ptr) }
+// --- Seed (1100) ---
+export function seed(): Uint8Array { return memory_read_bytes(1100); }
 
-@external("env", "entry_prev_hash_ptr")
-declare const entry_prev_hash_ptr: i32;
-export function entry_prev_hash(): Uint8Array { return memory_read_bytes(entry_prev_hash_ptr) }
+// --- Entry (2000) ---
+export function entry_slot(): u64 { return load<u64>(2000); }
+export function entry_height(): u64 { return load<u64>(2010); }
+export function entry_epoch(): u64 { return load<u64>(2020); }
+export function entry_signer(): Uint8Array { return memory_read_bytes(2100); }
+export function entry_prev_hash(): Uint8Array { return memory_read_bytes(2200); }
+export function entry_vr(): Uint8Array { return memory_read_bytes(2300); }
+export function entry_dr(): Uint8Array { return memory_read_bytes(2400); }
 
-@external("env", "entry_vr_ptr")
-declare const entry_vr_ptr: i32;
-export function entry_vr(): Uint8Array { return memory_read_bytes(entry_vr_ptr) }
+// --- TX (3000) ---
+export function tx_nonce(): u64 { return load<u64>(3000); }
+export function tx_signer(): Uint8Array { return memory_read_bytes(3100); }
 
-@external("env", "entry_dr_ptr")
-declare const entry_dr_ptr: i32;
-export function entry_dr(): Uint8Array { return memory_read_bytes(entry_dr_ptr) }
+// --- Accounts (4000) ---
+export function account_current(): Uint8Array { return memory_read_bytes(4000); }
+export function account_caller(): Uint8Array { return memory_read_bytes(4100); }
+export function account_origin(): Uint8Array { return memory_read_bytes(4200); }
 
-@external("env", "tx_signer_ptr")
-declare const tx_signer_ptr: i32;
-export function tx_signer(): Uint8Array { return memory_read_bytes(tx_signer_ptr) }
-
-@external("env", "account_current_ptr")
-declare const account_current_ptr: i32;
-export function account_current(): Uint8Array { return memory_read_bytes(account_current_ptr) }
-@external("env", "account_caller_ptr")
-declare const account_caller_ptr: i32;
-export function account_caller(): Uint8Array { return memory_read_bytes(account_caller_ptr) }
-@external("env", "account_origin_ptr")
-declare const account_origin_ptr: i32;
-export function account_origin(): Uint8Array { return memory_read_bytes(account_origin_ptr) }
-
-@external("env", "attached_symbol_ptr")
-declare const attached_symbol_ptr: i32;
-export function attached_symbol(): string { return memory_read_string(attached_symbol_ptr) }
-@external("env", "attached_amount_ptr")
-declare const attached_amount_ptr: i32;
-export function attached_amount(): string { return memory_read_string(attached_amount_ptr) }
-
-@external("env", "entry_slot")
-declare const entry_slot: i64;
-@external("env", "entry_prev_slot")
-declare const entry_prev_slot: i64;
-@external("env", "entry_height")
-declare const entry_height: i64;
-@external("env", "entry_epoch")
-declare const entry_epoch: i64;
-@external("env", "tx_nonce")
-declare const tx_nonce: i64;
-
-@external("env", "import_attach")
-declare function import_attach(symbol_ptr: i32, symbol_len: i32, amount_ptr: i32, amount_len: i32): void;
-export function attach(symbol: string, amount: string): void {
-  let symbolBytes = String.UTF8.encode(symbol, false);
-  let symbolPtr   = changetype<i32>(symbolBytes);
-  let amountBytes = String.UTF8.encode(amount, false);
-  let amountPtr   = changetype<i32>(amountBytes);
-  import_attach(symbolPtr, symbolBytes.byteLength, amountPtr, amountBytes.byteLength)
-}
+// --- Assets (5000) ---
+export function attached_symbol(): string { return memory_read_string(5000); }
+export function attached_amount(): string { return memory_read_string(5100); }
 
 @external("env", "import_log")
 declare function import_log(ptr: i32, len: i32): void;

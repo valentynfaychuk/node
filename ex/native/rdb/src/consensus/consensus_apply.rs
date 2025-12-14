@@ -200,6 +200,7 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, txn: Transact
         let attached_symbol = action.attached_symbol.clone();
         let attached_amount = action.attached_amount.clone();
 
+        applyenv.caller_env.call_counter += 1;
         applyenv.caller_env.account_current = contract.to_vec();
         applyenv.muts = Vec::new();
         applyenv.muts_rev = Vec::new();

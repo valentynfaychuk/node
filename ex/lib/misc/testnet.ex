@@ -4,6 +4,10 @@ defmodule Testnet do
     API.TX.submit_and_wait(txu |> TX.pack(), false)
   end
 
+  def view(contract, function, args, view_pk \\ nil) do
+    API.Contract.view(contract, function, args, view_pk)
+  end
+
   def read(key) do
     %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
     RocksDB.get(key, %{db: db, cf: cf.contractstate})

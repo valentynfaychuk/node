@@ -191,7 +191,7 @@ fn import_call_implementation(mut env: FunctionEnvMut<HostEnv>, table_ptr: i32, 
     applyenv.caller_env.account_current = og_account_current;
 
     let view = data.memory.clone().view(&store);
-    view.write(10_000, &result.len().to_le_bytes()).unwrap_or_else(|_| panic_any("exec_memwrite"));
+    view.write(10_000, &(result.len() as u32).to_le_bytes()).unwrap_or_else(|_| panic_any("exec_memwrite"));
     view.write(10_004, &result).unwrap_or_else(|_| panic_any("exec_memwrite"));
 
     Ok(10_000)
@@ -246,7 +246,7 @@ fn import_storage_kv_increment_implementation(mut env: FunctionEnvMut<HostEnv>, 
     let new_value = kv_increment(applyenv, &key, value_int128).to_string();
     let new_value = new_value.as_bytes();
 
-    view.write(10_000, &new_value.len().to_le_bytes()).unwrap_or_else(|_| panic_any("exec_memwrite"));
+    view.write(10_000, &(new_value.len() as u32).to_le_bytes()).unwrap_or_else(|_| panic_any("exec_memwrite"));
     view.write(10_004, &new_value).unwrap_or_else(|_| panic_any("exec_memwrite"));
 
     Ok(10_000)
@@ -285,7 +285,7 @@ fn import_storage_kv_get_implementation(mut env: FunctionEnvMut<HostEnv>, ptr: i
             view.write(10_000, &(-1i32).to_le_bytes()).unwrap_or_else(|_| panic_any("exec_memwrite"));
         },
         Some(value) => {
-            view.write(10_000, &value.len().to_le_bytes()).unwrap_or_else(|_| panic_any("exec_memwrite"));
+            view.write(10_000, &(value.len() as u32).to_le_bytes()).unwrap_or_else(|_| panic_any("exec_memwrite"));
             view.write(10_004, &value).unwrap_or_else(|_| panic_any("exec_memwrite"));
         }
     }
@@ -315,10 +315,10 @@ fn import_storage_kv_get_prev_implementation(mut env: FunctionEnvMut<HostEnv>, p
             view.write(10_000, &(-1i32).to_le_bytes()).unwrap_or_else(|_| panic_any("exec_memwrite"));
         },
         Some((prev_key, value)) => {
-            view.write(10_000, &prev_key.len().to_le_bytes()).unwrap_or_else(|_| panic_any("exec_memwrite"));
+            view.write(10_000, &(prev_key.len() as u32).to_le_bytes()).unwrap_or_else(|_| panic_any("exec_memwrite"));
             view.write(10_000 + 4, &prev_key).unwrap_or_else(|_| panic_any("exec_memwrite"));
 
-            view.write(10_000 + 4 + prev_key.len() as u64, &value.len().to_le_bytes()).unwrap_or_else(|_| panic_any("exec_memwrite"));
+            view.write(10_000 + 4 + prev_key.len() as u64, &(value.len() as u32).to_le_bytes()).unwrap_or_else(|_| panic_any("exec_memwrite"));
             view.write(10_000 + 4 + prev_key.len() as u64 + 4, &value).unwrap_or_else(|_| panic_any("exec_memwrite"));
         }
     }
@@ -348,10 +348,10 @@ fn import_storage_kv_get_next_implementation(mut env: FunctionEnvMut<HostEnv>, p
             view.write(10_000, &(-1i32).to_le_bytes()).unwrap_or_else(|_| panic_any("exec_memwrite"));
         },
         Some((next_key, value)) => {
-            view.write(10_000, &next_key.len().to_le_bytes()).unwrap_or_else(|_| panic_any("exec_memwrite"));
+            view.write(10_000, &(next_key.len() as u32).to_le_bytes()).unwrap_or_else(|_| panic_any("exec_memwrite"));
             view.write(10_000 + 4, &next_key).unwrap_or_else(|_| panic_any("exec_memwrite"));
 
-            view.write(10_000 + 4 + next_key.len() as u64, &value.len().to_le_bytes()).unwrap_or_else(|_| panic_any("exec_memwrite"));
+            view.write(10_000 + 4 + next_key.len() as u64, &(value.len() as u32).to_le_bytes()).unwrap_or_else(|_| panic_any("exec_memwrite"));
             view.write(10_000 + 4 + next_key.len() as u64 + 4, &value).unwrap_or_else(|_| panic_any("exec_memwrite"));
         }
     }
@@ -664,7 +664,7 @@ fn inject_env_data(view: &MemoryView, env: &ApplyEnv) {
 
     //Reserve first 1024 bytes
     //Reserve first page 65536 bytes
-    w(1_100, &env.caller_env.seed.len().to_le_bytes());
+    w(1_100, &(env.caller_env.seed.len() as u32).to_le_bytes());
     w(1_104, &env.caller_env.seed);
 
     // Entry
@@ -672,33 +672,33 @@ fn inject_env_data(view: &MemoryView, env: &ApplyEnv) {
     w(2_010, &env.caller_env.entry_height.to_le_bytes());
     w(2_020, &env.caller_env.entry_epoch.to_le_bytes());
     //
-    w(2_100, &env.caller_env.entry_signer.len().to_le_bytes());
+    w(2_100, &(env.caller_env.entry_signer.len() as u32).to_le_bytes());
     w(2_104, &env.caller_env.entry_signer);
-    w(2_200, &env.caller_env.entry_prev_hash.len().to_le_bytes());
+    w(2_200, &(env.caller_env.entry_prev_hash.len() as u32).to_le_bytes());
     w(2_204, &env.caller_env.entry_prev_hash);
-    w(2_300, &env.caller_env.entry_vr.len().to_le_bytes());
+    w(2_300, &(env.caller_env.entry_vr.len() as u32).to_le_bytes());
     w(2_304, &env.caller_env.entry_vr);
-    w(2_400, &env.caller_env.entry_dr.len().to_le_bytes());
+    w(2_400, &(env.caller_env.entry_dr.len() as u32).to_le_bytes());
     w(2_404, &env.caller_env.entry_dr);
 
     // TX
     w(3_000, &env.caller_env.tx_nonce.to_le_bytes());
     //
-    w(3_100, &env.caller_env.tx_signer.len().to_le_bytes());
+    w(3_100, &(env.caller_env.tx_signer.len() as u32).to_le_bytes());
     w(3_104, &env.caller_env.tx_signer);
 
     // Accounts
-    w(4_000, &env.caller_env.account_current.len().to_le_bytes());
+    w(4_000, &(env.caller_env.account_current.len() as u32).to_le_bytes());
     w(4_004, &env.caller_env.account_current);
-    w(4_100, &env.caller_env.account_caller.len().to_le_bytes());
+    w(4_100, &(env.caller_env.account_caller.len() as u32).to_le_bytes());
     w(4_104, &env.caller_env.account_caller);
-    w(4_200, &env.caller_env.account_origin.len().to_le_bytes());
+    w(4_200, &(env.caller_env.account_origin.len() as u32).to_le_bytes());
     w(4_204, &env.caller_env.account_origin);
 
     // Assets
-    w(5_000, &env.caller_env.attached_symbol.len().to_le_bytes());
+    w(5_000, &(env.caller_env.attached_symbol.len() as u32).to_le_bytes());
     w(5_004, &env.caller_env.attached_symbol);
-    w(5_100, &env.caller_env.attached_amount.len().to_le_bytes());
+    w(5_100, &(env.caller_env.attached_amount.len() as u32).to_le_bytes());
     w(5_104, &env.caller_env.attached_amount);
 }
 

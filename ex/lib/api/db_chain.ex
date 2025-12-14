@@ -47,6 +47,10 @@ defmodule DB.Chain do
     RocksDB.get("account:#{pk}:balance:#{symbol}", db_handle(db_opts, :contractstate, %{to_integer: true})) || 0
   end
 
+  def balance_nft(pk, collection, token, db_opts \\ %{}) do
+    RocksDB.get("account:#{pk}:nft:#{collection}:#{token}", db_handle(db_opts, :contractstate, %{to_integer: true})) || 0
+  end
+
   def tx(tx_hash, db_opts \\ %{}) do
       map = RocksDB.get(tx_hash, db_handle(db_opts, :tx, %{}))
       if map do

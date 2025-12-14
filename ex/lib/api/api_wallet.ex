@@ -22,6 +22,12 @@ defmodule API.Wallet do
         end)
     end
 
+    def balance_nft(pk, collection, token) do
+        pk = if byte_size(pk) != 48, do: Base58.decode(pk), else: pk
+        amount = DB.Chain.balance_nft(pk, collection, token)
+        %{collection: collection, token: token, amount: amount}
+    end
+
     def transfer(to, amount, symbol) do
         sk = Application.fetch_env!(:ama, :trainer_sk)
         transfer(sk, to, amount, symbol)
