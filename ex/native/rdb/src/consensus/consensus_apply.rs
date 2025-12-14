@@ -321,6 +321,118 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, txn: Transact
     applyenv.into_parts(root_receipts, root_contractstate)
 }
 
+pub fn contract_view<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, entry: crate::model::entry::Entry, view_pk: Vec<u8>,
+    contract: Vec<u8>, function: Vec<u8>, args: Vec<Vec<u8>>, testnet: bool,
+) -> (bool, Vec<u8>, Vec<Vec<u8>>) {
+    let cf_h = db.cf_handle("contractstate").unwrap();
+    let cf2_h = db.cf_handle("contractstate").unwrap();
+    let cf_tree_h = db.cf_handle("contractstate_tree").unwrap();
+
+    let entry_signer = entry.header.signer.as_slice().try_into().unwrap_or_else(|_| panic!("entry_signer_len_wrong"));
+    let entry_prev_hash = entry.header.prev_hash.as_slice().try_into().unwrap_or_else(|_| panic!("entry_prev_hash_len_wrong"));
+    let entry_vr = entry.header.vr.as_slice().try_into().unwrap_or_else(|_| panic!("entry_vr_len_wrong"));
+    let entry_vr_b3_binding = blake3::hash(&entry.header.vr);
+    let entry_vr_b3 = entry_vr_b3_binding.as_bytes().try_into().unwrap_or_else(|_| panic!("entry_vr_len_wrong"));
+    let entry_dr = entry.header.dr.as_slice().try_into().unwrap_or_else(|_| panic!("entry_dr_len_wrong"));
+
+    let txn_opts = TransactionOptions::default();
+    let write_opts = WriteOptions::default();
+    let txn = db.transaction_opt(&write_opts, &txn_opts);
+
+    let entry_epoch = entry.header.height / 100_000;
+    let mut applyenv = make_apply_env(db, txn, cf_h, b"contractstate".to_vec(), cf2_h, cf_tree_h,
+        entry_signer, entry_prev_hash, entry.header.slot, entry.header.prev_slot, entry.header.height,
+        entry_epoch, entry_vr, entry_vr_b3, entry_dr,
+        testnet, Vec::new());
+    applyenv.readonly = true;
+
+    let view_pk: [u8; 48] = view_pk.as_slice().try_into().unwrap_or_else(|_| panic!("view_pk_len_wrong"));
+    applyenv.caller_env.tx_signer = view_pk;
+    applyenv.caller_env.account_current = contract.to_vec();
+    applyenv.caller_env.account_origin = view_pk.to_vec();
+    applyenv.caller_env.account_caller = view_pk.to_vec();
+    applyenv.exec_left = protocol::AMA_10_CENT;
+    applyenv.storage_left = protocol::AMA_1_DOLLAR;
+
+    std::panic::set_hook(Box::new(|_| {}));
+    let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        match consensus::bls12_381::validate_public_key(contract.as_slice()) {
+            false => {
+                call_bic(&mut applyenv, contract, function, args, None, None);
+                b"ok".to_vec()
+            }
+            true => {
+                let result = call_wasmvm(&mut applyenv, contract, function, args, None, None);
+                result
+            }
+        }
+    }));
+
+    applyenv.txn.rollback();
+
+    match res {
+        Ok(result) => {
+            (true, result.into(), applyenv.logs.clone())
+        }
+        Err(payload) => {
+            if let Some(&s) = payload.downcast_ref::<&'static str>() {
+                (false, s.to_string().into(), applyenv.logs.clone())
+            } else {
+                (false, b"unknown".into(), applyenv.logs.clone())
+            }
+        }
+    }
+}
+
+pub fn contract_validate<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, entry: crate::model::entry::Entry, wasm_bytes: &[u8],
+    testnet: bool,
+) -> (Vec<u8>, Vec<Vec<u8>>) {
+    let cf_h = db.cf_handle("contractstate").unwrap();
+    let cf2_h = db.cf_handle("contractstate").unwrap();
+    let cf_tree_h = db.cf_handle("contractstate_tree").unwrap();
+
+    let entry_signer = entry.header.signer.as_slice().try_into().unwrap_or_else(|_| panic!("entry_signer_len_wrong"));
+    let entry_prev_hash = entry.header.prev_hash.as_slice().try_into().unwrap_or_else(|_| panic!("entry_prev_hash_len_wrong"));
+    let entry_vr = entry.header.vr.as_slice().try_into().unwrap_or_else(|_| panic!("entry_vr_len_wrong"));
+    let entry_vr_b3_binding = blake3::hash(&entry.header.vr);
+    let entry_vr_b3 = entry_vr_b3_binding.as_bytes().try_into().unwrap_or_else(|_| panic!("entry_vr_len_wrong"));
+    let entry_dr = entry.header.dr.as_slice().try_into().unwrap_or_else(|_| panic!("entry_dr_len_wrong"));
+
+    let txn_opts = TransactionOptions::default();
+    let write_opts = WriteOptions::default();
+    let txn = db.transaction_opt(&write_opts, &txn_opts);
+
+    let entry_epoch = entry.header.height / 100_000;
+    let mut applyenv = make_apply_env(db, txn, cf_h, b"contractstate".to_vec(), cf2_h, cf_tree_h,
+        entry_signer, entry_prev_hash, entry.header.slot, entry.header.prev_slot, entry.header.height,
+        entry_epoch, entry_vr, entry_vr_b3, entry_dr,
+        testnet, Vec::new());
+    applyenv.readonly = true;
+
+    applyenv.exec_left = protocol::AMA_10_CENT;
+    applyenv.storage_left = protocol::AMA_1_DOLLAR;
+
+    std::panic::set_hook(Box::new(|_| {}));
+    let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        crate::consensus::bic::wasm::validate_contract(&mut applyenv, wasm_bytes)
+    }));
+
+    applyenv.txn.rollback();
+
+    match res {
+        Ok(result) => (b"ok".to_vec(), applyenv.logs.clone()),
+        Err(payload) => {
+            if let Some(&s) = payload.downcast_ref::<&'static str>() {
+                (s.to_string().into(), applyenv.logs.clone())
+            } else {
+                (b"error".to_vec(), applyenv.logs.clone())
+            }
+        }
+    }
+}
+
+
+
 fn update_and_root_contractstate(applyenv: &mut ApplyEnv) -> [u8; 32] {
     //Select only the last muts, rest are irrelevent for tree
     let mut map: HashMap<Vec<u8>, consensus_muts::Mutation> = HashMap::new();
@@ -700,7 +812,10 @@ pub fn call_wasmvm(env: &mut ApplyEnv, contract: Vec<u8>, function: Vec<u8>, arg
         _ => ()
     }
 
-    std::panic::panic_any("wasm_noop");
+    if !env.testnet {
+        std::panic::panic_any("wasm_noop");
+    }
+
     let error = consensus::bic::wasm::call_contract(env, bytecode.as_deref().unwrap_or_else(|| panic_any("invalid_bytecode")), function, args);
     error
 }

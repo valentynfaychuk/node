@@ -718,6 +718,55 @@ fn apply_entry<'a>(env: Env<'a>, db: ResourceArc<DbResource>, entry_vecpak: Bina
         Binary::from_owned(ob1, env).encode(env), Binary::from_owned(ob2, env).encode(env)).encode(env))
 }
 
+#[rustler::nif(schedule = "DirtyCpu")]
+fn contract_view<'a>(env: Env<'a>, db: ResourceArc<DbResource>, entry_vecpak: Binary, view_pk: Binary,
+    contract: Binary, function: Binary, fargs: Vec<Binary>, testnet: bool) -> Result<Term<'a>, Error>
+{
+    let entry = crate::model::entry::from_bytes(entry_vecpak.as_slice()).map_err(|_| Error::BadArg)?;
+
+    let (success, result, logs) = consensus::consensus_apply::contract_view(
+        &db.db, entry, view_pk.as_slice().to_vec(),
+        contract.as_slice().to_vec(), function.as_slice().to_vec(), fargs.iter().map(|bin| bin.as_slice().to_vec()).collect(),
+        testnet
+    );
+
+    let mut ob_result = OwnedBinary::new(result.len()).ok_or_else(|| Error::Term(Box::new("alloc failed"))).unwrap();
+    ob_result.as_mut_slice().copy_from_slice(&result);
+
+    let mut logs_list = Vec::new();
+    for l in logs {
+        let mut ob_log = OwnedBinary::new(l.len()).ok_or_else(|| Error::Term(Box::new("alloc failed"))).unwrap();
+        ob_log.as_mut_slice().copy_from_slice(&l);
+        logs_list.push(Binary::from_owned(ob_log, env))
+    };
+
+    Ok((success, Binary::from_owned(ob_result, env), logs_list).encode(env))
+}
+
+#[rustler::nif(schedule = "DirtyCpu")]
+fn contract_validate<'a>(env: Env<'a>, db: ResourceArc<DbResource>, entry_vecpak: Binary, wasmbytes: Binary,
+    testnet: bool) -> Result<Term<'a>, Error>
+{
+    let entry = crate::model::entry::from_bytes(entry_vecpak.as_slice()).map_err(|_| Error::BadArg)?;
+
+    let (result, logs) = consensus::consensus_apply::contract_validate(
+        &db.db, entry, wasmbytes.as_slice(),
+        testnet
+    );
+
+    let mut ob_result = OwnedBinary::new(result.len()).ok_or_else(|| Error::Term(Box::new("alloc failed"))).unwrap();
+    ob_result.as_mut_slice().copy_from_slice(&result);
+
+    let mut logs_list = Vec::new();
+    for l in logs {
+        let mut ob_log = OwnedBinary::new(l.len()).ok_or_else(|| Error::Term(Box::new("alloc failed"))).unwrap();
+        ob_log.as_mut_slice().copy_from_slice(&l);
+        logs_list.push(Binary::from_owned(ob_log, env))
+    };
+
+    Ok((Binary::from_owned(ob_result, env), logs_list).encode(env))
+}
+
 #[rustler::nif]
 fn vecpak_encode<'a>(env: Env<'a>, map: Term<'a>) -> Result<Term<'a>, Error> {
     let mut buf = Vec::with_capacity(1024);
@@ -977,7 +1026,7 @@ fn protocol_epoch_emission<'a>(env: Env<'a>, epoch: u64) -> i128 {
     crate::consensus::bic::epoch::epoch_emission(epoch)
 }
 
-#[rustler::nif]
+#[rustler::nif(schedule = "DirtyCpu")]
 fn protocol_circulating_without_burn<'a>(env: Env<'a>, epoch: u64) -> i128 {
     crate::consensus::bic::epoch::circulating_without_burn(epoch)
 }
