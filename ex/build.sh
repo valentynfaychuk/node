@@ -6,7 +6,7 @@ podman run -it --rm -v ../.:/root/node --entrypoint bash erlang_builder -c "echo
     && cd /root/node/ex \
     && export MIX_ENV=prod \
     && export CC='clang-19' CXX='clang++-19' CFLAGS='-march=haswell' CXXFLAGS='-march=haswell' \
-    && export RUSTFLAGS='-C target-cpu=haswell -C opt-level=3' \
+    && export RUSTFLAGS='-C target-cpu=haswell -C opt-level=3 -C link-arg=-fuse-ld=mold' \
     && export LLVM_CONFIG_PATH=/usr/bin/llvm-config-19 LIBCLANG_PATH=/usr/lib/llvm-19/lib \
     && mix deps.get \
     && mix release \
