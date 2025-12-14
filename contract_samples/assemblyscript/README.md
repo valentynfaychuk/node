@@ -7,11 +7,11 @@ curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
 npm install --global assemblyscript
 ```
   
-Build the deposit contract setting memory base to 65536 just in-case (not required)
+Build the deposit contract setting memory base to 65536
 Enable importMemory to allow calling imports
   
 ```bash
-asc 1_deposit.ts --target release --importMemory --memoryBase 65536 --outFile deposit.wasm
+asc 0_counter.ts --target release --importMemory --memoryBase 65536 --outFile counter.wasm
 ```
   
 Check bytecode is valid by validating it via RPC

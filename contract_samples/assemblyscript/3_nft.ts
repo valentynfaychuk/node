@@ -29,6 +29,11 @@ export function claim(): void {
   sdk.ret(random_nft);
 }
 
+//Current: VRF Stage 1 is used.
+//Seed is signature of previous VRF by current validator.
+//A malicious validator can do a withholding attack (not include a TX if the RNG is unfavorable)
+
+//Coming Soon: VRF Stage 2 will be only attackable if 67% are malicious as it will use BLS Threshold /w DKG
 export function roll_dice(): i64 {
   const val = Math.random(); // Returns 0.0 to 1.0
   return floor(val * 6) as i32 + 1; // Returns 1-6
