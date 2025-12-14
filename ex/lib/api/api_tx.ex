@@ -158,8 +158,8 @@ defmodule API.TX do
         tx = put_in(tx, [:tx, :action], action)
 
         tx = if !tx[:receipt] do tx else
-          logs = Enum.map(tx.receipt.logs, fn(line)-> RocksDB.ascii_dump(line) end)
-          receipt = Map.merge(tx.receipt, %{result: RocksDB.ascii_dump(tx.receipt.result), logs: logs})
+          logs = Enum.map(tx.receipt[:logs] || [], fn(line)-> RocksDB.ascii_dump(line) end)
+          receipt = Map.merge(tx.receipt, %{result: RocksDB.ascii_dump(tx.receipt[:result] || tx.receipt.error), logs: logs})
           Map.put(tx, :receipt, receipt)
         end
 

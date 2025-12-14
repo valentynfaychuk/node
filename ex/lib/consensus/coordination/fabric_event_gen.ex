@@ -50,16 +50,18 @@ defmodule FabricEventGen do
       #IO.inspect {height, logs, muts}
     end
 
-    #IO.inspect API.Chain.format_entry_for_client(entry), limit: 11111
-    txs_task = Task.async(fn ->
-      entry.txs
-      |> Task.async_stream(fn txu -> API.TX.format_tx_for_client(txu) end)
-      |> Enum.map(fn {:ok, res} -> res end)
-    end)
-    entry_b58 = API.Chain.format_entry_for_client(entry)
-    txs = Task.await(txs_task, :infinity)
+    entry_task = Task.async(fn ->
+      txs_task = Task.async(fn ->
+        entry.txs
+        |> Task.async_stream(fn txu -> API.TX.format_tx_for_client(txu) end)
+        |> Enum.map(fn {:ok, res} -> res end)
+      end)
+      entry_b58 = API.Chain.format_entry_for_client(entry)
+      txs = Task.await(txs_task, :infinity)
 
-    broadcast({:update_stats_entry_tx, API.Chain.stats(), entry_b58, txs})
+      broadcast({:update_stats_entry_tx, API.Chain.stats(entry), entry_b58, txs})
+    end)
+    Task.await(entry_task, :infinity)
 
     {:noreply, state}
   end
