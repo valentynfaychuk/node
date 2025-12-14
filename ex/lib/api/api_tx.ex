@@ -47,6 +47,9 @@ defmodule API.TX do
 
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
         Enum.reduce_while(0..9_999_999, {nil, []}, fn(idx, {next_key, acc}) ->
+            #TODO: fix filter indexes
+            if idx >= 1_000, do: throw(%{error: :timeout})
+
             {next_key, value} = if idx == 0 do
                 grep_func.("#{pk}:", start_key, %{db: db, cf: cf.tx_account_nonce, offset: filters.offset})
             else
@@ -82,6 +85,9 @@ defmodule API.TX do
 
         %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
         Enum.reduce_while(0..9_999_999, {nil, []}, fn(idx, {next_key, acc}) ->
+            #TODO: fix filter indexes
+            if idx >= 1_000, do: throw(%{error: :timeout})
+
             {next_key, value} = if idx == 0 do
                 grep_func.("#{pk}:", start_key, %{db: db, cf: cf.tx_receiver_nonce, offset: filters.offset})
             else
@@ -156,10 +162,13 @@ defmodule API.TX do
         action = Map.put(action, :args, args)
 
         tx = put_in(tx, [:tx, :action], action)
+        {_, tx} = pop_in(tx, [:tx, :actions])
 
         tx = if !tx[:receipt] do tx else
           logs = Enum.map(tx.receipt[:logs] || [], fn(line)-> RocksDB.ascii_dump(line) end)
           receipt = Map.merge(tx.receipt, %{result: RocksDB.ascii_dump(tx.receipt[:result] || tx.receipt.error), logs: logs})
+          #TODO: remove result later
+          tx = Map.put(tx, :result, receipt)
           Map.put(tx, :receipt, receipt)
         end
 
