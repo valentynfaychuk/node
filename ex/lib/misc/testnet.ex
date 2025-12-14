@@ -10,9 +10,13 @@ defmodule Testnet do
   end
 
   def deploy(path) do deploy(Application.fetch_env!(:ama, :keys) |> Enum.at(0), path) end
-  def deploy(key, path) do
+  def deploy(key, path, init_func \\ nil) do
     wasmbytes = File.read!(path)
-    Testnet.call(key.seed, "Contract", "deploy", [wasmbytes])
+    if init_func do
+      Testnet.call(key.seed, "Contract", "deploy", [wasmbytes, init_func])
+    else
+      Testnet.call(key.seed, "Contract", "deploy", [wasmbytes])
+    end
   end
 
   def transfer(to, amount, symbol \\ "AMA") do

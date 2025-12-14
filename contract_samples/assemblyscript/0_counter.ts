@@ -1,6 +1,11 @@
 import * as sdk from "./sdk";
 import { b, b58 } from "./sdk";
 
+export function init(): void {
+  sdk.log("Init called during deployment of contract")
+  sdk.kv_put("inited", "true")
+}
+
 export function get(): void {
   let cur_counter = sdk.bToI64(sdk.kv_get("the_counter"))
   sdk.ret(cur_counter)
@@ -9,8 +14,8 @@ export function get(): void {
 export function increment(amount_ptr: i32): void {
   let amount = sdk.memory_read_string(amount_ptr)
   sdk.kv_increment("the_counter", amount)
-  let new_counter = sdk.kv_increment("the_counter", roll_dice())
-  sdk.ret(new_counter)
+  let incremented_counter = sdk.kv_increment("the_counter", roll_dice())
+  sdk.ret(incremented_counter)
 }
 
 export function increment_another_counter(contract_ptr: i32): void {

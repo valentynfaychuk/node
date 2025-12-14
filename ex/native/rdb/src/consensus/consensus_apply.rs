@@ -431,8 +431,6 @@ pub fn contract_validate<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, entry: 
     }
 }
 
-
-
 fn update_and_root_contractstate(applyenv: &mut ApplyEnv) -> [u8; 32] {
     //Select only the last muts, rest are irrelevent for tree
     let mut map: HashMap<Vec<u8>, consensus_muts::Mutation> = HashMap::new();
@@ -444,7 +442,6 @@ fn update_and_root_contractstate(applyenv: &mut ApplyEnv) -> [u8; 32] {
             }
         }
     }
-
     let mut ops: Vec<consensus::bintree_rdb::Op> = Vec::with_capacity(map.len());
     for (key, m) in map {
         let namespace = consensus_kv::contractstate_namespace(&key);
@@ -471,6 +468,7 @@ fn update_and_root_contractstate(applyenv: &mut ApplyEnv) -> [u8; 32] {
     applyenv.cf_name = b"contractstate_tree".to_vec();
     applyenv.muts = Vec::new();
     applyenv.muts_rev = Vec::new();
+
     let mut hubt_contractstate = consensus::bintree_rdb::RocksHubt::new(applyenv);
     hubt_contractstate.batch_update(ops);
     let root_contractstate = hubt_contractstate.root();
@@ -479,6 +477,7 @@ fn update_and_root_contractstate(applyenv: &mut ApplyEnv) -> [u8; 32] {
     applyenv.muts_final.append(&mut muts);
     let mut muts_rev = unique_mutations(applyenv.muts_rev.clone(), true);
     applyenv.muts_final_rev.append(&mut muts_rev);
+
     root_contractstate
 }
 

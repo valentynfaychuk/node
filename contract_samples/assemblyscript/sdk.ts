@@ -5,15 +5,12 @@ export function toBytes<T>(val: T): Uint8Array {
       return Uint8Array.wrap(String.UTF8.encode(str));
   }
   else if (idof<T>() == idof<string>()) {
-    // If T is a String, encode it to UTF-8 bytes
     return Uint8Array.wrap(String.UTF8.encode(changetype<string>(val)));
   }
   else if (idof<T>() == idof<Uint8Array>()) {
-    // If T is already Uint8Array, cast and return
     return changetype<Uint8Array>(val);
   }
   else {
-    // Optional: compile-time error if they pass a number or bool
     ERROR("toBytes only accepts String or Uint8Array");
     return new Uint8Array(0); // Unreachable but satisfies compiler
   }
@@ -391,68 +388,3 @@ export function call<C, F, T = Uint8Array>(contract: C, func: F, args: T[], extr
 
   return memory_read_bytes(errorPtr);
 }
-
-/*
-export function kv_get<T,Y>(key: Y): T {
-  let termPtr: i32;
-  if (isString(key)) {
-    let inner = String.UTF8.encode(key.toString(), false);
-    termPtr = import_kv_get(changetype<i32>(inner), inner.byteLength);
-  } else if (key instanceof Uint8Array) {
-    termPtr = import_kv_get(changetype<i32>(key), key.byteLength);
-  } else {
-    abort("kv_get_invalid_type")
-  }
-
-  if (isInteger<Y>()) {
-    let arr = memory_read_bytes(termPtr);
-    return parseInt<Y>(String.UTF8.decodeUnsafe(termPtr+4, load<i32>(termPtr), false)) as Y
-  } else if (idof<T>() == idof<i64>()) {
-    return parseI64(String.UTF8.decodeUnsafe(termPtr+4, load<i32>(termPtr), false))
-  } else if (idof<T>() == idof<string>()) {
-    return String.UTF8.decodeUnsafe(termPtr+4, load<i32>(termPtr), false) as T
-  } else if (idof<T>() == idof<Uint8Array>()) {
-    return memory_read_bytes(termPtr);
-  } else {
-    abort("kv_get_invalid_return_type")
-  }
-  return null as T;
-}
- */
-/*
-@external("env", "import_call")
-declare function import_call(module_ptr: i32, module_len: i32,
-  function_ptr: i32, function_len: i32, args_ptr: i32, args_len: i32): i32;
-function call(line: string): i32 {
-  let keyBytes = String.UTF8.encode(line);
-  let keyPtr   = changetype<i32>(keyBytes);
-  return import_call(keyPtr, keyBytes.byteLength, keyPtr, keyBytes.byteLength, keyPtr, keyBytes.byteLength)
-}
-*/
-/*@external("env", "import_kv_get")
-declare function import_kv_get(ptr: i32, len: i32): i32;
-function kv_get<T,Y>(key: Y): T {
-  let termPtr: i32;
-  if (isString(key)) {
-    let inner = String.UTF8.encode(key.toString(), false);
-    termPtr = import_kv_get(changetype<i32>(inner), inner.byteLength);
-  } else if (key instanceof Uint8Array) {
-    termPtr = import_kv_get(changetype<i32>(key), key.byteLength);
-  } else {
-    abort("kv_get_invalid_type")
-  }
-
-  if (isInteger<Y>()) {
-    let arr = memory_read_bytes(termPtr);
-    return parseInt<Y>(String.UTF8.decodeUnsafe(termPtr+4, load<i32>(termPtr), false)) as Y
-  }/* else if (idof<T>() == idof<i64>()) {
-    return parseI64(String.UTF8.decodeUnsafe(termPtr+4, load<i32>(termPtr), false))
-  } else if (idof<T>() == idof<string>()) {
-    return String.UTF8.decodeUnsafe(termPtr+4, load<i32>(termPtr), false) as T
-  } else if (idof<T>() == idof<Uint8Array>()) {
-    return memory_read_bytes(termPtr);
-  } else {
-    abort("kv_get_invalid_return_type")
-  }*/
-//return null as T;
-//}
