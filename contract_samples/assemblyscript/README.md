@@ -1,7 +1,6 @@
 ### Deploy AssemblyScript WASM Contract
   
-Install nodejs-22-lts + assemblyscript
-  
+Install nodejs-24-lts + assemblyscript
 ```bash
 curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
 npm install --global assemblyscript
@@ -9,7 +8,6 @@ npm install --global assemblyscript
   
 Build the deposit contract setting memory base to 65536
 Enable importMemory to allow calling imports
-  
 ```bash
 asc 0_counter.ts --target release --importMemory --memoryBase 65536 --outFile counter.wasm
 ```

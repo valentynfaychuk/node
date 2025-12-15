@@ -90,6 +90,7 @@ defmodule API.Chain do
         :persistent_term.put(:total_supply_y3, value)
         value
       end
+
     end
 
     def total_supply_y30() do
@@ -99,6 +100,7 @@ defmodule API.Chain do
         :persistent_term.put(:total_supply_y30, value)
         value
       end
+      1_000_000_000
     end
 
     def pflops(height) do

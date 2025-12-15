@@ -18,13 +18,13 @@ defmodule API.Contract do
       view_pk = if view_pk do view_pk else @default_view_pk end
       %{db: db} = :persistent_term.get({:rocksdb, Fabric})
       tip = DB.Chain.tip_entry() |> RDB.vecpak_encode()
-      RDB.contract_view(db, tip, view_pk, contract, function, args, Application.fetch_env!(:ama, :testnet))
+      RDB.contract_view(db, tip, view_pk, contract, function, args, !!Application.fetch_env!(:ama, :testnet))
     end
 
     def validate(bytecode) do
       %{db: db} = :persistent_term.get({:rocksdb, Fabric})
       tip = DB.Chain.tip_entry() |> RDB.vecpak_encode()
-      {error, logs} = RDB.contract_validate(db, tip, bytecode, Application.fetch_env!(:ama, :testnet))
+      {error, logs} = RDB.contract_validate(db, tip, bytecode, !!Application.fetch_env!(:ama, :testnet))
       logs = Enum.map(logs, & RocksDB.ascii_dump(&1))
       %{error: error, logs: logs}
     end

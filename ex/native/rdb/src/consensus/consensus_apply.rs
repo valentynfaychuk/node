@@ -738,6 +738,8 @@ fn migrate_db(env: &mut ApplyEnv) {
 pub fn call_bic(env: &mut ApplyEnv, contract: Vec<u8>, function: Vec<u8>, args: Vec<Vec<u8>>, attached_symbol: Option<Vec<u8>>, attached_amount: Option<Vec<u8>>) {
     match (contract.as_slice(), function.as_slice()) {
         (b"Coin", b"transfer") => consensus::bic::coin::call_transfer(env, args),
+
+        /*
         (b"Coin", b"create_and_mint") => consensus::bic::coin::call_create_and_mint(env, args),
         (b"Coin", b"mint") => consensus::bic::coin::call_mint(env, args),
         (b"Coin", b"pause") => consensus::bic::coin::call_pause(env, args),
@@ -746,6 +748,11 @@ pub fn call_bic(env: &mut ApplyEnv, contract: Vec<u8>, function: Vec<u8>, args: 
         (b"Nft", b"mint") => consensus::bic::nft::call_mint(env, args),
         (b"Lockup", b"lock") => consensus::bic::lockup::call_lock(env, args),
         (b"Lockup", b"unlock") => consensus::bic::lockup::call_unlock(env, args),
+        (b"Contract", b"deploy") => {
+                consensus_kv::exec_budget_decr(env, protocol::COST_PER_DEPLOY);
+                consensus::bic::contract::call_deploy(env, args)
+        },
+        */
 
         (b"Epoch", b"set_emission_address") => consensus::bic::epoch::call_set_emission_address(env, args),
         (b"Epoch", b"submit_sol") => {
@@ -753,10 +760,6 @@ pub fn call_bic(env: &mut ApplyEnv, contract: Vec<u8>, function: Vec<u8>, args: 
             consensus::bic::epoch::call_submit_sol(env, args)
         },
         (b"Epoch", b"slash_trainer") => consensus::bic::epoch::call_slash_trainer(env, args),
-        (b"Contract", b"deploy") => {
-                consensus_kv::exec_budget_decr(env, protocol::COST_PER_DEPLOY);
-                consensus::bic::contract::call_deploy(env, args)
-        },
 
         //(b"LockupPrime", b"lock") => consensus::bic::lockup_prime::call_lock(env, args),
         //(b"LockupPrime", b"unlock") => consensus::bic::lockup_prime::call_unlock(env, args),
