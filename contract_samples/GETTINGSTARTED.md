@@ -64,6 +64,12 @@ Testnet.call key0.seed, key0.pk, "increment", ["1"]
 
 Now read the README.md in the same directory for more contract examples.  
 
+### Frontend TS API
+
+For building frontends look here:  
+https://github.com/amadeusprotocol/amadeus-typescript-sdk  
+https://github.com/amadeusprotocol/amadeus-wallet-extension-react-demo  
+  
 ### RPC API
 
 Endpoint can be localhost HTTP (or insecure https) or Mainnet/testnet HTTPS  

@@ -90,7 +90,7 @@ defmodule API.Chain do
         :persistent_term.put(:total_supply_y3, value)
         value
       end
-
+      804_065_972
     end
 
     def total_supply_y30() do

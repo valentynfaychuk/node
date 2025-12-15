@@ -166,7 +166,11 @@ defmodule API.TX do
 
         tx = if !tx[:receipt] do tx else
           logs = Enum.map(tx.receipt[:logs] || [], fn(line)-> RocksDB.ascii_dump(line) end)
-          receipt = Map.merge(tx.receipt, %{result: RocksDB.ascii_dump(tx.receipt[:result] || tx.receipt.error), logs: logs})
+          receipt = Map.merge(tx.receipt, %{logs: logs,
+            #TODO: remove error later
+            error: RocksDB.ascii_dump(tx.receipt[:result] || tx.receipt.error),
+            result: RocksDB.ascii_dump(tx.receipt[:result] || tx.receipt.error)
+          })
           #TODO: remove result later
           tx = Map.put(tx, :result, receipt)
           Map.put(tx, :receipt, receipt)
