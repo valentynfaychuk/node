@@ -154,3 +154,13 @@ defmodule API.Chain do
         end
     end
 end
+
+defmodule API do
+  def maybe_b58(size, binary) do
+    cond do
+      size != byte_size(binary) -> Base58.decode(binary)
+      binary == :binary.copy(<<"1">>, size) -> :binary.copy(<<0>>, size)
+      true -> binary
+    end
+  end
+end

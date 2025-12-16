@@ -1,12 +1,12 @@
 defmodule API.TX do
-    def get(tx_id) do
-        tx_id = if byte_size(tx_id) != 32, do: Base58.decode(tx_id), else: tx_id
-        DB.Chain.tx(tx_id)
+    def get(txid) do
+        txid = API.maybe_b58(32, txid)
+        DB.Chain.tx(txid)
         |> format_tx_for_client()
     end
 
     def get_by_entry(entry_hash) do
-        entry_hash = if byte_size(entry_hash) != 32, do: Base58.decode(entry_hash), else: entry_hash
+        entry_hash = API.maybe_b58(32, entry_hash)
         case DB.Entry.by_hash(entry_hash) do
             nil -> nil
             %{hash: entry_hash, header: %{height: height}, txs: txs} ->
@@ -38,7 +38,7 @@ defmodule API.TX do
     end
 
     def get_by_address_sent(pk, filters) do
-        pk = if byte_size(pk) != 48, do: Base58.decode(pk), else: pk
+        pk = API.maybe_b58(48, pk)
 
         {grep_func, start_key} = case filters.sort do
             :desc -> {&RocksDB.get_prev/3, (filters[:cursor] || :binary.copy("9", 20)) |> String.pad_leading(20, "0")}
@@ -76,7 +76,7 @@ defmodule API.TX do
     end
 
     def get_by_address_recv(pk, filters) do
-        pk = if byte_size(pk) != 48, do: Base58.decode(pk), else: pk
+        pk = API.maybe_b58(48, pk)
 
         {grep_func, start_key} = case filters.sort do
             :desc -> {&RocksDB.get_prev/3, (filters[:cursor] || :binary.copy("9", 20)) |> String.pad_leading(20, "0")}
@@ -164,16 +164,24 @@ defmodule API.TX do
         tx = put_in(tx, [:tx, :action], action)
         {_, tx} = pop_in(tx, [:tx, :actions])
 
-        tx = if !tx[:receipt] do tx else
-          logs = Enum.map(tx.receipt[:logs] || [], fn(line)-> RocksDB.ascii_dump(line) end)
-          receipt = Map.merge(tx.receipt, %{logs: logs,
-            #TODO: remove error later
-            error: RocksDB.ascii_dump(tx.receipt[:result] || tx.receipt.error),
-            result: RocksDB.ascii_dump(tx.receipt[:result] || tx.receipt.error)
-          })
-          #TODO: remove result later
-          tx = Map.put(tx, :result, receipt)
-          Map.put(tx, :receipt, receipt)
+        tx = cond do
+          #handle no-receipt tx
+          !tx[:receipt] and !tx[:result] -> tx
+          #handle old tx
+          !!tx[:receipt] and tx.receipt[:success] == nil -> put_in(tx, [:receipt, :success], tx.receipt.error == "ok")
+          !tx[:receipt] and !tx.result[:success] -> put_in(tx, [:result, :success], tx.result.error == "ok")
+          !tx[:receipt] -> tx
+          #handle new tx
+          true ->
+            logs = Enum.map(tx.receipt[:logs] || [], fn(line)-> RocksDB.ascii_dump(line) end)
+            receipt = Map.merge(tx.receipt, %{logs: logs,
+              #TODO: remove error later
+              error: RocksDB.ascii_dump(tx.receipt[:result] || tx.receipt.error),
+              result: RocksDB.ascii_dump(tx.receipt[:result] || tx.receipt.error)
+            })
+            #TODO: remove result later
+            tx = Map.put(tx, :result, receipt)
+            Map.put(tx, :receipt, receipt)
         end
 
         if !Map.has_key?(tx, :metadata) do tx else
