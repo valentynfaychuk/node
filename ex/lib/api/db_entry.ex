@@ -176,4 +176,33 @@ defmodule DB.Entry do
     end)
   end
 
+  def build_filter_hashes() do
+    rebuilt_up_to = RocksDB.get("filter_hashes_rebuilt_up_to", db_handle(%{}, :sysconf, %{})) || EntryGenesis.get().hash
+    entry = by_hash(rebuilt_up_to)
+    if rem(entry.header.height, 10_000) == 0 do
+      IO.inspect {:rebuilt_filter_hashes_up_to, entry.header.height}
+    end
+    txs = entry.txs
+    txs = Enum.map(txs, fn(txu)->
+      txu = if !is_binary(txu) do txu else
+        txu = VanillaSer.decode!(txu)
+        tx = VanillaSer.decode!(txu.tx_encoded)
+        Map.put(txu, :tx, tx)
+      end
+      action = TX.action(txu)
+      args = case action.args do
+        [n|t] when is_integer(n) -> [:erlang.integer_to_binary(n) | t]
+        args -> args
+      end
+
+      txu = put_in(txu, [:tx, :action], action)
+      put_in(txu, [:tx, :action, :args], args)
+    end)
+
+    tx_filters = RDB.build_tx_hashfilters(txs)
+    Enum.each(tx_filters, fn {key, hash} ->
+      RocksDB.put(key, hash, db_handle(%{}, :tx_filter, %{}))
+    end)
+    rebuilt_up_to = RocksDB.put("filter_hashes_rebuilt_up_to", next(rebuilt_up_to), db_handle(%{}, :sysconf, %{})) || EntryGenesis.get().hash
+  end
 end

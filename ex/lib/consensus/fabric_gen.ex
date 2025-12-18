@@ -303,7 +303,7 @@ defmodule FabricGen do
 
       took_contract_exec = :os.system_time(1000) - start_contract_exec
       if took_contract_exec > 100 do
-        IO.puts "Contract Exec took #{took_contract_exec}ms"
+        IO.puts "Contract Exec took #{took_contract_exec}ms #{next_entry.header.height}"
       end
 
       rebuild_m_fn = fn(m)->
