@@ -45,7 +45,7 @@ defmodule Testnet do
       BLS12AggSig.add_padded(aggsig, validators, signer_pk, signature)
     end)
 
-    args = ["#{epoch}", malicious_pk, aggsig.aggsig, "#{aggsig.mask_size}", aggsig.mask]
+    args = [malicious_pk, "#{epoch}", aggsig.aggsig, "#{aggsig.mask_size}", aggsig.mask]
 
     signer_sk = Application.fetch_env!(:ama, :trainer_sk)
     Testnet.call(signer_sk, "Epoch", "slash_trainer", args)

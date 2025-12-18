@@ -737,6 +737,13 @@ fn migrate_db(env: &mut ApplyEnv) {
 
 pub fn call_bic(env: &mut ApplyEnv, contract: Vec<u8>, function: Vec<u8>, args: Vec<Vec<u8>>, attached_symbol: Option<Vec<u8>>, attached_amount: Option<Vec<u8>>) {
     match (contract.as_slice(), function.as_slice()) {
+        (b"Epoch", b"submit_sol") => {
+            consensus_kv::exec_budget_decr(env, protocol::COST_PER_SOL);
+            consensus::bic::epoch::call_submit_sol(env, args)
+        },
+        (b"Epoch", b"set_emission_address") => consensus::bic::epoch::call_set_emission_address(env, args),
+        (b"Epoch", b"slash_trainer") => consensus::bic::epoch::call_slash_trainer(env, args),
+
         (b"Coin", b"transfer") => consensus::bic::coin::call_transfer(env, args),
 
         /*
@@ -752,18 +759,10 @@ pub fn call_bic(env: &mut ApplyEnv, contract: Vec<u8>, function: Vec<u8>, args: 
                 consensus_kv::exec_budget_decr(env, protocol::COST_PER_DEPLOY);
                 consensus::bic::contract::call_deploy(env, args)
         },
+        (b"LockupPrime", b"lock") => consensus::bic::lockup_prime::call_lock(env, args),
+        (b"LockupPrime", b"unlock") => consensus::bic::lockup_prime::call_unlock(env, args),
+        (b"LockupPrime", b"daily_checkin") => consensus::bic::lockup_prime::call_daily_checkin(env, args),
         */
-
-        (b"Epoch", b"set_emission_address") => consensus::bic::epoch::call_set_emission_address(env, args),
-        (b"Epoch", b"submit_sol") => {
-            consensus_kv::exec_budget_decr(env, protocol::COST_PER_SOL);
-            consensus::bic::epoch::call_submit_sol(env, args)
-        },
-        (b"Epoch", b"slash_trainer") => consensus::bic::epoch::call_slash_trainer(env, args),
-
-        //(b"LockupPrime", b"lock") => consensus::bic::lockup_prime::call_lock(env, args),
-        //(b"LockupPrime", b"unlock") => consensus::bic::lockup_prime::call_unlock(env, args),
-        //(b"LockupPrime", b"daily_checkin") => consensus::bic::lockup_prime::call_daily_checkin(env, args),
 
         _ => std::panic::panic_any("invalid_bic_action")
     }

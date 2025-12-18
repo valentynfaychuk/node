@@ -113,7 +113,7 @@ defmodule BIC.Epoch do
     ] |> Enum.map(& Base58.decode(&1))
     def peddlebike67() do @peddlebike67 end
 
-    def slash_trainer_verify(cur_epoch, malicious_pk, trainers, mask, signature) do
+    def slash_trainer_verify(malicious_pk, cur_epoch, trainers, mask, signature) do
         signers = BLS12AggSig.unmask_trainers(trainers, Util.pad_bitstring_to_bytes(mask), bit_size(mask))
 
         consensus_pct = length(signers) / length(trainers)

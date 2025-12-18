@@ -141,7 +141,8 @@ defmodule TX do
       a = action.args
       case {c,f,a} do
          {"Coin", "transfer", [receiver, _amount, _symbol]} -> valid_pk(receiver) && [receiver]
-         {"Epoch", "slash_trainer", [_epoch, malicious_pk, _signature, _mask_size, _mask]} -> valid_pk(malicious_pk) && [malicious_pk]
+         {"Epoch", "slash_trainer", [malicious_pk, _epoch, _signature, _mask_size, _mask]} when byte_size(malicious_pk) == 48 -> valid_pk(malicious_pk) && [malicious_pk]
+         {"Epoch", "slash_trainer", [_epoch, malicious_pk, _signature, _mask_size, _mask]} when byte_size(malicious_pk) == 48 -> valid_pk(malicious_pk) && [malicious_pk]
          _ -> nil
       end || []
    end
