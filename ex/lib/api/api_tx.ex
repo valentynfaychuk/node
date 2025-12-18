@@ -18,6 +18,7 @@ defmodule API.TX do
         end
     end
 
+    # e44225070
     def get_by_filter(filters = %{}) do
       signer = filters[:signer] || filters[:sender] || filters[:pk] || <<0>>
       arg0 = filters[:arg0] || filters[:receiver] || <<0>>
