@@ -60,6 +60,9 @@ defmodule RDB do
   def protocol_constants(), do: :erlang.nif_error(:nif_not_loaded)
   def protocol_epoch_emission(_epoch), do: :erlang.nif_error(:nif_not_loaded)
   def protocol_circulating_without_burn(_epoch), do: :erlang.nif_error(:nif_not_loaded)
+
+  def build_tx_hashfilter(_signer, _arg0, _contract, _function), do: :erlang.nif_error(:nif_not_loaded)
+  def build_tx_hashfilters(_txus), do: :erlang.nif_error(:nif_not_loaded)
 end
 
 defmodule RDBProtocol do

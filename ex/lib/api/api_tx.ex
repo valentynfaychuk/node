@@ -18,6 +18,55 @@ defmodule API.TX do
         end
     end
 
+    def get_by_filter(filters = %{}) do
+      signer = filters[:signer] || filters[:sender] || filters[:pk] || <<0>>
+      arg0 = filters[:arg0] || filters[:receiver] || <<0>>
+      contract = filters[:contract] || <<0>>
+      function = filters[:function] || <<0>>
+      hashfilter = RDB.build_tx_hashfilter(signer, arg0, contract, function)
+
+      limit = filters[:limit] || 100
+      offset = filters[:offset] || 0
+      sort = filters[:sort] || :asc
+      start_key = if sort == :asc do "" else filters[:cursor] || :binary.copy("9", 20) end
+
+      grep_func = case sort do
+          :desc -> &RocksDB.get_prev/3
+          _ -> &RocksDB.get_next/3
+      end
+
+      %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+      Enum.reduce_while(0..9_999_999, {nil, []}, fn(idx, {next_key, acc}) ->
+          {next_key, value} = if idx == 0 do
+              grep_func.("#{hashfilter}:", start_key, %{db: db, cf: cf.tx_filter, offset: offset})
+          else
+              grep_func.("#{hashfilter}:", next_key, %{db: db, cf: cf.tx_filter})
+          end
+
+          if !next_key do {:halt, {next_key, acc}} else
+              txu = API.TX.get(value)
+              txu = cond do
+                signer == txu.tx.signer -> txu |> put_in([:metadata, :tx_event], :sent)
+                arg0 == List.first(txu.tx.action.args) -> txu |> put_in([:metadata, :tx_event], :recv)
+                true -> txu
+              end
+
+              action = TX.action(txu)
+              cond do
+                  !!filters[:contract] and filters.contract != action.contract -> {:cont, {next_key, acc}}
+                  !!filters[:function] and filters.function != action.function -> {:cont, {next_key, acc}}
+                  true ->
+                      acc = acc ++ [txu]
+                      if length(acc) >= limit do
+                          {:halt, {next_key, acc}}
+                      else
+                          {:cont, {next_key, acc}}
+                      end
+              end
+          end
+      end)
+    end
+
     def get_by_address(pk, filters) do
         {_, txs_sent} = get_by_address_sent(pk, filters)
         {_, txs_recv} = get_by_address_recv(pk, filters)
@@ -164,25 +213,17 @@ defmodule API.TX do
         tx = put_in(tx, [:tx, :action], action)
         {_, tx} = pop_in(tx, [:tx, :actions])
 
-        tx = cond do
-          #handle no-receipt tx
-          !tx[:receipt] and !tx[:result] -> tx
-          #handle old tx
-          !!tx[:receipt] and tx.receipt[:success] == nil -> put_in(tx, [:receipt, :success], tx.receipt.error == "ok")
-          !tx[:receipt] and !tx.result[:success] -> put_in(tx, [:result, :success], tx.result.error == "ok")
-          !tx[:receipt] -> tx
-          #handle new tx
-          true ->
-            logs = Enum.map(tx.receipt[:logs] || [], fn(line)-> RocksDB.ascii_dump(line) end)
-            receipt = Map.merge(tx.receipt, %{logs: logs,
-              #TODO: remove error later
-              error: RocksDB.ascii_dump(tx.receipt[:result] || tx.receipt.error),
-              result: RocksDB.ascii_dump(tx.receipt[:result] || tx.receipt.error)
-            })
-            #TODO: remove result later
-            tx = Map.put(tx, :result, receipt)
-            Map.put(tx, :receipt, receipt)
-        end
+        result = tx[:receipt][:result] || tx[:receipt][:error] || tx[:result][:result] || tx[:result][:error]
+        success = tx[:receipt][:success] || result == "ok"
+        logs = tx[:receipt][:logs] || []
+        exec_used = tx[:receipt][:exec_used] || tx[:result][:exec_used] || "0"
+
+        logs = Enum.map(logs, fn(line)-> RocksDB.ascii_dump(line) end)
+        receipt = %{success: success, result: result, logs: logs, exec_used: exec_used}
+
+        #TODO: remove result later
+        tx = Map.put(tx, :result, %{error: result})
+        tx = Map.put(tx, :receipt, receipt)
 
         if !Map.has_key?(tx, :metadata) do tx else
             put_in(tx, [:metadata, :entry_hash], Base58.encode(tx.metadata.entry_hash))

@@ -102,6 +102,11 @@ defmodule DB.Entry do
     RocksDB.put("entry:#{entry.hash}:root_receipts", root_receipts, db_handle(db_opts, :entry_meta, %{}))
     RocksDB.put("entry:#{entry.hash}:root_contractstate", root_contractstate, db_handle(db_opts, :entry_meta, %{}))
 
+    tx_filters = RDB.build_tx_hashfilters(entry.txs)
+    Enum.each(tx_filters, fn {key, hash} ->
+      RocksDB.put(key, hash, db_handle(db_opts, :tx_filter, %{}))
+    end)
+
     receipts_by_txid = Map.new(receipts, fn r -> {r.txid, Map.drop(r, [:txid])} end)
     Enum.each(entry.txs, fn(txu)->
       receipt = Map.fetch!(receipts_by_txid, txu.hash)
@@ -110,7 +115,6 @@ defmodule DB.Entry do
             tx_ptr = %{entry_hash: entry.hash, receipt: receipt, index_start: index_start, index_size: index_size}
             |> RDB.vecpak_encode()
             RocksDB.put(txu.hash, tx_ptr, db_handle(db_opts, :tx, %{}))
-
             nonce_padded = pad_integer_20(txu.tx.nonce)
             RocksDB.put("#{txu.tx.signer}:#{nonce_padded}", txu.hash, db_handle(db_opts, :tx_account_nonce, %{}))
             TX.known_receivers(txu)
@@ -154,6 +158,11 @@ defmodule DB.Entry do
     RocksDB.delete("entry:#{hash}:root_contractstate", db_handle(db_opts, :entry_meta, %{}))
     RocksDB.delete_prefix("consensus:#{hash}:", db_handle(db_opts, :attestation, %{}))
     RocksDB.delete_prefix("attestation:#{height_padded}:#{hash}:", db_handle(db_opts, :attestation, %{}))
+
+    tx_filters = RDB.build_tx_hashfilters(entry.txs)
+    Enum.each(tx_filters, fn {key, _hash} ->
+      RocksDB.delete(key, db_handle(db_opts, :tx_filter, %{}))
+    end)
 
     Enum.each(entry.txs, fn(txu)->
         RocksDB.delete(txu.hash, db_handle(db_opts, :tx, %{}))

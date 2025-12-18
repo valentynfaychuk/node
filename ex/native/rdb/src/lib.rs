@@ -1,6 +1,7 @@
 pub mod consensus;
 pub mod atoms;
 pub mod model;
+pub mod tx_filter;
 
 use rustler::types::{Binary, OwnedBinary};
 use rustler::{
@@ -1029,6 +1030,17 @@ fn protocol_epoch_emission<'a>(env: Env<'a>, epoch: u64) -> i128 {
 #[rustler::nif(schedule = "DirtyCpu")]
 fn protocol_circulating_without_burn<'a>(env: Env<'a>, epoch: u64) -> i128 {
     crate::consensus::bic::epoch::circulating_without_burn(epoch)
+}
+
+#[rustler::nif]
+fn build_tx_hashfilter<'a>(env: Env<'a>, signer: Binary<'a>, arg0: Binary<'a>, contract: Binary<'a>, function: Binary<'a>) -> Binary<'a> {
+    let key = tx_filter::create_filter_key(&[&signer, &arg0, &contract, &function]);
+    to_binary2(env, &key)
+}
+
+#[rustler::nif]
+fn build_tx_hashfilters<'a>(env: Env<'a>, txus: Vec<Term<'a>>) -> NifResult<Vec<(Binary<'a>, Binary<'a>)>> {
+    tx_filter::build_tx_hashfilters(env, txus)
 }
 
 rustler::init!("Elixir.RDB", load = on_load);
