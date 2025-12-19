@@ -206,7 +206,7 @@ defmodule Ama.MultiServer do
                     function: query[:function],
 
                     limit: :erlang.binary_to_integer(query[:limit] || "100"),
-                    sort: case filters.sort do "desc" -> :desc; _ -> :asc end,
+                    sort: case query[:sort] do "desc" -> :desc; _ -> :asc end,
                     cursor: if query[:cursor_b58] do Base58.decode(query.cursor_b58) else query[:cursor] end,
                 }
                 {cursor, txs} = API.TX.get_by_filter(filters)

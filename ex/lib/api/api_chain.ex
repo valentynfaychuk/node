@@ -83,6 +83,20 @@ defmodule API.Chain do
       }
     end
 
+    def kpi() do
+      {_, uaw} = API.Contract.richlist()
+      tx_cnt = RocksDB.get_cf_prop(:tx, "rocksdb.estimate-num-keys") |> :erlang.binary_to_integer()
+      %{
+        ama_burned: Float.round(API.Contract.total_burned().float, 2),
+        fees_paid: Float.round(API.Contract.total_burned().float * 2, 2),
+        active_validator_keys: 67 + length(API.Epoch.score()),
+        active_peers: length(API.Peer.all()),
+        block_time: 500,
+        total_tx: tx_cnt,
+        uaw: uaw,
+      }
+    end
+
     def total_supply_y3() do
       cached = :persistent_term.get(:total_supply_y3, nil)
       if cached do cached else
