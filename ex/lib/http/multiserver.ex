@@ -193,6 +193,26 @@ defmodule Ama.MultiServer do
                 result = %{cursor: cursor, txs: txs}
                 quick_reply(state, result)
 
+            r.method == "GET" and String.starts_with?(r.path, "/api/chain/tx_by_filter") ->
+                query = r.query && Photon.HTTP.parse_query(r.query)
+
+                signer = query[:signer] || query[:sender] || query[:pk]
+                arg0 = query[:arg0] || query[:receiver]
+
+                filters = %{
+                    signer: signer && Base58.decode(signer),
+                    arg0: arg0 && Base58.decode(arg0),
+                    contract: if query[:contract_b58] do Base58.decode(query.contract_b58) else query[:contract] end,
+                    function: query[:function],
+
+                    limit: :erlang.binary_to_integer(query[:limit] || "100"),
+                    sort: case filters.sort do "desc" -> :desc; _ -> :asc end,
+                    cursor: if query[:cursor_b58] do Base58.decode(query.cursor_b58) else query[:cursor] end,
+                }
+                {cursor, txs} = API.TX.get_by_filter(filters)
+                result = %{cursor: cursor, txs: txs}
+                quick_reply(state, result)
+
             r.method == "GET" and String.starts_with?(r.path, "/api/chain/txs_in_entry/") ->
                 entry_hash = String.replace(r.path, "/api/chain/txs_in_entry/", "")
                 result = API.TX.get_by_entry(entry_hash)

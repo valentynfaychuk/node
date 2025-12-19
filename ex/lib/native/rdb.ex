@@ -23,6 +23,7 @@ defmodule RDB do
   def put_cf(_cf, _key, _value), do: :erlang.nif_error(:nif_not_loaded)
   def delete(_db, _key), do: :erlang.nif_error(:nif_not_loaded)
   def delete_cf(_cf, _key), do: :erlang.nif_error(:nif_not_loaded)
+  def delete_range_cf(_cf, _start_key, _end_key, _compact), do: :erlang.nif_error(:nif_not_loaded)
   def iterator(_db), do: :erlang.nif_error(:nif_not_loaded)
   def iterator_cf(_cf), do: :erlang.nif_error(:nif_not_loaded)
   def iterator_move(_it, _action), do: :erlang.nif_error(:nif_not_loaded)
@@ -63,6 +64,7 @@ defmodule RDB do
 
   def build_tx_hashfilter(_signer, _arg0, _contract, _function), do: :erlang.nif_error(:nif_not_loaded)
   def build_tx_hashfilters(_txus), do: :erlang.nif_error(:nif_not_loaded)
+  def query_tx_hashfilter(_db, _signer, _arg0, _contract, _function, _limit, _sort, _cursor), do: :erlang.nif_error(:nif_not_loaded)
 end
 
 defmodule RDBProtocol do

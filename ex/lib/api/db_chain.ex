@@ -53,18 +53,20 @@ defmodule DB.Chain do
 
   def tx(tx_hash, db_opts \\ %{}) do
       map = RocksDB.get(tx_hash, db_handle(db_opts, :tx, %{}))
-      if map do
-          map = map |> RDB.vecpak_decode()
-          entry_bytes = RocksDB.get(map.entry_hash, db_handle(db_opts, :entry, %{}))
-          entry = DB.Entry.by_hash(map.entry_hash, db_opts)
-          tx_bytes = binary_part(entry_bytes, map.index_start, map.index_size)
+      map && tx_from_map(map, db_opts)
+  end
 
-          receipt = if map[:result] do map.result else map.receipt end
+  def tx_from_map(map, db_opts \\ %{}) do
+    map = map |> RDB.vecpak_decode()
+    entry_bytes = RocksDB.get(map.entry_hash, db_handle(db_opts, :entry, %{}))
+    entry = DB.Entry.by_hash(map.entry_hash, db_opts)
+    tx_bytes = binary_part(entry_bytes, map.index_start, map.index_size)
 
-          TX.unpack(tx_bytes)
-          |> Map.put(:receipt, receipt)
-          |> Map.put(:metadata, %{entry_hash: map.entry_hash, entry_height: entry.header.height})
-      end
+    receipt = if map[:result] do map.result else map.receipt end
+
+    TX.unpack(tx_bytes)
+    |> Map.put(:receipt, receipt)
+    |> Map.put(:metadata, %{entry_hash: map.entry_hash, entry_height: entry.header.height})
   end
 
   # Validator

@@ -194,6 +194,10 @@ defmodule DB.Entry do
         [n|t] when is_integer(n) -> [:erlang.integer_to_binary(n) | t]
         args -> args
       end
+      args = case action.args do
+        [a,b|t] when is_binary(b) and byte_size(b) == 48 -> [b,a] ++ t
+        args -> args
+      end
 
       txu = put_in(txu, [:tx, :action], action)
       put_in(txu, [:tx, :action, :args], args)
@@ -203,6 +207,10 @@ defmodule DB.Entry do
     Enum.each(tx_filters, fn {key, hash} ->
       RocksDB.put(key, hash, db_handle(%{}, :tx_filter, %{}))
     end)
-    rebuilt_up_to = RocksDB.put("filter_hashes_rebuilt_up_to", next(rebuilt_up_to), db_handle(%{}, :sysconf, %{})) || EntryGenesis.get().hash
+
+    n = next(rebuilt_up_to)
+    if n do
+      rebuilt_up_to = RocksDB.put("filter_hashes_rebuilt_up_to", next(rebuilt_up_to), db_handle(%{}, :sysconf, %{})) || EntryGenesis.get().hash
+    end
   end
 end

@@ -24,48 +24,18 @@ defmodule API.TX do
       arg0 = filters[:arg0] || filters[:receiver] || <<0>>
       contract = filters[:contract] || <<0>>
       function = filters[:function] || <<0>>
-      hashfilter = RDB.build_tx_hashfilter(signer, arg0, contract, function)
 
       limit = filters[:limit] || 100
-      offset = filters[:offset] || 0
+      if limit > 1000, do: throw(%{error: :limit_exceeded})
       sort = filters[:sort] || :asc
-      start_key = if sort == :asc do "" else filters[:cursor] || :binary.copy("9", 20) end
 
-      grep_func = case sort do
-          :desc -> &RocksDB.get_prev/3
-          _ -> &RocksDB.get_next/3
-      end
-
-      %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
-      Enum.reduce_while(0..9_999_999, {nil, []}, fn(idx, {next_key, acc}) ->
-          {next_key, value} = if idx == 0 do
-              grep_func.("#{hashfilter}:", start_key, %{db: db, cf: cf.tx_filter, offset: offset})
-          else
-              grep_func.("#{hashfilter}:", next_key, %{db: db, cf: cf.tx_filter})
-          end
-
-          if !next_key do {:halt, {next_key, acc}} else
-              txu = API.TX.get(value)
-              txu = cond do
-                signer == txu.tx.signer -> txu |> put_in([:metadata, :tx_event], :sent)
-                arg0 == List.first(txu.tx.action.args) -> txu |> put_in([:metadata, :tx_event], :recv)
-                true -> txu
-              end
-
-              action = TX.action(txu)
-              cond do
-                  !!filters[:contract] and filters.contract != action.contract -> {:cont, {next_key, acc}}
-                  !!filters[:function] and filters.function != action.function -> {:cont, {next_key, acc}}
-                  true ->
-                      acc = acc ++ [txu]
-                      if length(acc) >= limit do
-                          {:halt, {next_key, acc}}
-                      else
-                          {:cont, {next_key, acc}}
-                      end
-              end
-          end
+      %{db: db} = :persistent_term.get({:rocksdb, Fabric})
+      {cursor, tx_maps} = RDB.query_tx_hashfilter(db, signer, arg0, contract, function, limit, sort == :desc, filters[:cursor])
+      txus = Enum.map(tx_maps, fn(tx_map)->
+        DB.Chain.tx_from_map(tx_map) |> format_tx_for_client()
       end)
+      cursor = cursor && Base58.encode(cursor)
+      {cursor, txus}
     end
 
     def get_by_address(pk, filters) do

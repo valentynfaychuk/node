@@ -174,6 +174,23 @@ defmodule RocksDB do
         end
     end
 
+    def delete_range_cf_call(cf_atom, compact) do
+      %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+      delete_range_cf("", :binary.copy(<<0xFF>>,1024), compact, %{db: db, cf: cf[cf_atom]})
+    end
+
+    def delete_range_cf(start_key, end_key, compact, opts) do
+      db = opts[:db]
+      cf = opts[:cf]
+      rtx = opts[:rtx]
+      cond do
+        #!!rtx and !!cf -> RDB.transaction_delete_cf(rtx, cf, key)
+        #!!rtx -> RDB.transaction_delete(rtx, key)
+        !!db and !!cf -> RDB.delete_range_cf(cf, start_key, end_key, compact)
+        #!!db -> RDB.delete(db, key)
+      end
+    end
+
     defp iterator(opts) do
         db = opts[:db]
         cf = opts[:cf]
@@ -281,5 +298,23 @@ defmodule RocksDB do
       {:ok, cap} = :rocksdb.get_property(db, "rocksdb.block-cache-capacity")
       {:ok, used} = :rocksdb.get_property(db, "rocksdb.block-cache-usage")
       {:erlang.binary_to_integer(used), :erlang.binary_to_integer(cap)}
+    end
+
+    def get_cf_prop(cf_atom, prop \\ "rocksdb.stats") do
+      %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+      case RDB.property_value_cf(cf[cf_atom], prop) do
+        {:ok, result} -> result
+        _ -> nil
+      end
+    end
+
+    def get_cf_size(cf_atom) do
+      %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+      case RDB.property_value_cf(cf[cf_atom], "rocksdb.total-sst-files-size") do
+        {:ok, size_str} ->
+          bytes = String.to_integer(size_str)
+          bytes / (1024 * 1024 * 1024)
+        _ -> nil
+      end
     end
 end
