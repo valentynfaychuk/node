@@ -43,6 +43,10 @@ defmodule DB.Chain do
     RocksDB.get("account:#{pk}:attribute:nonce", db_handle(db_opts, :contractstate, %{to_integer: true}))
   end
 
+  def tx_count(db_opts \\ %{}) do
+    RocksDB.get("tx_count", db_handle(db_opts, :sysconf, %{to_integer: true})) || 0
+  end
+
   def balance(pk, symbol \\ "AMA", db_opts \\ %{}) do
     RocksDB.get("account:#{pk}:balance:#{symbol}", db_handle(db_opts, :contractstate, %{to_integer: true})) || 0
   end
@@ -82,7 +86,7 @@ defmodule DB.Chain do
   def validators_for_height(height, db_opts \\ %{}) do
     opts = db_handle(db_opts, :contractstate, %{})
     cond do
-      height in 3195570..3195575 ->
+      height in 3195570..3195575 and !Application.fetch_env!(:ama, :testnet) ->
         RocksDB.get("bic:epoch:validators:height:000000319557", opts)
         |> RDB.vecpak_decode()
       true ->

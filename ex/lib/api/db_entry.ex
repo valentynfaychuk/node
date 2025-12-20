@@ -102,16 +102,16 @@ defmodule DB.Entry do
     RocksDB.put("entry:#{entry.hash}:root_receipts", root_receipts, db_handle(db_opts, :entry_meta, %{}))
     RocksDB.put("entry:#{entry.hash}:root_contractstate", root_contractstate, db_handle(db_opts, :entry_meta, %{}))
 
+    #Build hashfilter
     tx_filters = RDB.build_tx_hashfilters(entry.txs)
     Enum.each(tx_filters, fn {key, hash} ->
       RocksDB.put(key, hash, db_handle(db_opts, :tx_filter, %{}))
     end)
 
-    if entry.header.height >= 445_00000 do
-      old_cnt = RocksDB.get("tx_count", db_handle(db_opts, :sysconf, %{})) || "0"
-      new_cnt = :erlang.binary_to_integer(old_cnt) + length(entry.txs)
-      RocksDB.put("tx_count", :erlang.integer_to_binary(new_cnt), db_handle(db_opts, :sysconf, %{}))
-    end
+    #Count tx
+    old_cnt = RocksDB.get("tx_count", db_handle(db_opts, :sysconf, %{})) || "0"
+    new_cnt = :erlang.binary_to_integer(old_cnt) + length(entry.txs)
+    RocksDB.put("tx_count", :erlang.integer_to_binary(new_cnt), db_handle(db_opts, :sysconf, %{}))
 
     receipts_by_txid = Map.new(receipts, fn r -> {r.txid, Map.drop(r, [:txid])} end)
     Enum.each(entry.txs, fn(txu)->
@@ -165,16 +165,16 @@ defmodule DB.Entry do
     RocksDB.delete_prefix("consensus:#{hash}:", db_handle(db_opts, :attestation, %{}))
     RocksDB.delete_prefix("attestation:#{height_padded}:#{hash}:", db_handle(db_opts, :attestation, %{}))
 
+    #Delete hashfilter
     tx_filters = RDB.build_tx_hashfilters(entry.txs)
     Enum.each(tx_filters, fn {key, _hash} ->
       RocksDB.delete(key, db_handle(db_opts, :tx_filter, %{}))
     end)
 
-    if entry.header.height >= 445_00000 do
-      old_cnt = RocksDB.get("tx_count", db_handle(db_opts, :sysconf, %{})) || "0"
-      new_cnt = :erlang.binary_to_integer(old_cnt) - length(entry.txs)
-      RocksDB.put("tx_count", :erlang.integer_to_binary(new_cnt), db_handle(db_opts, :sysconf, %{}))
-    end
+    #Decrement tx
+    old_cnt = RocksDB.get("tx_count", db_handle(db_opts, :sysconf, %{})) || "0"
+    new_cnt = :erlang.binary_to_integer(old_cnt) - length(entry.txs)
+    RocksDB.put("tx_count", :erlang.integer_to_binary(new_cnt), db_handle(db_opts, :sysconf, %{}))
 
     Enum.each(entry.txs, fn(txu)->
         RocksDB.delete(txu.hash, db_handle(db_opts, :tx, %{}))
@@ -222,7 +222,7 @@ defmodule DB.Entry do
 
     n = next(rebuilt_up_to)
     if n do
-      rebuilt_up_to = RocksDB.put("filter_hashes_rebuilt_up_to", next(rebuilt_up_to), db_handle(%{}, :sysconf, %{})) || EntryGenesis.get().hash
+      RocksDB.put("filter_hashes_rebuilt_up_to", n, db_handle(%{}, :sysconf, %{}))
     end
   end
 end

@@ -85,14 +85,13 @@ defmodule API.Chain do
 
     def kpi() do
       {_, uaw} = API.Contract.richlist()
-      tx_cnt = RocksDB.get_cf_prop(:tx, "rocksdb.estimate-num-keys") |> :erlang.binary_to_integer()
       %{
         ama_burned: Float.round(API.Contract.total_burned().float, 2),
         fees_paid: Float.round(API.Contract.total_burned().float * 2, 2),
         active_validator_keys: 67 + length(API.Epoch.score()),
         active_peers: length(API.Peer.all()),
         block_time: 500,
-        total_tx: tx_cnt,
+        total_tx: DB.Chain.tx_count(),
         uaw: uaw,
       }
     end

@@ -102,6 +102,9 @@ defmodule Ama.MultiServer do
             r.method == "GET" and String.starts_with?(r.path, "/api/chain/stats") ->
                 stats = API.Chain.stats()
                 quick_reply(state, %{error: :ok, stats: stats})
+            r.method == "GET" and String.starts_with?(r.path, "/api/chain/kpi") ->
+                kpi = API.Chain.kpi()
+                quick_reply(state, %{error: :ok, kpi: kpi})
             r.method == "GET" and String.starts_with?(r.path, "/api/chain/tip") ->
                 result = API.Chain.entry_tip()
                 quick_reply(state, result)
@@ -207,7 +210,7 @@ defmodule Ama.MultiServer do
 
                     limit: :erlang.binary_to_integer(query[:limit] || "100"),
                     sort: case query[:sort] do "desc" -> :desc; _ -> :asc end,
-                    cursor: if query[:cursor_b58] do Base58.decode(query.cursor_b58) else query[:cursor] end,
+                    cursor: query[:cursor] && Base58.decode(query.cursor),
                 }
                 {cursor, txs} = API.TX.get_by_filter(filters)
                 result = %{cursor: cursor, txs: txs}

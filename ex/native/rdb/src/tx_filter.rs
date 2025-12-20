@@ -79,14 +79,31 @@ pub fn build_tx_hashfilters<'a>(env: Env<'a>, txus: Vec<Term<'a>>) -> NifResult<
             all_filters.push((bin.into(), tx_hash8));
         };
 
-        push_key(&[signer, ZERO, ZERO, ZERO]);
-        push_key(&[ZERO, arg0, ZERO, ZERO]);
-        push_key(&[signer, arg0, ZERO, ZERO]);
-        push_key(&[signer, ZERO, contract, ZERO]);
-        push_key(&[signer, ZERO, contract, func]);
-        push_key(&[ZERO, arg0, contract, ZERO]);
-        push_key(&[ZERO, arg0, contract, func]);
-        push_key(&[signer, arg0, contract, func]);
+        match (contract, func) {
+            (b"Epoch", b"submit_sol") => {
+                push_key(&[signer, ZERO, ZERO, ZERO]);
+                push_key(&[ZERO, arg0, ZERO, ZERO]);
+                // Do we care about this?
+                // tx_filter CF goes from 10G to 22G if we add this back
+                // reevaluate later difference is OK
+                push_key(&[signer, ZERO, contract, ZERO]);
+                push_key(&[signer, ZERO, contract, func]);
+                push_key(&[ZERO, ZERO, contract, ZERO]);
+                push_key(&[ZERO, ZERO, contract, func]);
+            },
+            _ => {
+                push_key(&[signer, ZERO, ZERO, ZERO]);
+                push_key(&[ZERO, arg0, ZERO, ZERO]);
+                push_key(&[signer, arg0, ZERO, ZERO]);
+                push_key(&[ZERO, ZERO, contract, ZERO]);
+                push_key(&[ZERO, ZERO, contract, func]);
+                push_key(&[signer, ZERO, contract, ZERO]);
+                push_key(&[signer, ZERO, contract, func]);
+                push_key(&[ZERO, arg0, contract, ZERO]);
+                push_key(&[ZERO, arg0, contract, func]);
+                push_key(&[signer, arg0, contract, func]);
+            }
+        }
     }
 
     Ok(all_filters)
@@ -157,7 +174,7 @@ pub fn query_tx_hashfilter<'a, 'db>(env: Env<'a>, db: &'db TransactionDB<MultiTh
 
         let tx_prefix_8 = iter_txfilter.value().unwrap();
 
-        // --- Inner Scan: Resolve Tx Hash Collisions ---
+        // TODO: check for collisions when signer/arg0/contract/function is used
         iter_tx.seek(tx_prefix_8);
         while iter_tx.valid() {
             match iter_tx.key() {
