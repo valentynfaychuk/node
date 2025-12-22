@@ -48,6 +48,16 @@ defmodule Ama.MultiServer do
         state
     end
 
+    defp prometheus_reply(state, content_fn) do
+        if HTTP.Prometheus.authorized?(state.request.headers) do
+            :ok = :gen_tcp.send(state.socket, Photon.HTTP.Response.build_cors(state.request, 200, %{"content-type" => "text/plain; version=0.0.4"}, content_fn.()))
+            state
+        else
+            :ok = :gen_tcp.send(state.socket, Photon.HTTP.Response.build_cors(state.request, 401, %{}, JSX.encode!(%{error: :unauthorized})))
+            state
+        end
+    end
+
     def moveme(nil) do
         %{
         }
@@ -78,6 +88,17 @@ defmodule Ama.MultiServer do
             #    Shep.WSPanel.init(state)
             r.method == "GET" and r.path == "/favicon.ico" ->
                 quick_reply(state, "")
+
+            r.method == "GET" and r.path == "/health" ->
+                prometheus_reply(state, fn -> HTTP.Prometheus.health() end)
+            r.method == "GET" and r.path == "/metrics" ->
+                prometheus_reply(state, fn -> HTTP.Prometheus.metrics_all() end)
+            r.method == "GET" and r.path == "/metrics/stats" ->
+                prometheus_reply(state, fn -> HTTP.Prometheus.metrics_stats() end)
+            r.method == "GET" and r.path == "/metrics/kpi" ->
+                prometheus_reply(state, fn -> HTTP.Prometheus.metrics_kpi() end)
+            r.method == "GET" and r.path == "/metrics/validators" ->
+                prometheus_reply(state, fn -> HTTP.Prometheus.metrics_validators() end)
 
             r.method == "GET" and String.starts_with?(r.path, "/api/peer/anr/") ->
                 pk = String.replace(r.path, "/api/peer/anr/", "")
