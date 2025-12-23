@@ -204,7 +204,7 @@ fn build_prefixed_key(applyenv: &mut ApplyEnv, view: &MemoryView, ptr: i32, len:
     crate::bcat(&[&b"account:"[..], &applyenv.caller_env.account_current, &b":storage:"[..], &key])
 }
 
-fn import_storage_kv_put_implementation(mut env: FunctionEnvMut<HostEnv>, key_ptr: i32, key_len: i32, val_ptr: i32, val_len: i32) -> Result<i32, RuntimeError> {
+fn import_storage_kv_put_implementation(mut env: FunctionEnvMut<HostEnv>, key_ptr: i32, key_len: i32, val_ptr: i32, val_len: i32) -> Result<(), RuntimeError> {
     let (data, mut store) = env.data_and_store_mut();
     let instance = data.instance.clone().unwrap_or_else(|| panic_any("exec_instance_not_injected"));
     let applyenv = unsafe { data.applyenv_ptr.as_mut() };
@@ -222,7 +222,7 @@ fn import_storage_kv_put_implementation(mut env: FunctionEnvMut<HostEnv>, key_pt
     view.read(val_ptr as u64, &mut value).unwrap_or_else(|_| panic_any("exec_log_invalid_ptr"));
 
     kv_put(applyenv, &key, &value);
-    Ok(1)
+    Ok(())
 }
 
 fn import_storage_kv_increment_implementation(mut env: FunctionEnvMut<HostEnv>, key_ptr: i32, key_len: i32, val_ptr: i32, val_len: i32) -> Result<i32, RuntimeError> {
@@ -252,7 +252,7 @@ fn import_storage_kv_increment_implementation(mut env: FunctionEnvMut<HostEnv>, 
     Ok(10_000)
 }
 
-fn import_storage_kv_delete_implementation(mut env: FunctionEnvMut<HostEnv>, key_ptr: i32, key_len: i32) -> Result<i32, RuntimeError> {
+fn import_storage_kv_delete_implementation(mut env: FunctionEnvMut<HostEnv>, key_ptr: i32, key_len: i32) -> Result<(), RuntimeError> {
     let (data, mut store) = env.data_and_store_mut();
     let instance = data.instance.clone().unwrap_or_else(|| panic_any("exec_instance_not_injected"));
     let applyenv = unsafe { data.applyenv_ptr.as_mut() };
@@ -266,7 +266,7 @@ fn import_storage_kv_delete_implementation(mut env: FunctionEnvMut<HostEnv>, key
 
     kv_delete(applyenv, &key);
 
-    Ok(1)
+    Ok(())
 }
 
 fn import_storage_kv_get_implementation(mut env: FunctionEnvMut<HostEnv>, ptr: i32, len: i32) -> Result<i32, RuntimeError> {

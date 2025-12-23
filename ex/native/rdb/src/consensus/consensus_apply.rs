@@ -736,6 +736,28 @@ fn migrate_db(env: &mut ApplyEnv) {
 }
 
 pub fn call_bic(env: &mut ApplyEnv, contract: Vec<u8>, function: Vec<u8>, args: Vec<Vec<u8>>, attached_symbol: Option<Vec<u8>>, attached_amount: Option<Vec<u8>>) {
+    if env.testnet {
+        match (contract.as_slice(), function.as_slice()) {
+            (b"Coin", b"create_and_mint") => return consensus::bic::coin::call_create_and_mint(env, args),
+            (b"Coin", b"mint") => return consensus::bic::coin::call_mint(env, args),
+            (b"Coin", b"pause") => return consensus::bic::coin::call_pause(env, args),
+            (b"Nft", b"transfer") => return consensus::bic::nft::call_transfer(env, args),
+            (b"Nft", b"create_collection") => return consensus::bic::nft::call_create_collection(env, args),
+            (b"Nft", b"mint") => return consensus::bic::nft::call_mint(env, args),
+            (b"Lockup", b"lock") => return consensus::bic::lockup::call_lock(env, args),
+            (b"Lockup", b"unlock") => return consensus::bic::lockup::call_unlock(env, args),
+            (b"Contract", b"deploy") => {
+                consensus_kv::exec_budget_decr(env, protocol::COST_PER_DEPLOY);
+                return consensus::bic::contract::call_deploy(env, args);
+            }
+            (b"LockupPrime", b"lock") => return consensus::bic::lockup_prime::call_lock(env, args),
+            (b"LockupPrime", b"unlock") => return consensus::bic::lockup_prime::call_unlock(env, args),
+            (b"LockupPrime", b"daily_checkin") => return consensus::bic::lockup_prime::call_daily_checkin(env, args),
+            // FIX: Allow non-testnet logic to fall through if no match found here
+            _ => {}
+        }
+    }
+
     match (contract.as_slice(), function.as_slice()) {
         (b"Epoch", b"submit_sol") => {
             consensus_kv::exec_budget_decr(env, protocol::COST_PER_SOL);
