@@ -1,14 +1,7 @@
 defmodule HTTP.Prometheus do
   def authorized?(headers) do
-    case System.get_env("METRICS_BEARER_TOKEN") do
-      nil -> true
-      "" -> true
-      required_token ->
-        case headers["authorization"] do
-          "Bearer " <> token -> token == required_token
-          _ -> false
-        end
-    end
+    token = Application.fetch_env!(:ama, :prometheus_token)
+    headers["authorization"] == "Bearer #{token}"
   end
 
   def health() do

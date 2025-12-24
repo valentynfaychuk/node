@@ -40,6 +40,8 @@ config :ama, :udp_port, (System.get_env("UDP_PORT") || "36969") |> :erlang.binar
 config :ama, :rpc_url, (System.get_env("RPC_URL") || "https://nodes.amadeus.bot")
 config :ama, :rpc_events, ((System.get_env("RPC_EVENTS") || "true") == "true")
 
+config :ama, :prometheus_token, System.get_env("PROMETHEUS_TOKEN")
+
 #Nodes
 if !Util.verify_time_sync() do
     IO.puts "🔴 🕒 time not synced OR systemd-ntp client not found; DYOR 🔴"
