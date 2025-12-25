@@ -61,7 +61,7 @@ pub fn kv_put(env: &mut ApplyEnv, key: &[u8], value: &[u8]) {
     }
 
     exec_kv_size(key, Some(value));
-    exec_budget_decr(env, protocol::COST_PER_DB_WRITE_BASE + protocol::COST_PER_DB_WRITE_BYTE * (key.len() + value.len()) as i128);
+    exec_budget_decr(env, protocol::COST_PER_DB_WRITE_BASE + protocol::cost_db_write_byte(env) * (key.len() + value.len()) as i128);
 
     let old_value = env.txn.get_cf(&env.cf, key).unwrap();
     match old_value {
@@ -90,7 +90,7 @@ pub fn kv_increment(env: &mut ApplyEnv, key: &[u8], value: i128) -> i128 {
     }
 
     let value_str = value.to_string().into_bytes();
-    exec_budget_decr(env, protocol::COST_PER_DB_WRITE_BASE + protocol::COST_PER_DB_WRITE_BYTE * (key.len() + value_str.len()) as i128);
+    exec_budget_decr(env, protocol::COST_PER_DB_WRITE_BASE + protocol::cost_db_write_byte(env) * (key.len() + value_str.len()) as i128);
 
     match env.txn.get_cf(&env.cf, key).unwrap() {
         None => {
@@ -121,7 +121,7 @@ pub fn kv_delete(env: &mut ApplyEnv, key: &[u8]) {
         panic!("exec_cannot_write_during_view");
     }
 
-    exec_budget_decr(env, protocol::COST_PER_DB_WRITE_BASE + protocol::COST_PER_DB_WRITE_BYTE * (key.len()) as i128);
+    exec_budget_decr(env, protocol::COST_PER_DB_WRITE_BASE + protocol::cost_db_write_byte(env) * (key.len()) as i128);
 
     match env.txn.get_cf(&env.cf, key).unwrap() {
         None => (),
@@ -138,7 +138,7 @@ pub fn kv_set_bit(env: &mut ApplyEnv, key: &[u8], bit_idx: u64) -> bool {
         panic!("exec_cannot_write_during_view");
     }
 
-    exec_budget_decr(env, protocol::COST_PER_DB_WRITE_BASE + protocol::COST_PER_DB_WRITE_BYTE * (key.len()) as i128);
+    exec_budget_decr(env, protocol::COST_PER_DB_WRITE_BASE + protocol::cost_db_write_byte(env) * (key.len()) as i128);
 
     let (mut old, exists) = match env.txn.get_cf(&env.cf, key).unwrap() {
         None => (vec![0u8; crate::consensus::bic::sol_bloom::PAGE_SIZE as usize], false),
@@ -164,7 +164,7 @@ pub fn kv_set_bit(env: &mut ApplyEnv, key: &[u8], bit_idx: u64) -> bool {
 }
 
 pub fn kv_exists(env: &mut ApplyEnv, key: &[u8]) -> bool {
-    exec_budget_decr(env, protocol::COST_PER_DB_READ_BASE + protocol::COST_PER_DB_READ_BYTE * (key.len()) as i128);
+    exec_budget_decr(env, protocol::COST_PER_DB_READ_BASE + protocol::cost_db_read_byte(env) * (key.len()) as i128);
 
     match env.txn.get_cf(&env.cf, key).unwrap() {
         None => false,
@@ -173,13 +173,13 @@ pub fn kv_exists(env: &mut ApplyEnv, key: &[u8]) -> bool {
 }
 
 pub fn kv_get(env: &mut ApplyEnv, key: &[u8]) -> Option<Vec<u8>> {
-    exec_budget_decr(env, protocol::COST_PER_DB_READ_BASE + protocol::COST_PER_DB_READ_BYTE * (key.len()) as i128);
+    exec_budget_decr(env, protocol::COST_PER_DB_READ_BASE + protocol::cost_db_read_byte(env) * (key.len()) as i128);
 
     env.txn.get_cf(&env.cf, key).unwrap()
 }
 
 pub fn kv_get_next(env: &mut ApplyEnv, prefix: &[u8], key: &[u8]) -> Option<(Vec<u8>, Vec<u8>)> {
-    exec_budget_decr(env, protocol::COST_PER_DB_READ_BASE + protocol::COST_PER_DB_READ_BYTE * (prefix.len() + key.len()) as i128);
+    exec_budget_decr(env, protocol::COST_PER_DB_READ_BASE + protocol::cost_db_read_byte(env) * (prefix.len() + key.len()) as i128);
 
     let seek = [prefix, key].concat();
 
@@ -203,7 +203,7 @@ pub fn kv_get_next(env: &mut ApplyEnv, prefix: &[u8], key: &[u8]) -> Option<(Vec
 }
 
 pub fn kv_get_prev(env: &mut ApplyEnv, prefix: &[u8], key: &[u8]) -> Option<(Vec<u8>, Vec<u8>)> {
-    exec_budget_decr(env, protocol::COST_PER_DB_READ_BASE + protocol::COST_PER_DB_READ_BYTE * (prefix.len() + key.len()) as i128);
+    exec_budget_decr(env, protocol::COST_PER_DB_READ_BASE + protocol::cost_db_read_byte(env) * (prefix.len() + key.len()) as i128);
 
     let seek = [prefix, key].concat();
 
@@ -227,7 +227,7 @@ pub fn kv_get_prev(env: &mut ApplyEnv, prefix: &[u8], key: &[u8]) -> Option<(Vec
 }
 
 pub fn kv_get_prev_or_first(env: &mut ApplyEnv, prefix: &[u8], key: &[u8]) -> Option<(Vec<u8>, Vec<u8>)> {
-    exec_budget_decr(env, protocol::COST_PER_DB_READ_BASE + protocol::COST_PER_DB_READ_BYTE * (prefix.len() + key.len()) as i128);
+    exec_budget_decr(env, protocol::COST_PER_DB_READ_BASE + protocol::cost_db_read_byte(env) * (prefix.len() + key.len()) as i128);
 
     let seek = [prefix, key].concat();
 

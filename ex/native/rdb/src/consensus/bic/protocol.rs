@@ -18,8 +18,27 @@ pub const COST_PER_OP_WASM: i128 = 1; //cost to execute a wasm op
 
 pub const COST_PER_DB_READ_BASE: i128 = 5_000 * 10;
 pub const COST_PER_DB_READ_BYTE: i128 = 50 * 10;
+pub const COST_PER_DB_READ_BYTE2: i128 = 50;
+
 pub const COST_PER_DB_WRITE_BASE: i128 = 25_000 * 10;
 pub const COST_PER_DB_WRITE_BYTE: i128 = 250 * 10;
+pub const COST_PER_DB_WRITE_BYTE2: i128 = 250;
+
+pub fn cost_db_read_byte(env: &crate::consensus::consensus_apply::ApplyEnv) -> i128 {
+    if env.testnet {
+        COST_PER_DB_READ_BYTE2
+    } else {
+        COST_PER_DB_READ_BYTE
+    }
+}
+
+pub fn cost_db_write_byte(env: &crate::consensus::consensus_apply::ApplyEnv) -> i128 {
+    if env.testnet {
+        COST_PER_DB_WRITE_BYTE2
+    } else {
+        COST_PER_DB_WRITE_BYTE
+    }
+}
 
 pub const COST_PER_CALL: i128 = AMA_01_CENT;
 pub const COST_PER_DEPLOY: i128 = AMA_1_CENT; //cost to deploy contract

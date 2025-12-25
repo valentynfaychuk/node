@@ -27,6 +27,17 @@ defmodule API.Wallet do
         %{collection: collection, token: token, amount: amount}
     end
 
+    def balance_nft_all(pk) do
+      pk = API.maybe_b58(48, pk)
+      %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
+      opts = %{db: db, cf: cf.contractstate, to_integer: true}
+      RocksDB.get_prefix("account:#{pk}:nft:", opts)
+      |> Enum.map(fn({symbol, amount})->
+          [collection, token] = :binary.split(symbol, ":")
+          %{collection: collection, token: token, amount: amount}
+      end)
+    end
+
     def transfer(to, amount, symbol) do
         sk = Application.fetch_env!(:ama, :trainer_sk)
         transfer(sk, to, amount, symbol)
