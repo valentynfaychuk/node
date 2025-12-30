@@ -26,14 +26,6 @@ cargo install amadeus-cli
 
 To build the wasm smart contracts, simply run the `./build_and_validate.sh`.
 The artifacts will be placed in `target/wasm32-unknown-unknown/release/examples`.
-Optionally you can optimize the resulting wasm contracts.
-
-```bash
-wasm-opt -Oz --enable-bulk-memory target/wasm32-unknown-unknown/release/examples/counter.wasm -o counter.wasm
-wasm-opt -Oz --enable-bulk-memory target/wasm32-unknown-unknown/release/examples/deposit.wasm -o deposit.wasm
-wasm-opt -Oz --enable-bulk-memory target/wasm32-unknown-unknown/release/examples/coin.wasm -o coin.wasm
-wasm-opt -Oz --enable-bulk-memory target/wasm32-unknown-unknown/release/examples/nft.wasm -o nft.wasm
-```
 
 ### Testing
 
