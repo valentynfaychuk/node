@@ -32,7 +32,3 @@ path = "../examples/coin.rs"
 [[example]]
 name = "nft"
 path = "../examples/nft.rs"
-
-[[example]]
-name = "counter_macro"
-path = "../examples/counter_macro.rs"
