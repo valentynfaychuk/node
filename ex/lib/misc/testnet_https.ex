@@ -90,17 +90,26 @@ defmodule TestNetHTTPSProxy do
   end
 
   def handle_info(:accept, state) do
-    {:ok, ssl_socket} = :ssl.transport_accept(state.listen_socket)
-    case :ssl.handshake(ssl_socket) do
+    case :ssl.transport_accept(state.listen_socket) do
+      {:error, _reason} ->
+        {:noreply, state}
       {:ok, ssl_socket} ->
-        pid = :erlang.spawn(__MODULE__, :client_loop, [%{ssl_socket: ssl_socket}])
+        pid = :erlang.spawn(__MODULE__, :handshake, [%{ssl_socket: ssl_socket}])
         :ok = :ssl.controlling_process(ssl_socket, pid)
-      {:error, reason} ->
-        :ssl.close(ssl_socket)
+        {:noreply, state}
     end
-
-    :erlang.send_after(1, self(), :accept)
+    :erlang.send_after(0, self(), :accept)
     {:noreply, state}
+  end
+
+  def handshake(state) do
+    Process.sleep(100)
+    case :ssl.handshake(state.ssl_socket) do
+      {:error, reason} ->
+        :ssl.close(state.ssl_socket)
+      {:ok, ssl_socket} ->
+        client_loop(Map.put(state, :ssl_socket, ssl_socket))
+    end
   end
 
   def client_loop(state) do

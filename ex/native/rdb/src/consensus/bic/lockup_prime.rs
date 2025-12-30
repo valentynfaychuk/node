@@ -23,8 +23,6 @@ pub fn call_lock(env: &mut crate::consensus::consensus_apply::ApplyEnv, args: Ve
     let amount = std::str::from_utf8(&amount).ok().and_then(|s| s.parse::<i128>().ok()).unwrap_or_else(|| panic_any("invalid_amount"));
     let tier = args[1].as_slice();
     let (tier_epochs, multiplier) = match args.get(1).map(|v| v.as_slice()).unwrap_or_else(|| panic_any("invalid_tier")) {
-        b"magic"   => (0, 1),
-        b"magic2"   => (1, 1),
         b"7d"   => (10, 13),
         b"30d"  => (45, 17),
         b"90d"  => (135, 27),
