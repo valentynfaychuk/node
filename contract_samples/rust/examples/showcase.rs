@@ -36,34 +36,36 @@ impl Leaderboard {
         *self.total_matches += 1;
     }
 
-    pub fn get_total_matches(&mut self) -> Vec<u8> {
+    pub fn get_total_matches(&self) -> Vec<u8> {
         (*self.total_matches).to_string().into_bytes()
     }
 
     pub fn record_match(&mut self, player: String, match_id: u64, score: u16, opponent: String) {
-        self.players.with_mut(player, |matches| {
-            matches.with_mut(match_id, |m| {
+        if let Some(matches) = self.players.get_mut(player.clone()) {
+            if let Some(m) = matches.get_mut(match_id) {
                 *m.score = score;
                 *m.opponent = opponent;
-            });
-        });
+            }
+        }
         *self.total_matches += 1;
     }
 
-    pub fn get_match_score(&mut self, player: String, match_id: u64) -> Vec<u8> {
-        self.players.with_mut(player, |matches| {
-            matches.with_mut(match_id, |m| {
-                (*m.score).to_string().into_bytes()
-            })
-        })
+    pub fn get_match_score(&self, player: String, match_id: u64) -> Vec<u8> {
+        if let Some(matches) = self.players.get(player) {
+            if let Some(m) = matches.get(match_id) {
+                return (*m.score).to_string().into_bytes();
+            }
+        }
+        "0".to_string().into_bytes()
     }
 
-    pub fn get_match_opponent(&mut self, player: String, match_id: u64) -> String {
-        self.players.with_mut(player, |matches| {
-            matches.with_mut(match_id, |m| {
-                (*m.opponent).clone()
-            })
-        })
+    pub fn get_match_opponent(&self, player: String, match_id: u64) -> String {
+        if let Some(matches) = self.players.get(player) {
+            if let Some(m) = matches.get(match_id) {
+                return (*m.opponent).clone();
+            }
+        }
+        String::new()
     }
 
     pub fn set_tournament_info(&mut self, name: String, prize_pool: u64) {
@@ -71,11 +73,11 @@ impl Leaderboard {
         *self.tournament.prize_pool = prize_pool;
     }
 
-    pub fn get_tournament_name(&mut self) -> String {
+    pub fn get_tournament_name(&self) -> String {
         (*self.tournament.name).clone()
     }
 
-    pub fn get_tournament_prize(&mut self) -> Vec<u8> {
+    pub fn get_tournament_prize(&self) -> Vec<u8> {
         (*self.tournament.prize_pool).to_string().into_bytes()
     }
 
@@ -87,7 +89,7 @@ impl Leaderboard {
         }
     }
 
-    pub fn get_player_wins(&mut self, player: String) -> Vec<u8> {
+    pub fn get_player_wins(&self, player: String) -> Vec<u8> {
         if let Some(wins) = self.player_wins.get(&player) {
             (*wins).to_string().into_bytes()
         } else {

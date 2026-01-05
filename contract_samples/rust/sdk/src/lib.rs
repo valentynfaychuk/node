@@ -10,6 +10,8 @@ pub use storage::*;
 pub use encoding::*;
 pub use amadeus_sdk_macros::{contract, contract_state};
 
+use alloc::vec;
+
 pub trait ContractState {
     fn with_prefix(prefix: Vec<u8>) -> Self;
     fn flush(&self);
@@ -227,7 +229,7 @@ use alloc::collections::BTreeMap;
 
 pub struct MapFlat<K, V> {
     prefix: Vec<u8>,
-    cache: BTreeMap<Vec<u8>, LazyCell<V>>,
+    cache: core::cell::UnsafeCell<BTreeMap<Vec<u8>, LazyCell<V>>>,
     _phantom: core::marker::PhantomData<K>,
 }
 
@@ -241,44 +243,54 @@ where
         b!(self.prefix.as_slice(), key_bytes.as_ref())
     }
 
-    pub fn get(&mut self, key: &K) -> Option<&LazyCell<V>> {
+    pub fn get(&self, key: &K) -> Option<&LazyCell<V>> {
         let storage_key = self.build_key(key);
 
-        if !self.cache.contains_key(&storage_key) {
-            if kv_exists(&storage_key) {
-                self.cache.insert(storage_key.clone(), LazyCell::with_prefix(storage_key.clone()));
-            } else {
-                return None;
+        unsafe {
+            let cache = &mut *self.cache.get();
+            if !cache.contains_key(&storage_key) {
+                if kv_exists(&storage_key) {
+                    cache.insert(storage_key.clone(), LazyCell::with_prefix(storage_key.clone()));
+                } else {
+                    return None;
+                }
             }
-        }
 
-        self.cache.get(&storage_key)
+            cache.get(&storage_key)
+        }
     }
 
     pub fn get_mut(&mut self, key: &K) -> Option<&mut LazyCell<V>> {
         let storage_key = self.build_key(key);
 
-        if !self.cache.contains_key(&storage_key) {
-            if kv_exists(&storage_key) {
-                self.cache.insert(storage_key.clone(), LazyCell::with_prefix(storage_key.clone()));
-            } else {
-                return None;
+        unsafe {
+            let cache = &mut *self.cache.get();
+            if !cache.contains_key(&storage_key) {
+                if kv_exists(&storage_key) {
+                    cache.insert(storage_key.clone(), LazyCell::with_prefix(storage_key.clone()));
+                } else {
+                    return None;
+                }
             }
-        }
 
-        self.cache.get_mut(&storage_key)
+            cache.get_mut(&storage_key)
+        }
     }
 
     pub fn insert(&mut self, key: K, value: V) {
         let storage_key = self.build_key(&key);
         let cell: LazyCell<V> = LazyCell::with_prefix(storage_key.clone());
         cell.set(value);
-        self.cache.insert(storage_key, cell);
+        unsafe {
+            (*self.cache.get()).insert(storage_key, cell);
+        }
     }
 
     pub fn remove(&mut self, key: &K) {
         let storage_key = self.build_key(key);
-        self.cache.remove(&storage_key);
+        unsafe {
+            (*self.cache.get()).remove(&storage_key);
+        }
         kv_delete(&storage_key);
     }
 }
@@ -291,22 +303,78 @@ where
     fn with_prefix(prefix: Vec<u8>) -> Self {
         Self {
             prefix,
-            cache: BTreeMap::new(),
+            cache: core::cell::UnsafeCell::new(BTreeMap::new()),
             _phantom: core::marker::PhantomData,
         }
     }
 
     fn flush(&self) {
-        for cell in self.cache.values() {
-            cell.flush();
+        unsafe {
+            for cell in (*self.cache.get()).values() {
+                cell.flush();
+            }
         }
     }
 }
 
 pub struct Map<K, V> {
     prefix: Vec<u8>,
-    cache: BTreeMap<Vec<u8>, V>,
+    cache: core::cell::UnsafeCell<BTreeMap<Vec<u8>, V>>,
     _phantom: core::marker::PhantomData<K>,
+}
+
+pub struct MapIter<'a, K, V> {
+    map: &'a Map<K, V>,
+    keys: Vec<Vec<u8>>,
+    index: usize,
+}
+
+impl<'a, K, V> Iterator for MapIter<'a, K, V>
+where
+    V: ContractState
+{
+    type Item = &'a V;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index >= self.keys.len() {
+            return None;
+        }
+
+        let key = &self.keys[self.index];
+        self.index += 1;
+
+        unsafe {
+            let cache = &*self.map.cache.get();
+            cache.get(key).map(|v| &*(v as *const V))
+        }
+    }
+}
+
+pub struct MapIterMut<'a, K, V> {
+    map: &'a Map<K, V>,
+    keys: Vec<Vec<u8>>,
+    index: usize,
+}
+
+impl<'a, K, V> Iterator for MapIterMut<'a, K, V>
+where
+    V: ContractState
+{
+    type Item = &'a mut V;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index >= self.keys.len() {
+            return None;
+        }
+
+        let key = &self.keys[self.index];
+        self.index += 1;
+
+        unsafe {
+            let cache = &mut *self.map.cache.get();
+            cache.get_mut(key).map(|v| &mut *(v as *mut V))
+        }
+    }
 }
 
 impl<K, V> Map<K, V>
@@ -319,37 +387,122 @@ where
         b!(self.prefix.as_slice(), key_bytes.as_ref())
     }
 
-    pub fn with<F, R>(&mut self, key: K, f: F) -> R
-    where
-        F: FnOnce(&V) -> R
-    {
+    pub fn get(&self, key: K) -> Option<&V> {
         let storage_key = self.build_key(&key);
 
-        if !self.cache.contains_key(&storage_key) {
-            let value = V::with_prefix(storage_key.clone());
-            self.cache.insert(storage_key.clone(), value);
-        }
+        unsafe {
+            let cache = &mut *self.cache.get();
+            if !cache.contains_key(&storage_key) {
+                // Cannot use kv_exists() because V is a ContractState (not a single value).
+                // ContractState uses the key as a prefix for nested fields, so we check if
+                // any keys exist with this prefix using kv_get_next().
+                let (first_key, _) = kv_get_next(&storage_key, &vec![]);
+                if first_key.is_some() {
+                    let value = V::with_prefix(storage_key.clone());
+                    cache.insert(storage_key.clone(), value);
+                } else {
+                    return None;
+                }
+            }
 
-        f(self.cache.get(&storage_key).unwrap())
+            cache.get(&storage_key).map(|v| &*(v as *const V))
+        }
     }
 
-    pub fn with_mut<F, R>(&mut self, key: K, f: F) -> R
-    where
-        F: FnOnce(&mut V) -> R
-    {
+    pub fn get_mut(&mut self, key: K) -> Option<&mut V> {
         let storage_key = self.build_key(&key);
 
-        if !self.cache.contains_key(&storage_key) {
-            let value = V::with_prefix(storage_key.clone());
-            self.cache.insert(storage_key.clone(), value);
+        unsafe {
+            let cache = &mut *self.cache.get();
+            if !cache.contains_key(&storage_key) {
+                // Cannot use kv_exists() because V is a ContractState (not a single value).
+                // ContractState uses the key as a prefix for nested fields, so we check if
+                // any keys exist with this prefix using kv_get_next().
+                let (first_key, _) = kv_get_next(&storage_key, &vec![]);
+                if first_key.is_some() {
+                    let value = V::with_prefix(storage_key.clone());
+                    cache.insert(storage_key.clone(), value);
+                } else {
+                    return None;
+                }
+            }
+
+            cache.get_mut(&storage_key)
+        }
+    }
+
+    pub fn with(&self) -> MapIter<'_, K, V> {
+        let mut keys = Vec::new();
+        let mut current_key = vec![];
+
+        unsafe {
+            let cache = &mut *self.cache.get();
+
+            loop {
+                let (key, _) = kv_get_next(&self.prefix, &current_key);
+                match key {
+                    Some(k) => {
+                        if !cache.contains_key(&k) {
+                            let value = V::with_prefix(k.clone());
+                            cache.insert(k.clone(), value);
+                        }
+                        keys.push(k.clone());
+                        current_key = k;
+                    }
+                    None => break,
+                }
+            }
         }
 
-        f(self.cache.get_mut(&storage_key).unwrap())
+        MapIter {
+            map: self,
+            keys,
+            index: 0,
+        }
+    }
+
+    pub fn with_mut(&mut self) -> MapIterMut<'_, K, V> {
+        let mut keys = Vec::new();
+        let mut current_key = vec![];
+
+        unsafe {
+            let cache = &mut *self.cache.get();
+
+            loop {
+                let (key, _) = kv_get_next(&self.prefix, &current_key);
+                match key {
+                    Some(k) => {
+                        if !cache.contains_key(&k) {
+                            let value = V::with_prefix(k.clone());
+                            cache.insert(k.clone(), value);
+                        }
+                        keys.push(k.clone());
+                        current_key = k;
+                    }
+                    None => break,
+                }
+            }
+        }
+
+        MapIterMut {
+            map: self,
+            keys,
+            index: 0,
+        }
+    }
+
+    pub fn insert(&mut self, key: K, value: V) {
+        let storage_key = self.build_key(&key);
+        unsafe {
+            (*self.cache.get()).insert(storage_key, value);
+        }
     }
 
     pub fn remove(&mut self, key: &K) {
         let storage_key = self.build_key(key);
-        self.cache.remove(&storage_key);
+        unsafe {
+            (*self.cache.get()).remove(&storage_key);
+        }
     }
 }
 
@@ -361,14 +514,16 @@ where
     fn with_prefix(prefix: Vec<u8>) -> Self {
         Self {
             prefix,
-            cache: BTreeMap::new(),
+            cache: core::cell::UnsafeCell::new(BTreeMap::new()),
             _phantom: core::marker::PhantomData,
         }
     }
 
     fn flush(&self) {
-        for value in self.cache.values() {
-            value.flush();
+        unsafe {
+            for value in (*self.cache.get()).values() {
+                value.flush();
+            }
         }
     }
 }

@@ -1,8 +1,10 @@
 #![no_std]
 #![no_main]
+
 extern crate alloc;
+use alloc::vec::Vec;
+use alloc::string::String;
 use amadeus_sdk::*;
-use alloc::{vec::Vec, string::String};
 
 fn vault_key(symbol: &Vec<u8>) -> Vec<u8> {
     b!("vault:", account_caller(), ":", symbol)

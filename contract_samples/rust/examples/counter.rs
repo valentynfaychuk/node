@@ -1,12 +1,13 @@
 #![no_std]
 #![no_main]
+
 extern crate alloc;
+use alloc::vec::Vec;
+use alloc::string::String;
 use amadeus_sdk::*;
-use alloc::{vec::Vec, string::String};
 
 #[no_mangle]
 pub extern "C" fn init() {
-    log("Init called during deployment of contract");
     kv_put("inited", "true");
 }
 
