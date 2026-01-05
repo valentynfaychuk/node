@@ -13,8 +13,26 @@ pub fn contract_state(_attr: TokenStream, item: TokenStream) -> TokenStream {
         return TokenStream::from(quote! { #input });
     };
 
-    let is_nested = |f: &syn::Field| -> bool {
-        f.attrs.iter().any(|attr| attr.path().is_ident("nested"))
+    let is_flat = |f: &syn::Field| -> bool {
+        f.attrs.iter().any(|attr| attr.path().is_ident("flat"))
+    };
+
+    let is_map = |f: &syn::Field| -> bool {
+        if let Type::Path(type_path) = &f.ty {
+            if let Some(segment) = type_path.path.segments.first() {
+                return segment.ident == "Map";
+            }
+        }
+        false
+    };
+
+    let is_map_nested = |f: &syn::Field| -> bool {
+        if let Type::Path(type_path) = &f.ty {
+            if let Some(segment) = type_path.path.segments.first() {
+                return segment.ident == "MapNested";
+            }
+        }
+        false
     };
 
     let transformed_fields = fields.named.iter().map(|f| {
@@ -22,18 +40,18 @@ pub fn contract_state(_attr: TokenStream, item: TokenStream) -> TokenStream {
         let field_vis = &f.vis;
         let field_ty = &f.ty;
         let filtered_attrs: Vec<_> = f.attrs.iter()
-            .filter(|attr| !attr.path().is_ident("nested"))
+            .filter(|attr| !attr.path().is_ident("flat"))
             .collect();
 
-        if is_nested(f) {
+        if is_flat(f) {
             quote! {
                 #(#filtered_attrs)*
-                #field_vis #field_name: #field_ty
+                #field_vis #field_name: LazyCell<#field_ty>
             }
         } else {
             quote! {
                 #(#filtered_attrs)*
-                #field_vis #field_name: LazyCell<#field_ty>
+                #field_vis #field_name: #field_ty
             }
         }
     });
@@ -42,18 +60,24 @@ pub fn contract_state(_attr: TokenStream, item: TokenStream) -> TokenStream {
         let field = f.ident.as_ref().unwrap();
         let key = field.to_string();
 
-        if is_nested(f) {
+        if is_flat(f) {
             quote! {
                 let mut key = prefix.clone();
                 key.extend_from_slice(#key.as_bytes());
-                key.push(b':');
+                self.#field = LazyCell::new(key);
+            }
+        } else if is_map(f) || is_map_nested(f) {
+            quote! {
+                let mut key = prefix.clone();
+                key.extend_from_slice(#key.as_bytes());
                 self.#field.__init_lazy_fields(key);
             }
         } else {
             quote! {
                 let mut key = prefix.clone();
                 key.extend_from_slice(#key.as_bytes());
-                self.#field = LazyCell::new(key);
+                key.push(b':');
+                self.#field.__init_lazy_fields(key);
             }
         }
     });
@@ -61,10 +85,10 @@ pub fn contract_state(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let flush_calls = fields.named.iter().map(|f| {
         let field = f.ident.as_ref().unwrap();
 
-        if is_nested(f) {
-            quote! { self.#field.__flush_lazy_fields(); }
-        } else {
+        if is_flat(f) {
             quote! { self.#field.flush(); }
+        } else {
+            quote! { self.#field.__flush_lazy_fields(); }
         }
     });
 

@@ -10,6 +10,12 @@ impl FromKvBytes for Vec<u8> {
     fn from_bytes(data: Vec<u8>) -> Self { data }
 }
 
+impl FromKvBytes for String {
+    fn from_bytes(data: Vec<u8>) -> Self {
+        String::from_utf8(data).unwrap_or_default()
+    }
+}
+
 macro_rules! impl_from_kv_bytes_for_int {
     ($type:ty, $converter:path) => {
         impl FromKvBytes for $type {
