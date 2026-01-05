@@ -10,6 +10,11 @@ pub use storage::*;
 pub use encoding::*;
 pub use amadeus_sdk_macros::{contract, contract_state};
 
+pub trait ContractState {
+    fn __init_lazy_fields(&mut self, prefix: Vec<u8>);
+    fn __flush_lazy_fields(&self);
+}
+
 use core::panic::PanicInfo;
 
 use alloc::{borrow::Cow, vec::Vec, string::String, string::ToString};
@@ -141,6 +146,7 @@ where
     }
 }
 
+
 impl<T> Default for LazyCell<T> {
     fn default() -> Self {
         Self::new(Vec::new())
@@ -153,14 +159,6 @@ impl<T> LazyCell<T> {
             key,
             value: core::cell::RefCell::new(None),
             dirty: core::cell::Cell::new(false),
-        }
-    }
-
-    pub fn flush(&self) where T: Payload + Clone {
-        if self.dirty.get() {
-            if let Some(val) = self.value.borrow().as_ref() {
-                kv_put(&self.key, val.clone());
-            }
         }
     }
 
@@ -186,5 +184,49 @@ impl<T> LazyCell<T> {
     pub fn add(&self, amount: T) where T: FromKvBytes + Default + Clone + core::ops::Add<Output = T> {
         let current = self.get();
         self.set(current + amount);
+    }
+}
+
+impl<T: Payload + Clone> LazyCell<T> {
+    pub fn flush(&self) {
+        if self.dirty.get() {
+            if let Some(val) = self.value.borrow().as_ref() {
+                kv_put(&self.key, val.clone());
+            }
+        }
+    }
+}
+
+impl<T: ContractState + Default> LazyCell<T> {
+
+    pub fn with_mut<F, R>(&mut self, f: F) -> R
+    where
+        F: FnOnce(&mut T) -> R
+    {
+        if self.value.borrow().is_none() {
+            let mut loaded = T::default();
+            loaded.__init_lazy_fields(self.key.clone());
+            *self.value.borrow_mut() = Some(loaded);
+        }
+        self.dirty.set(true);
+        unsafe {
+            let ptr = self.value.as_ptr();
+            f((*ptr).as_mut().unwrap())
+        }
+    }
+
+    pub fn with<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&T) -> R
+    {
+        if self.value.borrow().is_none() {
+            let mut loaded = T::default();
+            loaded.__init_lazy_fields(self.key.clone());
+            *self.value.borrow_mut() = Some(loaded);
+        }
+        unsafe {
+            let ptr = self.value.as_ptr();
+            f((*ptr).as_ref().unwrap())
+        }
     }
 }
