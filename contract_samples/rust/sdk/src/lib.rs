@@ -11,8 +11,8 @@ pub use encoding::*;
 pub use amadeus_sdk_macros::{contract, contract_state};
 
 pub trait ContractState {
-    fn __init_lazy_fields(&mut self, prefix: Vec<u8>);
-    fn __flush_lazy_fields(&self);
+    fn with_prefix(prefix: Vec<u8>) -> Self;
+    fn flush(&self);
 }
 
 use core::panic::PanicInfo;
@@ -147,21 +147,25 @@ where
 }
 
 
-impl<T> Default for LazyCell<T> {
-    fn default() -> Self {
-        Self::new(Vec::new())
-    }
-}
-
-impl<T> LazyCell<T> {
-    pub fn new(key: Vec<u8>) -> Self {
+impl<T: Payload + Clone> ContractState for LazyCell<T> {
+    fn with_prefix(prefix: Vec<u8>) -> Self {
         Self {
-            key,
+            key: prefix,
             value: core::cell::RefCell::new(None),
             dirty: core::cell::Cell::new(false),
         }
     }
 
+    fn flush(&self) {
+        if self.dirty.get() {
+            if let Some(val) = self.value.borrow().as_ref() {
+                kv_put(&self.key, val.clone());
+            }
+        }
+    }
+}
+
+impl<T> LazyCell<T> {
     pub fn get(&self) -> T where T: FromKvBytes + Default + Clone {
         if self.value.borrow().is_none() {
             let loaded = kv_get::<T>(&self.key).unwrap_or_default();
@@ -187,16 +191,6 @@ impl<T> LazyCell<T> {
     }
 }
 
-impl<T: Payload + Clone> LazyCell<T> {
-    pub fn flush(&self) {
-        if self.dirty.get() {
-            if let Some(val) = self.value.borrow().as_ref() {
-                kv_put(&self.key, val.clone());
-            }
-        }
-    }
-}
-
 impl<T: ContractState + Default> LazyCell<T> {
 
     pub fn with_mut<F, R>(&mut self, f: F) -> R
@@ -204,8 +198,7 @@ impl<T: ContractState + Default> LazyCell<T> {
         F: FnOnce(&mut T) -> R
     {
         if self.value.borrow().is_none() {
-            let mut loaded = T::default();
-            loaded.__init_lazy_fields(self.key.clone());
+            let loaded = T::with_prefix(self.key.clone());
             *self.value.borrow_mut() = Some(loaded);
         }
         self.dirty.set(true);
@@ -220,8 +213,7 @@ impl<T: ContractState + Default> LazyCell<T> {
         F: FnOnce(&T) -> R
     {
         if self.value.borrow().is_none() {
-            let mut loaded = T::default();
-            loaded.__init_lazy_fields(self.key.clone());
+            let loaded = T::with_prefix(self.key.clone());
             *self.value.borrow_mut() = Some(loaded);
         }
         unsafe {
@@ -233,30 +225,20 @@ impl<T: ContractState + Default> LazyCell<T> {
 
 use alloc::collections::BTreeMap;
 
-pub struct Map<K, V> {
+pub struct MapFlat<K, V> {
     prefix: Vec<u8>,
     cache: BTreeMap<Vec<u8>, LazyCell<V>>,
     _phantom: core::marker::PhantomData<K>,
 }
 
-impl<K, V> Default for Map<K, V> {
-    fn default() -> Self {
-        Self {
-            prefix: Vec::new(),
-            cache: BTreeMap::new(),
-            _phantom: core::marker::PhantomData,
-        }
-    }
-}
-
-impl<K, V> Map<K, V>
+impl<K, V> MapFlat<K, V>
 where
     K: Payload,
     V: FromKvBytes + Payload + Default + Clone
 {
     fn build_key(&self, key: &K) -> Vec<u8> {
         let key_bytes = key.to_payload();
-        b!(self.prefix.as_slice(), b":", key_bytes.as_ref())
+        b!(self.prefix.as_slice(), key_bytes.as_ref())
     }
 
     pub fn get(&mut self, key: &K) -> Option<&LazyCell<V>> {
@@ -264,7 +246,7 @@ where
 
         if !self.cache.contains_key(&storage_key) {
             if kv_exists(&storage_key) {
-                self.cache.insert(storage_key.clone(), LazyCell::new(storage_key.clone()));
+                self.cache.insert(storage_key.clone(), LazyCell::with_prefix(storage_key.clone()));
             } else {
                 return None;
             }
@@ -278,7 +260,7 @@ where
 
         if !self.cache.contains_key(&storage_key) {
             if kv_exists(&storage_key) {
-                self.cache.insert(storage_key.clone(), LazyCell::new(storage_key.clone()));
+                self.cache.insert(storage_key.clone(), LazyCell::with_prefix(storage_key.clone()));
             } else {
                 return None;
             }
@@ -289,7 +271,7 @@ where
 
     pub fn insert(&mut self, key: K, value: V) {
         let storage_key = self.build_key(&key);
-        let cell: LazyCell<V> = LazyCell::new(storage_key.clone());
+        let cell: LazyCell<V> = LazyCell::with_prefix(storage_key.clone());
         cell.set(value);
         self.cache.insert(storage_key, cell);
     }
@@ -301,46 +283,40 @@ where
     }
 }
 
-impl<K, V> ContractState for Map<K, V>
+impl<K, V> ContractState for MapFlat<K, V>
 where
     K: Payload,
     V: FromKvBytes + Payload + Default + Clone
 {
-    fn __init_lazy_fields(&mut self, prefix: Vec<u8>) {
-        self.prefix = prefix;
+    fn with_prefix(prefix: Vec<u8>) -> Self {
+        Self {
+            prefix,
+            cache: BTreeMap::new(),
+            _phantom: core::marker::PhantomData,
+        }
     }
 
-    fn __flush_lazy_fields(&self) {
+    fn flush(&self) {
         for cell in self.cache.values() {
             cell.flush();
         }
     }
 }
 
-pub struct MapNested<K, V> {
+pub struct Map<K, V> {
     prefix: Vec<u8>,
     cache: BTreeMap<Vec<u8>, V>,
     _phantom: core::marker::PhantomData<K>,
 }
 
-impl<K, V> Default for MapNested<K, V> {
-    fn default() -> Self {
-        Self {
-            prefix: Vec::new(),
-            cache: BTreeMap::new(),
-            _phantom: core::marker::PhantomData,
-        }
-    }
-}
-
-impl<K, V> MapNested<K, V>
+impl<K, V> Map<K, V>
 where
     K: Payload,
-    V: ContractState + Default
+    V: ContractState
 {
     fn build_key(&self, key: &K) -> Vec<u8> {
         let key_bytes = key.to_payload();
-        b!(self.prefix.as_slice(), b":", key_bytes.as_ref())
+        b!(self.prefix.as_slice(), key_bytes.as_ref())
     }
 
     pub fn with<F, R>(&mut self, key: K, f: F) -> R
@@ -350,8 +326,7 @@ where
         let storage_key = self.build_key(&key);
 
         if !self.cache.contains_key(&storage_key) {
-            let mut value = V::default();
-            value.__init_lazy_fields(storage_key.clone());
+            let value = V::with_prefix(storage_key.clone());
             self.cache.insert(storage_key.clone(), value);
         }
 
@@ -365,8 +340,7 @@ where
         let storage_key = self.build_key(&key);
 
         if !self.cache.contains_key(&storage_key) {
-            let mut value = V::default();
-            value.__init_lazy_fields(storage_key.clone());
+            let value = V::with_prefix(storage_key.clone());
             self.cache.insert(storage_key.clone(), value);
         }
 
@@ -379,18 +353,22 @@ where
     }
 }
 
-impl<K, V> ContractState for MapNested<K, V>
+impl<K, V> ContractState for Map<K, V>
 where
     K: Payload,
-    V: ContractState + Default
+    V: ContractState
 {
-    fn __init_lazy_fields(&mut self, prefix: Vec<u8>) {
-        self.prefix = prefix;
+    fn with_prefix(prefix: Vec<u8>) -> Self {
+        Self {
+            prefix,
+            cache: BTreeMap::new(),
+            _phantom: core::marker::PhantomData,
+        }
     }
 
-    fn __flush_lazy_fields(&self) {
+    fn flush(&self) {
         for value in self.cache.values() {
-            value.__flush_lazy_fields();
+            value.flush();
         }
     }
 }

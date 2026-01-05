@@ -17,24 +17,6 @@ pub fn contract_state(_attr: TokenStream, item: TokenStream) -> TokenStream {
         f.attrs.iter().any(|attr| attr.path().is_ident("flat"))
     };
 
-    let is_map = |f: &syn::Field| -> bool {
-        if let Type::Path(type_path) = &f.ty {
-            if let Some(segment) = type_path.path.segments.first() {
-                return segment.ident == "Map";
-            }
-        }
-        false
-    };
-
-    let is_map_nested = |f: &syn::Field| -> bool {
-        if let Type::Path(type_path) = &f.ty {
-            if let Some(segment) = type_path.path.segments.first() {
-                return segment.ident == "MapNested";
-            }
-        }
-        false
-    };
-
     let transformed_fields = fields.named.iter().map(|f| {
         let field_name = &f.ident;
         let field_vis = &f.vis;
@@ -56,45 +38,34 @@ pub fn contract_state(_attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     });
 
-    let init_calls = fields.named.iter().map(|f| {
+    let init_fields = fields.named.iter().map(|f| {
         let field = f.ident.as_ref().unwrap();
+        let field_ty = &f.ty;
         let key = field.to_string();
 
         if is_flat(f) {
             quote! {
-                let mut key = prefix.clone();
-                key.extend_from_slice(#key.as_bytes());
-                self.#field = LazyCell::new(key);
-            }
-        } else if is_map(f) || is_map_nested(f) {
-            quote! {
-                let mut key = prefix.clone();
-                key.extend_from_slice(#key.as_bytes());
-                self.#field.__init_lazy_fields(key);
+                #field: {
+                    let mut key = prefix.clone();
+                    key.extend_from_slice(#key.as_bytes());
+                    LazyCell::with_prefix(key)
+                }
             }
         } else {
             quote! {
-                let mut key = prefix.clone();
-                key.extend_from_slice(#key.as_bytes());
-                key.push(b':');
-                self.#field.__init_lazy_fields(key);
+                #field: {
+                    let mut key = prefix.clone();
+                    key.extend_from_slice(#key.as_bytes());
+                    key.push(b':');
+                    #field_ty::with_prefix(key)
+                }
             }
         }
     });
 
     let flush_calls = fields.named.iter().map(|f| {
         let field = f.ident.as_ref().unwrap();
-
-        if is_flat(f) {
-            quote! { self.#field.flush(); }
-        } else {
-            quote! { self.#field.__flush_lazy_fields(); }
-        }
-    });
-
-    let default_fields = fields.named.iter().map(|f| {
-        let field_name = &f.ident;
-        quote! { #field_name: Default::default() }
+        quote! { self.#field.flush(); }
     });
 
     TokenStream::from(quote! {
@@ -103,18 +74,14 @@ pub fn contract_state(_attr: TokenStream, item: TokenStream) -> TokenStream {
             #(#transformed_fields),*
         }
 
-        impl Default for #name {
-            fn default() -> Self {
-                Self { #(#default_fields),* }
-            }
-        }
-
         impl ContractState for #name {
-            fn __init_lazy_fields(&mut self, prefix: alloc::vec::Vec<u8>) {
-                #(#init_calls)*
+            fn with_prefix(prefix: alloc::vec::Vec<u8>) -> Self {
+                Self {
+                    #(#init_fields),*
+                }
             }
 
-            fn __flush_lazy_fields(&self) {
+            fn flush(&self) {
                 #(#flush_calls)*
             }
         }
@@ -130,6 +97,21 @@ pub fn contract(_attr: TokenStream, item: TokenStream) -> TokenStream {
         return handle_function(function);
     }
     item
+}
+
+fn is_integer_type(ty: &Type) -> bool {
+    if let Type::Path(type_path) = ty {
+        if let Some(segment) = type_path.path.segments.first() {
+            let ident = &segment.ident;
+            return matches!(
+                ident.to_string().as_str(),
+                "i8" | "i16" | "i32" | "i64" | "i128" |
+                "u8" | "u16" | "u32" | "u64" | "u128" |
+                "isize" | "usize"
+            );
+        }
+    }
+    false
 }
 
 fn handle_impl_block(impl_block: ItemImpl) -> TokenStream {
@@ -154,12 +136,22 @@ fn handle_impl_block(impl_block: ItemImpl) -> TokenStream {
             .filter_map(|arg| match arg {
                 FnArg::Typed(pat_type) => {
                     let param = &pat_type.pat;
+                    let ty = &pat_type.ty;
                     let ptr = syn::Ident::new(&format!("{}_ptr", quote!(#param)), name.span());
-                    let deser = match &*pat_type.ty {
-                        Type::Path(tp) if quote!(#tp).to_string().contains("String") => quote!(read_string),
-                        _ => quote!(read_bytes),
+
+                    let deser = if let Type::Path(tp) = &**ty {
+                        if quote!(#tp).to_string().contains("String") {
+                            quote!(read_string(#ptr))
+                        } else if is_integer_type(ty) {
+                            quote!(#ty::from_bytes(read_bytes(#ptr)))
+                        } else {
+                            quote!(read_bytes(#ptr))
+                        }
+                    } else {
+                        quote!(read_bytes(#ptr))
                     };
-                    Some((quote!(#ptr: i32), quote!(let #param = #deser(#ptr);), quote!(#param)))
+
+                    Some((quote!(#ptr: i32), quote!(let #param = #deser;), quote!(#param)))
                 }
                 _ => None,
             })
@@ -184,19 +176,17 @@ fn handle_impl_block(impl_block: ItemImpl) -> TokenStream {
         let body = if has_return {
             quote! {
                 #(#deserializations)*
-                let mut state = #self_ty::default();
-                state.__init_lazy_fields(alloc::vec::Vec::new());
+                let mut state = <#self_ty as ContractState>::with_prefix(alloc::vec::Vec::new());
                 let result = state.#call;
-                state.__flush_lazy_fields();
+                state.flush();
                 ret(result);
             }
         } else {
             quote! {
                 #(#deserializations)*
-                let mut state = #self_ty::default();
-                state.__init_lazy_fields(alloc::vec::Vec::new());
+                let mut state = <#self_ty as ContractState>::with_prefix(alloc::vec::Vec::new());
                 state.#call;
-                state.__flush_lazy_fields();
+                state.flush();
             }
         };
 
@@ -228,10 +218,19 @@ fn handle_function(input: ItemFn) -> TokenStream {
     for arg in inputs.iter() {
         if let FnArg::Typed(pat_type) = arg {
             let param = &pat_type.pat;
+            let ty = &pat_type.ty;
             let ptr = syn::Ident::new(&format!("arg{}_ptr", idx), name.span());
-            let deser = match &*pat_type.ty {
-                Type::Path(tp) if quote!(#tp).to_string().contains("String") => quote!(read_string),
-                _ => quote!(read_bytes),
+
+            let deser = if let Type::Path(tp) = &**ty {
+                if quote!(#tp).to_string().contains("String") {
+                    quote!(read_string(#ptr))
+                } else if is_integer_type(ty) {
+                    quote!(#ty::from_bytes(read_bytes(#ptr)))
+                } else {
+                    quote!(read_bytes(#ptr))
+                }
+            } else {
+                quote!(read_bytes(#ptr))
             };
 
             if idx > 0 {
@@ -242,7 +241,7 @@ fn handle_function(input: ItemFn) -> TokenStream {
                 call_args.extend(quote!(#param));
             }
 
-            deserializations.extend(quote! { let #param = #deser(#ptr); });
+            deserializations.extend(quote! { let #param = #deser; });
             idx += 1;
         }
     }

@@ -18,11 +18,15 @@ struct TournamentInfo {
     #[flat] prize_pool: u64,
 }
 
+type PlayerWinsMap = MapFlat<String, u32>;
+type MatchesMap = Map<u64, Match>;
+type PlayersMap = Map<String, MatchesMap>;
+
 #[contract_state]
 struct Leaderboard {
     #[flat] total_matches: i32,
-    player_wins: Map<String, u32>,
-    players: MapNested<String, MapNested<u64, Match>>,
+    player_wins: PlayerWinsMap,
+    players: PlayersMap,
     tournament: TournamentInfo,
 }
 
@@ -36,38 +40,35 @@ impl Leaderboard {
         (*self.total_matches).to_string().into_bytes()
     }
 
-    pub fn record_match(&mut self, player: String, match_id: Vec<u8>, score: Vec<u8>, opponent: String) {
-        let match_id_u64 = u64::from_bytes(match_id);
+    pub fn record_match(&mut self, player: String, match_id: u64, score: u16, opponent: String) {
         self.players.with_mut(player, |matches| {
-            matches.with_mut(match_id_u64, |m| {
-                *m.score = u16::from_bytes(score);
+            matches.with_mut(match_id, |m| {
+                *m.score = score;
                 *m.opponent = opponent;
             });
         });
         *self.total_matches += 1;
     }
 
-    pub fn get_match_score(&mut self, player: String, match_id: Vec<u8>) -> Vec<u8> {
-        let match_id_u64 = u64::from_bytes(match_id);
+    pub fn get_match_score(&mut self, player: String, match_id: u64) -> Vec<u8> {
         self.players.with_mut(player, |matches| {
-            matches.with_mut(match_id_u64, |m| {
+            matches.with_mut(match_id, |m| {
                 (*m.score).to_string().into_bytes()
             })
         })
     }
 
-    pub fn get_match_opponent(&mut self, player: String, match_id: Vec<u8>) -> String {
-        let match_id_u64 = u64::from_bytes(match_id);
+    pub fn get_match_opponent(&mut self, player: String, match_id: u64) -> String {
         self.players.with_mut(player, |matches| {
-            matches.with_mut(match_id_u64, |m| {
+            matches.with_mut(match_id, |m| {
                 (*m.opponent).clone()
             })
         })
     }
 
-    pub fn set_tournament_info(&mut self, name: String, prize_pool: Vec<u8>) {
+    pub fn set_tournament_info(&mut self, name: String, prize_pool: u64) {
         *self.tournament.name = name;
-        *self.tournament.prize_pool = u64::from_bytes(prize_pool);
+        *self.tournament.prize_pool = prize_pool;
     }
 
     pub fn get_tournament_name(&mut self) -> String {
@@ -94,7 +95,7 @@ impl Leaderboard {
         }
     }
 
-    pub fn set_player_wins(&mut self, player: String, wins: Vec<u8>) {
-        self.player_wins.insert(player, u32::from_bytes(wins));
+    pub fn set_player_wins(&mut self, player: String, wins: u32) {
+        self.player_wins.insert(player, wins);
     }
 }
