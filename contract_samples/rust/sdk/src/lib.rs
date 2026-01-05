@@ -8,7 +8,7 @@ pub mod encoding;
 pub use context::*;
 pub use storage::*;
 pub use encoding::*;
-pub use amadeus_sdk_macros::contract;
+pub use amadeus_sdk_macros::{contract, Contract};
 
 use core::panic::PanicInfo;
 
@@ -101,3 +101,46 @@ impl Payload for &alloc::vec::Vec<u8> {
 
 impl_payload_for_ints!(u8, u16, u32, u64, u128, usize);
 impl_payload_for_ints!(i8, i16, i32, i64, i128, isize);
+
+pub struct LazyCell<T> {
+    key: Vec<u8>,
+    value: core::cell::RefCell<Option<T>>,
+    dirty: core::cell::Cell<bool>,
+}
+
+impl<T> Default for LazyCell<T> {
+    fn default() -> Self {
+        Self::new(Vec::new())
+    }
+}
+
+impl<T> LazyCell<T> {
+    pub fn new(key: Vec<u8>) -> Self {
+        Self {
+            key,
+            value: core::cell::RefCell::new(None),
+            dirty: core::cell::Cell::new(false),
+        }
+    }
+
+    pub fn flush(&self) where T: Payload + Clone {
+        if self.dirty.get() {
+            if let Some(val) = self.value.borrow().as_ref() {
+                kv_put(&self.key, val.clone());
+            }
+        }
+    }
+
+    pub fn get(&self) -> T where T: FromKvBytes + Default + Clone {
+        if self.value.borrow().is_none() {
+            let loaded = kv_get::<T>(&self.key).unwrap_or_default();
+            *self.value.borrow_mut() = Some(loaded);
+        }
+        self.value.borrow().as_ref().unwrap().clone()
+    }
+
+    pub fn set(&self, val: T) {
+        *self.value.borrow_mut() = Some(val);
+        self.dirty.set(true);
+    }
+}
