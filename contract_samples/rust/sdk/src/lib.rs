@@ -8,7 +8,7 @@ pub mod encoding;
 pub use context::*;
 pub use storage::*;
 pub use encoding::*;
-pub use amadeus_sdk_macros::{contract, Contract};
+pub use amadeus_sdk_macros::{contract, contract_state};
 
 use core::panic::PanicInfo;
 
@@ -108,6 +108,39 @@ pub struct LazyCell<T> {
     dirty: core::cell::Cell<bool>,
 }
 
+impl<T> core::ops::Deref for LazyCell<T>
+where
+    T: FromKvBytes + Default + Clone
+{
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        if self.value.borrow().is_none() {
+            let loaded = kv_get::<T>(&self.key).unwrap_or_default();
+            *self.value.borrow_mut() = Some(loaded);
+        }
+        unsafe {
+            (*self.value.as_ptr()).as_ref().unwrap()
+        }
+    }
+}
+
+impl<T> core::ops::DerefMut for LazyCell<T>
+where
+    T: FromKvBytes + Default + Clone
+{
+    fn deref_mut(&mut self) -> &mut T {
+        if self.value.borrow().is_none() {
+            let loaded = kv_get::<T>(&self.key).unwrap_or_default();
+            *self.value.borrow_mut() = Some(loaded);
+        }
+        self.dirty.set(true);
+        unsafe {
+            (*self.value.as_ptr()).as_mut().unwrap()
+        }
+    }
+}
+
 impl<T> Default for LazyCell<T> {
     fn default() -> Self {
         Self::new(Vec::new())
@@ -142,5 +175,16 @@ impl<T> LazyCell<T> {
     pub fn set(&self, val: T) {
         *self.value.borrow_mut() = Some(val);
         self.dirty.set(true);
+    }
+
+    pub fn update<F>(&self, f: F) where T: FromKvBytes + Default + Clone, F: FnOnce(T) -> T {
+        let current = self.get();
+        let new_value = f(current);
+        self.set(new_value);
+    }
+
+    pub fn add(&self, amount: T) where T: FromKvBytes + Default + Clone + core::ops::Add<Output = T> {
+        let current = self.get();
+        self.set(current + amount);
     }
 }

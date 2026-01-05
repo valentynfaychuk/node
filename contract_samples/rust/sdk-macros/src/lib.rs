@@ -1,18 +1,33 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, DeriveInput, Data, Fields, ItemImpl, ItemFn, ImplItem, FnArg, ReturnType, Type};
+use syn::{parse_macro_input, ItemImpl, ItemFn, ImplItem, FnArg, ReturnType, Type, ItemStruct, Fields};
 
-#[proc_macro_derive(Contract)]
-pub fn derive_contract(input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as DeriveInput);
+#[proc_macro_attribute]
+pub fn contract_state(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(item as ItemStruct);
     let name = &input.ident;
-    let Data::Struct(data) = &input.data else { return TokenStream::new() };
-    let Fields::Named(fields) = &data.fields else { return TokenStream::new() };
+    let vis = &input.vis;
+    let attrs = &input.attrs;
+
+    let Fields::Named(ref fields) = input.fields else {
+        return TokenStream::from(quote! { #input });
+    };
+
+    let transformed_fields = fields.named.iter().map(|f| {
+        let field_name = &f.ident;
+        let field_vis = &f.vis;
+        let field_attrs = &f.attrs;
+        let field_ty = &f.ty;
+        quote! {
+            #(#field_attrs)*
+            #field_vis #field_name: LazyCell<#field_ty>
+        }
+    });
 
     let init_calls = fields.named.iter().map(|f| {
         let field = f.ident.as_ref().unwrap();
         let key = field.to_string();
-        quote! { self.#field = LazyCell::new(b!("__state__::", #key)); }
+        quote! { self.#field = LazyCell::new(#key.as_bytes().to_vec()); }
     });
 
     let flush_calls = fields.named.iter().map(|f| {
@@ -20,7 +35,23 @@ pub fn derive_contract(input: TokenStream) -> TokenStream {
         quote! { self.#field.flush(); }
     });
 
+    let default_fields = fields.named.iter().map(|f| {
+        let field_name = &f.ident;
+        quote! { #field_name: LazyCell::default() }
+    });
+
     TokenStream::from(quote! {
+        #(#attrs)*
+        #vis struct #name {
+            #(#transformed_fields),*
+        }
+
+        impl Default for #name {
+            fn default() -> Self {
+                Self { #(#default_fields),* }
+            }
+        }
+
         impl #name {
             pub fn __init_lazy_fields(&mut self) { #(#init_calls)* }
             pub fn __flush_lazy_fields(&self) { #(#flush_calls)* }
