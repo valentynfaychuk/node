@@ -134,8 +134,8 @@ pub fn kv_exists(key: impl Payload) -> bool {
     }
     #[cfg(not(any(test, feature = "testing")))]
     unsafe {
-        let ptr = import_kv_exists(key_bytes.as_ptr(), key_bytes.len());
-        *(ptr as *const i32) == 1
+        let result = import_kv_exists(key_bytes.as_ptr(), key_bytes.len());
+        result == 1
     }
 }
 

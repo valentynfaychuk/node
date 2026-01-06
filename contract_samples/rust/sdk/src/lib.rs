@@ -264,7 +264,7 @@ where
         unsafe {
             let cache = &mut *self.cache.get();
             if !cache.contains_key(&storage_key) {
-                if kv_get::<V>(&storage_key).is_some() {
+                if kv_exists(&storage_key) {
                     cache.insert(storage_key.clone(), LazyCell::with_prefix(storage_key.clone()));
                 } else {
                     return None;
@@ -280,7 +280,7 @@ where
         unsafe {
             let cache = &mut *self.cache.get();
             if !cache.contains_key(&storage_key) {
-                if kv_get::<V>(&storage_key).is_some() {
+                if kv_exists(&storage_key) {
                     cache.insert(storage_key.clone(), LazyCell::with_prefix(storage_key.clone()));
                 } else {
                     return None;
