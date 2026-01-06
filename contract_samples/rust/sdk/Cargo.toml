@@ -11,8 +11,13 @@ repository = "https://github.com/amadeusprotocol/node"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-dlmalloc = { version = "0.2", features = ["global"] }
 amadeus-sdk-macros = { path = "../sdk-macros" }
+dlmalloc = { version = "0.2", features = ["global"], optional = true }
+
+[features]
+default = ["use-dlmalloc"]
+use-dlmalloc = ["dlmalloc"]
+testing = []
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = false

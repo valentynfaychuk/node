@@ -1,9 +1,18 @@
-#![no_std]
+#![cfg_attr(not(any(test, feature = "testing")), no_std)]
+#![cfg_attr(any(test, feature = "testing"), feature(thread_local))]
+#![allow(unused_imports)]
+
 extern crate alloc;
+
+#[cfg(any(test, feature = "testing"))]
+extern crate std;
 
 pub mod context;
 pub mod storage;
 pub mod encoding;
+
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
 
 pub use context::*;
 pub use storage::*;
@@ -22,12 +31,13 @@ use core::panic::PanicInfo;
 use alloc::{borrow::Cow, vec::Vec, string::String, string::ToString};
 
 
-#[cfg(not(test))]
+#[cfg(not(any(test, feature = "testing")))]
 #[panic_handler]
 fn panic(_: &PanicInfo) -> ! {
     loop {}
 }
 
+#[cfg(all(feature = "use-dlmalloc", not(any(test, feature = "testing"))))]
 #[global_allocator]
 static ALLOC: dlmalloc::GlobalDlmalloc = dlmalloc::GlobalDlmalloc;
 
@@ -49,8 +59,14 @@ macro_rules! abort {
         {
             $crate::context::log($msg);
 
-            #[cfg(target_arch = "wasm32")]
+            #[cfg(all(target_arch = "wasm32", not(test)))]
             core::arch::wasm32::unreachable();
+
+            #[cfg(test)]
+            panic!($msg);
+
+            #[allow(unreachable_code)]
+            loop {}
         }
     };
 }
@@ -245,17 +261,15 @@ where
 
     pub fn get(&self, key: &K) -> Option<&LazyCell<V>> {
         let storage_key = self.build_key(key);
-
         unsafe {
             let cache = &mut *self.cache.get();
             if !cache.contains_key(&storage_key) {
-                if kv_exists(&storage_key) {
+                if kv_get::<V>(&storage_key).is_some() {
                     cache.insert(storage_key.clone(), LazyCell::with_prefix(storage_key.clone()));
                 } else {
                     return None;
                 }
             }
-
             cache.get(&storage_key)
         }
     }
@@ -266,7 +280,7 @@ where
         unsafe {
             let cache = &mut *self.cache.get();
             if !cache.contains_key(&storage_key) {
-                if kv_exists(&storage_key) {
+                if kv_get::<V>(&storage_key).is_some() {
                     cache.insert(storage_key.clone(), LazyCell::with_prefix(storage_key.clone()));
                 } else {
                     return None;

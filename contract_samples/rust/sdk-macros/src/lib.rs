@@ -173,13 +173,27 @@ fn handle_impl_block(impl_block: ItemImpl) -> TokenStream {
             quote!(#name(#(#call_args),*))
         };
 
+        let return_wrapper = if has_return {
+            if let syn::ReturnType::Type(_, ret_type) = &method.sig.output {
+                if is_integer_type(ret_type) {
+                    quote! { ret(result.to_string().into_bytes()); }
+                } else {
+                    quote! { ret(result); }
+                }
+            } else {
+                quote! { ret(result); }
+            }
+        } else {
+            quote! {}
+        };
+
         let body = if has_return {
             quote! {
                 #(#deserializations)*
                 let mut state = <#self_ty as ContractState>::with_prefix(alloc::vec::Vec::new());
                 let result = state.#call;
                 state.flush();
-                ret(result);
+                #return_wrapper
             }
         } else {
             quote! {

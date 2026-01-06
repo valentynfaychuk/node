@@ -27,7 +27,14 @@ cargo install amadeus-cli
 To build the wasm smart contracts, simply run the `./build_and_validate.sh`.
 The artifacts will be placed in `target/wasm32-unknown-unknown/release/examples`.
 
-### Testing
+## Unit Testing
+
+```bash
+cargo +nightly test --example showcase --features testing --no-default-features -- --nocapture --test-threads=1
+cargo expand -p amadeus-sdk --example showcase --target wasm32-unknown-unknown
+```
+
+### Testnet Deployment
 
 Make sure you have `amadeus-cli` installed.
 Follow the code snippet below to run each example on the testnet.
@@ -72,4 +79,15 @@ ama tx --sk wallet.sk $NFT_PK init '[]' --url https://testnet-rpc.ama.one
 ama tx --sk wallet.sk $NFT_PK claim '[]' --url https://testnet-rpc.ama.one
 ama tx --sk wallet.sk $NFT_PK view_nft '["AGENTIC", "1"]' --url https://testnet-rpc.ama.one
 ama tx --sk wallet.sk $NFT_PK claim '[]' --url https://testnet-rpc.ama.one
+
+ama gen-sk showcase.sk
+export SHOWCASE_PK=$(ama get-pk --sk showcase.sk)
+ama tx --sk wallet.sk Coin transfer '[{"b58": "'$SHOWCASE_PK'"}, "2000000000", "AMA"]' --url https://testnet-rpc.ama.one
+ama deploy-tx --sk showcase.sk showcase.wasm --url https://testnet-rpc.ama.one
+ama tx --sk wallet.sk $SHOWCASE_PK increment_total_matches '[]' --url https://testnet-rpc.ama.one
+ama tx --sk wallet.sk $SHOWCASE_PK set_tournament_info '["World Cup", "1000000"]' --url https://testnet-rpc.ama.one
+ama tx --sk wallet.sk $SHOWCASE_PK record_win '["alice"]' --url https://testnet-rpc.ama.one
+ama tx --sk wallet.sk $SHOWCASE_PK record_win '["alice"]' --url https://testnet-rpc.ama.one
+ama tx --sk wallet.sk $SHOWCASE_PK get_player_wins '["alice"]' --url https://testnet-rpc.ama.one
+ama tx --sk wallet.sk $SHOWCASE_PK get_tournament_name '[]' --url https://testnet-rpc.ama.one
 ```
