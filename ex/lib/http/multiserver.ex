@@ -74,7 +74,7 @@ defmodule Ama.MultiServer do
     def handle_http(state) do
         r = state.request
         #IO.inspect r.path
-
+        testnet = Application.fetch_env!(:ama, :testnet)
         cond do
             r.method in ["OPTIONS", "HEAD"] ->
                 :ok = :gen_tcp.send(state.socket, Photon.HTTP.Response.build_cors(state.request, 200, %{}, ""))
@@ -290,6 +290,43 @@ defmodule Ama.MultiServer do
                 map = RDB.vecpak_decode(vecpak_bin)
                 result = API.Proof.validators(map.key, map[:value])
                 quick_reply(%{state|request: r}, result)
+
+            testnet and r.method == "GET" and r.path == "/api/upow/seed" ->
+              epoch = DB.Chain.epoch()
+              segment_vr_hash = DB.Chain.segment_vr_hash()
+              nonce = :crypto.strong_rand_bytes(12)
+              %{pk: pk, pop: pop} = Application.fetch_env!(:ama, :keys) |> hd()
+              seed = <<epoch::32-little, segment_vr_hash::32-binary,
+                pk::48-binary, pop::96-binary, pk::binary, nonce::12-binary>>
+              quick_reply(state, seed)
+
+            testnet and r.method == "GET" and r.path == "/api/upow/seed_with_matrix_a_b" ->
+              epoch = DB.Chain.epoch()
+              segment_vr_hash = DB.Chain.segment_vr_hash()
+              nonce = :crypto.strong_rand_bytes(12)
+              %{pk: pk, pop: pop} = Application.fetch_env!(:ama, :keys) |> hd()
+              seed = <<epoch::32-little, segment_vr_hash::32-binary,
+                pk::48-binary, pop::96-binary, pk::binary, nonce::12-binary>>
+              b = Blake3.new()
+              Blake3.update(b, seed)
+              matrix_a_b = Blake3.finalize_xof(b, 16*50240 + 50240*16)
+              quick_reply(state, seed <> matrix_a_b)
+
+            testnet and r.method == "GET" and String.starts_with?(r.path, "/api/upow/validate/") ->
+              sol = String.replace(r.path, "/api/upow/validate/", "") |> Base58.decode()
+              diff_bits = DB.Chain.diff_bits()
+              segment_vr_hash = DB.Chain.segment_vr_hash()
+              result = try do BIC.Sol.verify(sol, %{diff_bits: diff_bits, segment_vr_hash: segment_vr_hash}) catch _,_ false end
+              result_math = RDB.freivalds(sol, :crypto.strong_rand_bytes(32))
+              quick_reply(state, %{valid: result, valid_math: result_math})
+
+            testnet and r.method == "POST" and r.path == "/api/upow/validate" ->
+              {r, sol} = Photon.HTTP.read_body_all(state.socket, r)
+              diff_bits = DB.Chain.diff_bits()
+              segment_vr_hash = DB.Chain.segment_vr_hash()
+              result = try do BIC.Sol.verify(sol, %{diff_bits: diff_bits, segment_vr_hash: segment_vr_hash}) catch _,_ false end
+              result_math = RDB.freivalds(sol, :crypto.strong_rand_bytes(32))
+              quick_reply(%{state|request: r}, %{valid: result, valid_math: result_math})
 
             #r.method == "GET" ->
             #    bin = build_dashboard(state)

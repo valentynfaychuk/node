@@ -29,6 +29,8 @@ config :ama, :snapshot_height, (System.get_env("SNAPSHOT_HEIGHT") || "43401193")
 #Bind Interaces
 config :ama, :offline, (!!System.get_env("OFFLINE") || nil)
 config :ama, :testnet, (!!System.get_env("TESTNET") || nil)
+testnet_sleep_default = if !!System.get_env("TESTNET") do "350" else "0" end
+config :ama, :testnet_sleep, (System.get_env("TESTNET_SLEEP") || testnet_sleep_default) |> :erlang.binary_to_integer()
 
 config :ama, :http_ipv4, ((System.get_env("HTTP_IPV4") || "0.0.0.0") |> :unicode.characters_to_list() |> :inet.parse_ipv4_address() |> (case do {:ok, addr}-> addr end))
 config :ama, :http_port, (System.get_env("HTTP_PORT") || "80") |> :erlang.binary_to_integer()
