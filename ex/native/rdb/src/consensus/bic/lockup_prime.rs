@@ -1,6 +1,6 @@
 use std::panic::panic_any;
 use crate::{bcat};
-use crate::consensus::{bic::{coin::{balance, mint, to_flat}, epoch::TREASURY_DONATION_ADDRESS, lockup::{create_lock}}, consensus_kv::{kv_get, kv_increment, kv_put, kv_delete}};
+use crate::consensus::{bic::{coin::{balance, mint, to_flat}, epoch::TREASURY_DONATION_ADDRESS, lockup::{create_lock}}, consensus_kv::{kv_get, kv_get_next, kv_increment, kv_put, kv_delete}};
 use vecpak::{encode, Term};
 
 pub fn call_lock(env: &mut crate::consensus::consensus_apply::ApplyEnv, args: Vec<Vec<u8>>) {
@@ -81,16 +81,23 @@ pub fn call_unlock(env: &mut crate::consensus::consensus_apply::ApplyEnv, args: 
 }
 
 pub fn call_daily_checkin(env: &mut crate::consensus::consensus_apply::ApplyEnv, args: Vec<Vec<u8>>) {
-    if args.len() != 1 { panic_any("invalid_args") }
-    let vault_index = args[0].as_slice();
+    let prefix = bcat(&[b"bic:lockup_prime:vault:", &env.caller_env.account_caller, b":"]);
+    let mut cursor: Vec<u8> = Vec::new();
+    let mut total_unlock_amount: u64 = 0;
+    let mut found_vaults = false;
 
-    let vault_key = &bcat(&[b"bic:lockup_prime:vault:", &env.caller_env.account_caller, b":", vault_index]);
-    let vault = kv_get(env, vault_key);
-    if vault.is_none() { panic_any("invalid_vault") }
-    let vault = vault.unwrap();
-    let vault_parts: Vec<Vec<u8>> = vault.split(|&b| b == b'-').map(|seg| seg.to_vec()).collect();
-    let unlock_amount = vault_parts[3].as_slice();
-    let unlock_amount = std::str::from_utf8(&unlock_amount).ok().and_then(|s| s.parse::<u64>().ok()).unwrap_or_else(|| panic_any("invalid_unlock_amount"));
+    while let Some((next_key_suffix, val)) = kv_get_next(env, &prefix, &cursor) {
+        found_vaults = true;
+        let vault_parts: Vec<Vec<u8>> = val.split(|&b| b == b'-').map(|seg| seg.to_vec()).collect();
+        let unlock_amount = vault_parts[3].as_slice();
+        let unlock_amount = std::str::from_utf8(&unlock_amount).ok().and_then(|s| s.parse::<u64>().ok()).unwrap_or_else(|| panic_any("invalid_unlock_amount"));
+        total_unlock_amount += unlock_amount;
+        cursor = next_key_suffix;
+    }
+
+    if !found_vaults {
+        panic_any("no_vaults_found");
+    }
 
     let next_checkin_epoch: u64 = kv_get(env, &bcat(&[b"bic:lockup_prime:next_checkin_epoch:", &env.caller_env.account_caller]))
         .map(|bytes| { std::str::from_utf8(&bytes).ok().and_then(|s| s.parse::<u64>().ok()).unwrap_or_else(|| panic_any("invalid_next_checkin_epoch")) })
@@ -99,7 +106,7 @@ pub fn call_daily_checkin(env: &mut crate::consensus::consensus_apply::ApplyEnv,
     if delta == 0 || delta == 1 {
         kv_put(env, &bcat(&[b"bic:lockup_prime:next_checkin_epoch:", &env.caller_env.account_caller]), env.caller_env.entry_epoch.saturating_add(2).to_string().as_bytes());
 
-        let daily_bonus = unlock_amount / 100;
+        let daily_bonus = total_unlock_amount / 100;
         mint(env, env.caller_env.account_caller.to_vec().as_slice(), daily_bonus as i128, b"PRIME");
 
         let streak = kv_increment(env, &bcat(&[b"bic:lockup_prime:daily_streak:", &env.caller_env.account_caller]), 1);

@@ -316,7 +316,7 @@ defmodule Ama.MultiServer do
               sol = String.replace(r.path, "/api/upow/validate/", "") |> Base58.decode()
               diff_bits = DB.Chain.diff_bits()
               segment_vr_hash = DB.Chain.segment_vr_hash()
-              result = try do BIC.Sol.verify(sol, %{diff_bits: diff_bits, segment_vr_hash: segment_vr_hash}) catch _,_ false end
+              result = try do BIC.Sol.verify(sol, %{diff_bits: diff_bits, segment_vr_hash: segment_vr_hash}) catch _,_ -> false end
               result_math = RDB.freivalds(sol, :crypto.strong_rand_bytes(32))
               quick_reply(state, %{valid: result, valid_math: result_math})
 
@@ -324,7 +324,7 @@ defmodule Ama.MultiServer do
               {r, sol} = Photon.HTTP.read_body_all(state.socket, r)
               diff_bits = DB.Chain.diff_bits()
               segment_vr_hash = DB.Chain.segment_vr_hash()
-              result = try do BIC.Sol.verify(sol, %{diff_bits: diff_bits, segment_vr_hash: segment_vr_hash}) catch _,_ false end
+              result = try do BIC.Sol.verify(sol, %{diff_bits: diff_bits, segment_vr_hash: segment_vr_hash}) catch _,_ -> false end
               result_math = RDB.freivalds(sol, :crypto.strong_rand_bytes(32))
               quick_reply(%{state|request: r}, %{valid: result, valid_math: result_math})
 
