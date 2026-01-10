@@ -74,7 +74,7 @@ defmodule Ama.MultiServer do
     def handle_http(state) do
         r = state.request
         #IO.inspect r.path
-        testnet = Application.fetch_env!(:ama, :testnet)
+        testnet = !!Application.fetch_env!(:ama, :testnet)
         cond do
             r.method in ["OPTIONS", "HEAD"] ->
                 :ok = :gen_tcp.send(state.socket, Photon.HTTP.Response.build_cors(state.request, 200, %{}, ""))
@@ -263,7 +263,9 @@ defmodule Ama.MultiServer do
             r.method == "POST" and r.path == "/api/tx/submit_and_wait" ->
                 {r, tx_packed} = Photon.HTTP.read_body_all(state.socket, r)
                 tx_packed = if Base58.likely(tx_packed) do Base58.decode(tx_packed |> String.trim()) else tx_packed end
-                result = API.TX.submit_and_wait(tx_packed)
+                query = r.query && Photon.HTTP.parse_query(r.query)
+                wait_finality = !!query[:finality] or !!query[:wait_finality]
+                result = API.TX.submit_and_wait(tx_packed, wait_finality)
                 quick_reply(%{state|request: r}, result)
             r.method == "GET" and String.starts_with?(r.path, "/api/tx/submit/") ->
                 tx_packed = String.replace(r.path, "/api/tx/submit/", "")
@@ -271,7 +273,9 @@ defmodule Ama.MultiServer do
                 quick_reply(state, result)
             r.method == "GET" and String.starts_with?(r.path, "/api/tx/submit_and_wait/") ->
                 tx_packed = String.replace(r.path, "/api/tx/submit_and_wait/", "")
-                result = API.TX.submit_and_wait(Base58.decode(tx_packed))
+                query = r.query && Photon.HTTP.parse_query(r.query)
+                wait_finality = !!query[:finality] or !!query[:wait_finality]
+                result = API.TX.submit_and_wait(Base58.decode(tx_packed), wait_finality)
                 quick_reply(state, result)
 
             r.method == "GET" and String.starts_with?(r.path, "/api/proof/validators/") ->

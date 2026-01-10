@@ -143,25 +143,28 @@ defmodule API.TX do
         end
     end
 
-    def submit_and_wait(tx_packed, broadcast \\ true) do
+    def submit_and_wait(tx_packed, wait_finality \\ false, broadcast \\ true) do
       result = TX.validate(tx_packed |> TX.unpack())
       if result[:error] == :ok do
           txu = result.txu
           if broadcast do TXPool.insert_and_broadcast(txu) else TXPool.insert(txu) end
-          txres = submit_and_wait_1(result.txu.hash)
+          txres = submit_and_wait_1(result.txu.hash, wait_finality)
           %{error: :ok, hash: Base58.encode(result.txu.hash), metadata: txres.metadata, receipt: txres.receipt}
       else
           %{error: result.error}
       end
     end
 
-    def submit_and_wait_1(_hash, tries \\ 0)
-    def submit_and_wait_1(_hash, 30) do nil end
-    def submit_and_wait_1(hash, tries) do
+    def submit_and_wait_1(_hash, _wait_finality, tries \\ 0)
+    def submit_and_wait_1(_hash, _wait_finality, 60) do nil end
+    def submit_and_wait_1(hash, wait_finality, tries) do
       tx = get(hash)
-      if tx do tx else
-        Process.sleep(100)
-        submit_and_wait_1(hash, tries + 1)
+      cond do
+        !!tx and !wait_finality -> tx
+        !!tx and wait_finality and tx.metadata.entry_height >= DB.Chain.rooted_height() -> tx
+        true ->
+          Process.sleep(100)
+          submit_and_wait_1(hash, wait_finality, tries + 1)
       end
     end
 

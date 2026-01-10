@@ -1,7 +1,7 @@
 defmodule Testnet do
   def call(sk, contract, function, args, attach_symbol \\ nil, attach_amount \\ nil) do
     txu = TX.build(sk, contract, function, args, nil, attach_symbol, attach_amount)
-    API.TX.submit_and_wait(txu |> TX.pack(), false)
+    API.TX.submit_and_wait(txu |> TX.pack(), false, false)
   end
 
   def view(contract, function, args, view_pk \\ nil) do
