@@ -143,28 +143,28 @@ defmodule API.TX do
         end
     end
 
-    def submit_and_wait(tx_packed, wait_finality \\ false, broadcast \\ true) do
+    def submit_and_wait(tx_packed, wait_finalized \\ false, broadcast \\ true) do
       result = TX.validate(tx_packed |> TX.unpack())
       if result[:error] == :ok do
           txu = result.txu
           if broadcast do TXPool.insert_and_broadcast(txu) else TXPool.insert(txu) end
-          txres = submit_and_wait_1(result.txu.hash, wait_finality)
+          txres = submit_and_wait_1(result.txu.hash, wait_finalized)
           %{error: :ok, hash: Base58.encode(result.txu.hash), metadata: txres.metadata, receipt: txres.receipt}
       else
           %{error: result.error}
       end
     end
 
-    def submit_and_wait_1(_hash, _wait_finality, tries \\ 0)
-    def submit_and_wait_1(_hash, _wait_finality, 60) do nil end
-    def submit_and_wait_1(hash, wait_finality, tries) do
+    def submit_and_wait_1(_hash, _wait_finalized, tries \\ 0)
+    def submit_and_wait_1(_hash, _wait_finalized, 60) do nil end
+    def submit_and_wait_1(hash, wait_finalized, tries) do
       tx = get(hash)
       cond do
-        !!tx and !wait_finality -> tx
-        !!tx and wait_finality and tx.metadata.finalized -> tx
+        !!tx and !wait_finalized -> tx
+        !!tx and wait_finalized and tx.metadata.finalized -> tx
         true ->
           Process.sleep(100)
-          submit_and_wait_1(hash, wait_finality, tries + 1)
+          submit_and_wait_1(hash, wait_finalized, tries + 1)
       end
     end
 

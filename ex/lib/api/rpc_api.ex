@@ -15,7 +15,7 @@ defmodule RPC.API do
         %{error: :invalid_public_key, pk: receiver_b58}
       else
         txu = API.Wallet.transfer(seed64, receiver, amount_float, symbol, false)
-        RPC.API.get("/api/tx/submit_and_wait/#{Base58.encode(txu |> TX.pack())}?finality=true")
+        RPC.API.get("/api/tx/submit_and_wait/#{Base58.encode(txu |> TX.pack())}?finalized=true")
       end
     end
 
@@ -30,7 +30,7 @@ defmodule RPC.API do
           else
             IO.inspect {"sending #{trunc(amount_float)} AMA to ", receiver_b58}
             txu = API.Wallet.transfer(seed64, receiver, amount_float, "AMA", false)
-            RPC.API.get("/api/tx/submit_and_wait/#{Base58.encode(txu |> TX.pack())}?finality=true")
+            RPC.API.get("/api/tx/submit_and_wait/#{Base58.encode(txu |> TX.pack())}?finalized=true")
           end
 
         {receiver, amount_float, symbol} ->
@@ -42,7 +42,7 @@ defmodule RPC.API do
           else
             IO.inspect {"sending #{amount_float} #{symbol} to ", receiver_b58}
             txu = API.Wallet.transfer(seed64, receiver, amount_float, symbol, false)
-            RPC.API.get("/api/tx/submit_and_wait/#{Base58.encode(txu |> TX.pack())}?finality=true")
+            RPC.API.get("/api/tx/submit_and_wait/#{Base58.encode(txu |> TX.pack())}?finalized=true")
           end
       end)
     end

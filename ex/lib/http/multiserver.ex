@@ -264,8 +264,8 @@ defmodule Ama.MultiServer do
                 {r, tx_packed} = Photon.HTTP.read_body_all(state.socket, r)
                 tx_packed = if Base58.likely(tx_packed) do Base58.decode(tx_packed |> String.trim()) else tx_packed end
                 query = r.query && Photon.HTTP.parse_query(r.query)
-                wait_finality = !!query[:finality] or !!query[:wait_finality]
-                result = API.TX.submit_and_wait(tx_packed, wait_finality)
+                wait_finalized = !!query[:finalized] or !!query[:wait_finalized]
+                result = API.TX.submit_and_wait(tx_packed, wait_finalized)
                 quick_reply(%{state|request: r}, result)
             r.method == "GET" and String.starts_with?(r.path, "/api/tx/submit/") ->
                 tx_packed = String.replace(r.path, "/api/tx/submit/", "")
@@ -274,8 +274,8 @@ defmodule Ama.MultiServer do
             r.method == "GET" and String.starts_with?(r.path, "/api/tx/submit_and_wait/") ->
                 tx_packed = String.replace(r.path, "/api/tx/submit_and_wait/", "")
                 query = r.query && Photon.HTTP.parse_query(r.query)
-                wait_finality = !!query[:finality] or !!query[:wait_finality]
-                result = API.TX.submit_and_wait(Base58.decode(tx_packed), wait_finality)
+                wait_finalized = !!query[:finalized] or !!query[:wait_finalized]
+                result = API.TX.submit_and_wait(Base58.decode(tx_packed), wait_finalized)
                 quick_reply(state, result)
 
             r.method == "GET" and String.starts_with?(r.path, "/api/proof/validators/") ->
