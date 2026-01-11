@@ -68,9 +68,14 @@ defmodule DB.Chain do
 
     receipt = if map[:result] do map.result else map.receipt end
 
+    status = cond do
+      entry.header.height >= rooted_height() -> :finalized
+      true -> :committed
+      #pending
+    end
     TX.unpack(tx_bytes)
     |> Map.put(:receipt, receipt)
-    |> Map.put(:metadata, %{entry_hash: map.entry_hash, entry_height: entry.header.height})
+    |> Map.put(:metadata, %{entry_hash: map.entry_hash, entry_height: entry.header.height, status: status})
   end
 
   # Validator

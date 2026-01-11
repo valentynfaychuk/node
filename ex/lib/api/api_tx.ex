@@ -161,7 +161,7 @@ defmodule API.TX do
       tx = get(hash)
       cond do
         !!tx and !wait_finality -> tx
-        !!tx and wait_finality and tx.metadata.entry_height >= DB.Chain.rooted_height() -> tx
+        !!tx and wait_finality and tx.metadata.finalized -> tx
         true ->
           Process.sleep(100)
           submit_and_wait_1(hash, wait_finality, tries + 1)
