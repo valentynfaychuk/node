@@ -128,6 +128,17 @@ defmodule Entry do
         if !is_list(e.txs), do: throw(%{error: :txs_not_list})
         if length(e.txs) > 100, do: throw(%{error: :TEMPORARY_txs_only_100_per_entry})
 
+        if !!Application.fetch_env!(:ama, :testnet) or eh.height >= RDBProtocol.forkheight() do
+          if !is_binary(eh.root_tx), do: throw(%{error: :root_tx_not_binary})
+          if byte_size(eh.root_tx) != 32, do: throw(%{error: :root_tx_not_256_bits})
+          if eh.root_tx != root_tx2(Enum.map(e.txs, & &1.hash)), do: throw(%{error: :root_tx_invalid})
+
+          if !is_binary(eh.root_validator), do: throw(%{error: :root_validator_not_binary})
+          if byte_size(eh.root_validator) != 32, do: throw(%{error: :root_validator_not_256_bits})
+          validators = DB.Chain.validators_for_height(eh.height)
+          validators_last_change_height = DB.Chain.validators_last_change_height(eh.height)
+          if eh.root_validator != root_validator2(validators, validators_last_change_height), do: throw(%{error: :root_validator_invalid})
+        else
         if !is_binary(eh.root_tx), do: throw(%{error: :root_tx_not_binary})
         if byte_size(eh.root_tx) != 32, do: throw(%{error: :root_tx_not_256_bits})
         if eh.root_tx != root_tx(Enum.map(e.txs, & &1.hash)), do: throw(%{error: :root_tx_invalid})
@@ -137,6 +148,7 @@ defmodule Entry do
         validators = DB.Chain.validators_for_height(eh.height)
         validators_last_change_height = DB.Chain.validators_last_change_height(eh.height)
         if eh.root_validator != root_validator(validators, validators_last_change_height), do: throw(%{error: :root_validator_invalid})
+        end
 
         is_special_meeting_block = !!e[:mask]
         steam = Task.async_stream(e.txs, fn txu ->
@@ -218,6 +230,22 @@ defmodule Entry do
         validators = DB.Chain.validators_for_height(next_height)
         validators_last_change_height = DB.Chain.validators_last_change_height(next_height)
 
+        if !!Application.fetch_env!(:ama, :testnet) or next_height >= RDBProtocol.forkheight() do
+          %{
+              header: %{
+                  slot: cur_entry.header.slot + 1,
+                  height: next_height,
+                  prev_slot: cur_entry.header.slot,
+                  prev_hash: cur_entry.hash,
+                  dr: dr,
+                  vr: vr,
+                  signer: pk,
+                  root_tx: root_tx2(Enum.map(txus, & &1.hash)),
+                  root_validator: root_validator2(validators, validators_last_change_height)
+              },
+              txs: txus
+          }
+        else
         %{
             header: %{
                 slot: cur_entry.header.slot + 1,
@@ -232,6 +260,7 @@ defmodule Entry do
             },
             txs: txus
         }
+        end
     end
 
     def sign(seed, entry) do
@@ -263,6 +292,16 @@ defmodule Entry do
       by_index_hash ++ [{"count", "#{length(hashes)}"}]
     end
 
+    def root_tx2(hashes) do
+      RDB.bintree_root2(root_tx_build2(hashes))
+    end
+    def root_tx_build2(hashes) do
+      by_index_hash = Enum.flat_map(Enum.with_index(hashes), fn{hash, index}->
+        [{nil, hash, "#{index}"}]
+      end)
+      by_index_hash ++ [{nil, "count", "#{length(hashes)}"}]
+    end
+
     def root_validator(validator_pks, last_change_height) do
       RDB.bintree_root(root_validator_build(validator_pks, last_change_height))
     end
@@ -274,6 +313,17 @@ defmodule Entry do
       kvs ++ [{"hash", :crypto.hash(:sha256, Enum.join(validator_pks))}, {"last_change_height", "#{last_change_height}"}]
     end
 
+    def root_validator2(validator_pks, last_change_height) do
+      RDB.bintree_root2(root_validator_build2(validator_pks, last_change_height))
+    end
+    def root_validator_build2(validator_pks, last_change_height) do
+      by_index_hash = Enum.flat_map(Enum.with_index(validator_pks), fn{hash, index}->
+        [{nil, hash, "#{index}"}]
+      end)
+      kvs = by_index_hash ++ [{nil, "count", "#{length(validator_pks)}"}]
+      kvs ++ [{nil, "hash", :crypto.hash(:sha256, Enum.join(validator_pks))}, {nil, "last_change_height", "#{last_change_height}"}]
+    end
+
     def root_block() do
       #TODO for future
       #proof of inclusion for previous blocks
@@ -282,8 +332,11 @@ defmodule Entry do
     def proof_tx_included(entry_hash, tx_hash) do
       entry = DB.Entry.by_hash(entry_hash)
       tx_hashes = Enum.map(entry.txs, & &1.hash)
-      kvs = root_tx_build(tx_hashes)
-      RDB.bintree_root_prove(kvs, tx_hash)
+      kvs = root_tx_build2(tx_hashes)
+      RDB.bintree_root_prove2(kvs, nil, tx_hash)
+
+      #p = Entry.proof_tx_included Base58.decode("BzF3P2a5gMpQ2FwAuiftHC85BnDfxcmYXPfW95BmNnXU"), Base58.decode("3ySbVoruCQsGb9K1XkRbQdm5WSuxnEoVCugAUj6qouS6")
+      #RDB.bintree_root_verify2(p, nil, Base58.decode("3ySbVoruCQsGb9K1XkRbQdm5WSuxnEoVCugAUj6qouS6"), "0")
     end
 
     def proof_validators(entry_hash) do

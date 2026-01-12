@@ -1,8 +1,17 @@
 use crate::consensus::bic::coin;
 use crate::consensus::consensus_kv;
 
-pub const FORKHEIGHT: u64 = 435_00000;
-//pub const FORKHEIGHT: u64 = 0;
+pub const FORKHEIGHT: u64 = 490_00000;
+//pub const FORKHEIGHT_TESTNET: u64 = 75_00000;
+pub const FORKHEIGHT_TESTNET: u64 = 100;
+
+pub fn forkheight(env: &crate::consensus::consensus_apply::ApplyEnv) -> u64 {
+    if env.testnet {
+        FORKHEIGHT_TESTNET
+    } else {
+        FORKHEIGHT
+    }
+}
 
 pub const AMA_1_DOLLAR: i128 = 1_000_000_000;
 pub const AMA_10_CENT: i128 =    100_000_000;
@@ -25,7 +34,7 @@ pub const COST_PER_DB_WRITE_BYTE: i128 = 250 * 10;
 pub const COST_PER_DB_WRITE_BYTE2: i128 = 250;
 
 pub fn cost_db_read_byte(env: &crate::consensus::consensus_apply::ApplyEnv) -> i128 {
-    if env.testnet {
+    if env.caller_env.entry_height >= forkheight(env) {
         COST_PER_DB_READ_BYTE2
     } else {
         COST_PER_DB_READ_BYTE
@@ -33,7 +42,7 @@ pub fn cost_db_read_byte(env: &crate::consensus::consensus_apply::ApplyEnv) -> i
 }
 
 pub fn cost_db_write_byte(env: &crate::consensus::consensus_apply::ApplyEnv) -> i128 {
-    if env.testnet {
+    if env.caller_env.entry_height >= forkheight(env) {
         COST_PER_DB_WRITE_BYTE2
     } else {
         COST_PER_DB_WRITE_BYTE
@@ -60,15 +69,6 @@ pub const WASM_MAX_FUNCTIONS: u32 = 1000;
 pub const WASM_MAX_GLOBALS: u32 = 100;
 pub const WASM_MAX_EXPORTS: u32 = 50;
 pub const WASM_MAX_IMPORTS: u32 = 50;
-
-#[derive(Clone, Debug)]
-pub struct ExecutionReceipt {
-    pub txid: Vec<u8>,
-    pub success: bool,
-    pub result: Vec<u8>,
-    pub exec_used: Vec<u8>,
-    pub logs: Vec<Vec<u8>>,
-}
 
 pub fn pay_cost(env: &mut crate::consensus::consensus_apply::ApplyEnv, cost: i128) {
     consensus_kv::kv_increment(env, &crate::bcat(&[b"account:", &env.caller_env.account_origin, b":balance:AMA"]), -cost);

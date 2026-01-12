@@ -3,8 +3,9 @@ use crate::{
 };
 
 use crate::consensus::bic::protocol;
-use crate::consensus::{bintree, consensus_kv};
+use crate::consensus::{bintree, bintree2, consensus_kv};
 use crate::consensus::consensus_muts;
+use crate::model::tx_receipt::TXReceipt;
 use std::clone;
 use std::collections::HashMap;
 use std::panic::panic_any;
@@ -89,7 +90,7 @@ pub struct ApplyEnv<'db> {
     pub storage_left: i128,
     pub storage_max: i128,
     pub result_log: Vec<HashMap<String, String>>,
-    pub receipts: Vec<protocol::ExecutionReceipt>,
+    pub receipts: Vec<TXReceipt>,
     pub logs: Vec<Vec<u8>>,
     pub logs_size: usize,
     pub testnet: bool,
@@ -104,7 +105,7 @@ impl<'db> ApplyEnv<'db> {
         Transaction<'db, TransactionDB<MultiThreaded>>,
         Vec<consensus_muts::Mutation>,
         Vec<consensus_muts::Mutation>,
-        Vec<protocol::ExecutionReceipt>,
+        Vec<TXReceipt>,
         [u8; 32],
         [u8; 32],
     ) {
@@ -157,7 +158,7 @@ pub fn set_apply_env_tx<'db>(env: &mut ApplyEnv<'db>, tx_hash: &[u8; 32], tx_sig
 pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, txn: Transaction<'db, TransactionDB<MultiThreaded>>,
     entry: crate::model::entry::Entry, pk: &[u8], sk: &[u8],
     testnet: bool, testnet_peddlebikes: Vec<Vec<u8>>,
-) -> (Transaction<'db, TransactionDB<MultiThreaded>>, Vec<consensus_muts::Mutation>, Vec<consensus_muts::Mutation>, Vec<protocol::ExecutionReceipt>, [u8; 32], [u8; 32]) {
+) -> (Transaction<'db, TransactionDB<MultiThreaded>>, Vec<consensus_muts::Mutation>, Vec<consensus_muts::Mutation>, Vec<TXReceipt>, [u8; 32], [u8; 32]) {
     let cf_h = db.cf_handle("contractstate").unwrap();
     let cf2_h = db.cf_handle("contractstate").unwrap();
     let cf_tree_h = db.cf_handle("contractstate_tree").unwrap();
@@ -259,7 +260,7 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, txn: Transact
                     applyenv.result_log.push(m)
                 }
 */
-                let receipt = protocol::ExecutionReceipt {
+                let receipt = TXReceipt {
                     txid: tx_hash.into(),
                     success: true,
                     result: result.into(),
@@ -279,7 +280,7 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, txn: Transact
                 refund_exec_storage_deposit(&mut applyenv);
 
                 if let Some(&s) = payload.downcast_ref::<&'static str>() {
-                    let receipt = protocol::ExecutionReceipt {
+                    let receipt = TXReceipt {
                         txid: tx_hash.into(),
                         success: false,
                         result: s.to_string().into(),
@@ -293,7 +294,7 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, txn: Transact
                     m.insert("exec_used".to_string(), exec_cost_total.clone());
                     applyenv.result_log.push(m);
                 } else {
-                    let receipt = protocol::ExecutionReceipt {
+                    let receipt = TXReceipt {
                         txid: tx_hash.into(),
                         success: false,
                         result: b"unknown".into(),
@@ -313,13 +314,20 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, txn: Transact
 
     call_exit(&mut applyenv);
 
-    let root_receipts = root_receipts(entry.txs.clone(), applyenv.result_log.clone());
-    let root_contractstate = update_and_root_contractstate(&mut applyenv);
+    if applyenv.caller_env.entry_height >= protocol::forkheight(&applyenv) {
+        let root_receipts = root_receipts2(entry.txs.clone(), applyenv.receipts.clone());
+        let root_contractstate = update_and_root_contractstate(&mut applyenv);
+        applyenv.into_parts(root_receipts, root_contractstate)
+    } else {
+        let root_receipts = root_receipts(entry.txs.clone(), applyenv.result_log.clone());
+        let root_contractstate = update_and_root_contractstate(&mut applyenv);
+        applyenv.into_parts(root_receipts, root_contractstate)
+
+    }
 
     //println!("r{:?} {}", applyenv.caller_env.entry_height, root_receipts(txus.clone(), applyenv.result_log.clone()).iter().map(|b| format!("{:02x}", b)).collect::<String>() );
     //println!("c{:?} {}", applyenv.caller_env.entry_height, hubt_contractstate_root.iter().map(|b| format!("{:02x}", b)).collect::<String>());
 
-    applyenv.into_parts(root_receipts, root_contractstate)
 }
 
 pub fn contract_view<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, entry: crate::model::entry::Entry, view_pk: Vec<u8>,
@@ -443,26 +451,37 @@ fn update_and_root_contractstate(applyenv: &mut ApplyEnv) -> [u8; 32] {
             }
         }
     }
-    let mut ops: Vec<consensus::bintree_rdb::Op> = Vec::with_capacity(map.len());
+    let mut ops: Vec<consensus::bintree2::Op> = Vec::with_capacity(map.len());
     for (key, m) in map {
         let namespace = consensus_kv::contractstate_namespace(&key);
         let op = match m {
             consensus_muts::Mutation::Put { value, .. } => {
-                consensus::bintree_rdb::Op::Insert(namespace, key, value)
+                consensus::bintree2::Op::Insert(namespace, key, value)
             },
             consensus_muts::Mutation::Delete { .. } => {
-                consensus::bintree_rdb::Op::Delete(namespace, key)
+                consensus::bintree2::Op::Delete(namespace, key)
             },
             consensus_muts::Mutation::SetBit { .. } => {
                 let val = applyenv.txn.get_cf(&applyenv.cf, &key).unwrap().unwrap();
-                consensus::bintree_rdb::Op::Insert(namespace, key, val)
+                consensus::bintree2::Op::Insert(namespace, key, val)
             },
             consensus_muts::Mutation::ClearBit { .. } => {
                 let val = applyenv.txn.get_cf(&applyenv.cf, &key).unwrap().unwrap();
-                consensus::bintree_rdb::Op::Insert(namespace, key, val)
+                consensus::bintree2::Op::Insert(namespace, key, val)
             },
         };
         ops.push(op);
+    }
+
+    let mut all_kv_ops: Vec<consensus::bintree2::Op> = Vec::new();
+    if applyenv.caller_env.entry_height == protocol::forkheight(applyenv) {
+        let mut cursor: Vec<u8> = Vec::new();
+        while let Some((next_key_wo_prefix, val)) = crate::consensus::consensus_kv::kv_get_next(applyenv, b"", &cursor) {
+            let namespace = consensus_kv::contractstate_namespace(&next_key_wo_prefix);
+            let op = consensus::bintree2::Op::Insert(namespace, next_key_wo_prefix.to_vec(), val);
+            all_kv_ops.push(op);
+            cursor = next_key_wo_prefix;
+        }
     }
 
     applyenv.cf = applyenv.db.cf_handle("contractstate_tree").unwrap();
@@ -470,9 +489,32 @@ fn update_and_root_contractstate(applyenv: &mut ApplyEnv) -> [u8; 32] {
     applyenv.muts = Vec::new();
     applyenv.muts_rev = Vec::new();
 
-    let mut hubt_contractstate = consensus::bintree_rdb::RocksHubt::new(applyenv);
-    hubt_contractstate.batch_update(ops);
-    let root_contractstate = hubt_contractstate.root();
+    if applyenv.caller_env.entry_height == protocol::forkheight(applyenv) {
+        println!("migrate tree! {:?}", all_kv_ops.len());
+        let mut cursor: Vec<u8> = Vec::new();
+        while let Some((next_key_wo_prefix, val)) = crate::consensus::consensus_kv::kv_get_next(applyenv, b"", &cursor) {
+            crate::consensus::consensus_kv::kv_delete(applyenv, &next_key_wo_prefix);
+            cursor = next_key_wo_prefix;
+        }
+        let mut hubt_contractstate2 = consensus::bintree_rdb2::RocksHubt::new(applyenv);
+        hubt_contractstate2.batch_update(all_kv_ops);
+
+        applyenv.muts_final.append(&mut applyenv.muts);
+        applyenv.muts_final_rev.append(&mut applyenv.muts_rev);
+
+        applyenv.muts = Vec::new();
+        applyenv.muts_rev = Vec::new();
+    }
+
+    let root_contractstate = if applyenv.caller_env.entry_height >= protocol::forkheight(applyenv) {
+        let mut hubt_contractstate2 = consensus::bintree_rdb2::RocksHubt::new(applyenv);
+        hubt_contractstate2.batch_update(ops);
+        hubt_contractstate2.root()
+    } else {
+        let mut hubt_contractstate = consensus::bintree_rdb::RocksHubt::new(applyenv);
+        hubt_contractstate.batch_update(ops.clone());
+        hubt_contractstate.root()
+    };
 
     let mut muts = unique_mutations(applyenv.muts.clone(), false);
     applyenv.muts_final.append(&mut muts);
@@ -484,10 +526,8 @@ fn update_and_root_contractstate(applyenv: &mut ApplyEnv) -> [u8; 32] {
 
 fn root_receipts(txus: Vec<crate::model::tx::TXU>, result_log: Vec<HashMap<String, String>>) -> [u8; 32] {
     use sha2::{Sha256, Digest};
-    let mut hubt = bintree::Hubt::new();
-    let mut kvs = Vec::new();
-
     let count = txus.len();
+    let mut kvs = Vec::with_capacity((count * 2) + 1);
 
     for (txu, log) in txus.into_iter().zip(result_log.into_iter()) {
         let tx_hash = txu.hash;
@@ -505,12 +545,55 @@ fn root_receipts(txus: Vec<crate::model::tx::TXU>, result_log: Vec<HashMap<Strin
     }
     kvs.push(bintree::Op::Insert(b"count".to_vec(), (count as u64).to_string().into_bytes()));
 
+    let mut hubt = bintree::Hubt::new();
+    hubt.batch_update(kvs);
+    hubt.root()
+}
+
+fn root_receipts2(txus: Vec<crate::model::tx::TXU>, receipts: Vec<TXReceipt>) -> [u8; 32] {
+    use sha2::{Sha256, Digest};
+    let count = txus.len();
+    let mut kvs = Vec::with_capacity((count * 4) + 1);
+
+    kvs.push(bintree2::Op::Insert(None, b"count".to_vec(), (count as u32).to_be_bytes().to_vec()));
+
+    //TODO: for parallel processing fix this later
+    for (index, receipt) in receipts.into_iter().enumerate() {
+        let index_bytes = (index as u32).to_be_bytes().to_vec();
+        let success_bytes = vec![u8::from(receipt.success)];
+
+        let mut log_hasher = Sha256::new();
+        for log in receipt.logs {
+            let log: Vec<u8> = log;
+            log_hasher.update(&(log.len() as u32).to_be_bytes());
+            log_hasher.update(log);
+        }
+        let log_hash = log_hasher.finalize();
+
+        kvs.push(bintree2::Op::Insert(Some(b"index".to_vec()), receipt.txid.to_vec(), index_bytes));
+        kvs.push(bintree2::Op::Insert(Some(b"success".to_vec()), receipt.txid.to_vec(), success_bytes));
+        kvs.push(bintree2::Op::Insert(Some(b"result".to_vec()), receipt.txid.to_vec(), receipt.result));
+        kvs.push(bintree2::Op::Insert(Some(b"logs".to_vec()), receipt.txid.to_vec(), log_hash.to_vec()));
+    }
+
+    let mut hubt = bintree2::Hubt2::new();
     hubt.batch_update(kvs);
     hubt.root()
 }
 
 pub trait ToTerm {
     fn to_term(self) -> vecpak::Term;
+}
+impl ToTerm for Vec<Vec<u8>> {
+    fn to_term(self) -> vecpak::Term {
+        let list_content: Vec<vecpak::Term> = self
+            .into_iter()
+            .map(|bin| {
+                vecpak::Term::Binary(bin)
+            })
+            .collect();
+        vecpak::Term::List(list_content)
+    }
 }
 impl ToTerm for HashMap<String, String> {
     fn to_term(self) -> vecpak::Term {
@@ -627,7 +710,7 @@ fn call_exit(env: &mut ApplyEnv) {
     if env.caller_env.entry_height % 100_000 == 99_999 {
         consensus::bic::epoch::next(env);
     }
-    if env.caller_env.entry_height == 412_99999 {
+    if env.caller_env.entry_height == protocol::forkheight(env) {
         //migrate_db(env);
     }
 
@@ -665,6 +748,19 @@ fn unique_mutations(mutations: Vec<consensus_muts::Mutation>, reverse: bool) -> 
 }
 
 fn migrate_db(env: &mut ApplyEnv) {
+    let mut cursor: Vec<u8> = Vec::new();
+    while let Some((next_key_wo_prefix, _val)) = crate::consensus::consensus_kv::kv_get_next(env, b"bic:epoch:trainers:height:", &cursor) {
+        let height = std::str::from_utf8(&next_key_wo_prefix).ok().and_then(|s| s.parse::<u64>().ok()).unwrap_or_else(|| panic_any("invalid_epoch"));
+        let trainers: Vec<vecpak::Term> = consensus::bic::epoch::kv_get_trainers(env, height)
+            .into_iter()
+            .map(vecpak::Term::Binary)
+            .collect();
+        let buf = vecpak::encode(vecpak::Term::List(trainers));
+        crate::consensus::consensus_kv::kv_put(env, &crate::bcat(&[b"bic:epoch:validators:height:", &next_key_wo_prefix]), &buf);
+        cursor = next_key_wo_prefix;
+    }
+
+    /*
     //"bic:epoch:trainers:85"
     //"bic:epoch:trainers:height:000039625024"
     //"bic:epoch:trainers:removed:
@@ -733,6 +829,7 @@ fn migrate_db(env: &mut ApplyEnv) {
 
         cursor = next_key_wo_prefix;
     }
+    */
 }
 
 pub fn call_bic(env: &mut ApplyEnv, contract: Vec<u8>, function: Vec<u8>, args: Vec<Vec<u8>>, attached_symbol: Option<Vec<u8>>, attached_amount: Option<Vec<u8>>) {

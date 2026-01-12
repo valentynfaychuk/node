@@ -49,6 +49,13 @@ pub fn pl_get_u64(pairs: &[(Term, Term)], key: &[u8]) -> u64 {
 }
 
 #[inline]
+pub fn pl_get_bool<'a>(pairs: &'a [(Term, Term)], key: &[u8]) -> bool {
+    match pl_find(pairs, key) {
+        Term::Bool(v) => *v,
+        _ => unreachable!(),
+    }
+}
+#[inline]
 pub fn pl_get_bytes<'a>(pairs: &'a [(Term, Term)], key: &[u8]) -> &'a [u8] {
     match pl_find(pairs, key) {
         Term::Binary(v) => v.as_slice(),
@@ -59,6 +66,21 @@ pub fn pl_get_bytes<'a>(pairs: &'a [(Term, Term)], key: &[u8]) -> &'a [u8] {
 pub fn pl_get_list<'a>(pairs: &'a [(Term, Term)], key: &[u8]) -> &'a [Term] {
     match pl_find(pairs, key) {
         Term::List(v) => v.as_slice(),
+        _ => unreachable!(),
+    }
+}
+
+#[inline]
+pub fn pl_get_list_of_bytes(pairs: &[(Term, Term)], key: &[u8]) -> Vec<Vec<u8>> {
+    match pl_find(pairs, key) {
+        Term::List(list) => {
+            list.iter().map(|item| {
+                match item {
+                    Term::Binary(b) => b.clone(),
+                    _ => unreachable!(),
+                }
+            }).collect()
+        },
         _ => unreachable!(),
     }
 }
