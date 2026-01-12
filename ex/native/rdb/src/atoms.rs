@@ -57,6 +57,7 @@ rustler::atoms! {
     tx_historical_cost,
 
     direction,
+    len,
     root,
     path,
     nodes,

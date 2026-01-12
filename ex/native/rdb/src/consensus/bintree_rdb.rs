@@ -2,6 +2,7 @@ use crate::consensus::{self, consensus_apply};
 use consensus_apply::ApplyEnv;
 use crate::consensus::consensus_kv::{kv_put, kv_delete};
 use crate::consensus::bintree::{compute_namespace_path, Proof, ProofNode, NodeKey, VerifyStatus};
+use crate::consensus::bintree2::{Op};
 
 use sha2::{Digest, Sha256};
 use rayon::prelude::*;
@@ -17,12 +18,6 @@ use std::ops::Bound; // conceptually used
 pub type Hash = [u8; 32];
 pub type Path = [u8; 32];
 const ZERO_HASH: Hash = [0u8; 32];
-
-#[derive(Debug, Clone)]
-pub enum Op {
-    Insert(Option<Vec<u8>>, Vec<u8>, Vec<u8>),
-    Delete(Option<Vec<u8>>, Vec<u8>),
-}
 
 // ============================================================================
 // BIT & HASH HELPERS

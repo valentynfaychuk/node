@@ -27,7 +27,7 @@ defmodule API.Proof do
   def contractstate(key, value \\ nil) do
     %{db: db, cf: cf} = :persistent_term.get({:rocksdb, Fabric})
     namespace = contractstate_namespace(key)
-    proof = RDB.bintree_contractstate_root_prove(db, key)
+    proof = RDB.bintree_contractstate_root_prove(db, namespace, key)
     map = %{
       namespace: Base58.encode(namespace),
       key: Base58.encode(key),

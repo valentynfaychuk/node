@@ -54,9 +54,12 @@ defmodule RDB do
   def freivalds(_tensor, _vr), do: :erlang.nif_error(:nif_not_loaded)
 
   def bintree_root(_propslist), do: :erlang.nif_error(:nif_not_loaded)
+  def bintree_root2(_propslist), do: :erlang.nif_error(:nif_not_loaded)
   def bintree_root_prove(_propslist, _key), do: :erlang.nif_error(:nif_not_loaded)
+  def bintree_root_prove2(_propslist, _ns, _key), do: :erlang.nif_error(:nif_not_loaded)
   def bintree_root_verify(_proof, _ns, _key, _value), do: :erlang.nif_error(:nif_not_loaded)
-  def bintree_contractstate_root_prove(_db, _key), do: :erlang.nif_error(:nif_not_loaded)
+  def bintree_root_verify2(_proof, _ns, _key, _value), do: :erlang.nif_error(:nif_not_loaded)
+  def bintree_contractstate_root_prove(_db, _ns, _key), do: :erlang.nif_error(:nif_not_loaded)
 
   def protocol_constants(), do: :erlang.nif_error(:nif_not_loaded)
   def protocol_epoch_emission(_epoch), do: :erlang.nif_error(:nif_not_loaded)

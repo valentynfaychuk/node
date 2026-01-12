@@ -169,10 +169,10 @@ fn sha256(data: &[u8]) -> Hash {
 }
 
 #[inline]
-fn concat_and_hash(a: &[u8], b: &[u8]) -> Hash {
+fn concat_and_hash(left: &[u8], right: &[u8]) -> Hash {
     let mut hasher = Sha256::new();
-    hasher.update(a);
-    hasher.update(b);
+    hasher.update(left);
+    hasher.update(right);
     hasher.finalize().into()
 }
 
@@ -448,17 +448,17 @@ mod tests {
 
         // Case 1: Inclusion (Key exists, Value matches)
         let proof_inc = hubt.prove(k1.clone());
-        assert_eq!(Hubt::verify(&proof_inc, k1.clone(), v1.clone()), VerifyStatus::Included);
+        assert_eq!(Hubt::verify(&proof_inc, None, k1.clone(), v1.clone()), VerifyStatus::Included);
 
         // Case 2: Mismatch (Key exists, Value differs)
         let v1_fake = b"999".to_vec();
         let proof_mis = hubt.prove(k1.clone()); // Same proof generation!
-        assert_eq!(Hubt::verify(&proof_mis, k1.clone(), v1_fake), VerifyStatus::Mismatch);
+        assert_eq!(Hubt::verify(&proof_mis, None, k1.clone(), v1_fake), VerifyStatus::Mismatch);
 
         // Case 3: Non-Existence (Key does not exist)
         let k_missing = b"user:999".to_vec();
         let proof_non = hubt.prove(k_missing.clone());
-        assert_eq!(Hubt::verify(&proof_non, k_missing, v1.clone()), VerifyStatus::NonExistence);
+        assert_eq!(Hubt::verify(&proof_non, None, k_missing, v1.clone()), VerifyStatus::NonExistence);
     }
 
     #[test]
