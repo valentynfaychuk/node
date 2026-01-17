@@ -2,8 +2,7 @@ use crate::consensus::bic::coin;
 use crate::consensus::consensus_kv;
 
 pub const FORKHEIGHT: u64 = 490_00000;
-//pub const FORKHEIGHT_TESTNET: u64 = 75_00000;
-pub const FORKHEIGHT_TESTNET: u64 = 100;
+pub const FORKHEIGHT_TESTNET: u64 = 0;
 
 pub fn forkheight(env: &crate::consensus::consensus_apply::ApplyEnv) -> u64 {
     if env.testnet {
@@ -26,27 +25,27 @@ pub const COST_PER_BYTE_STATE: i128 = 16_666; //cost to grow the contract state
 pub const COST_PER_OP_WASM: i128 = 1; //cost to execute a wasm op
 
 pub const COST_PER_DB_READ_BASE: i128 = 5_000 * 10;
-pub const COST_PER_DB_READ_BYTE: i128 = 50 * 10;
-pub const COST_PER_DB_READ_BYTE2: i128 = 50;
+pub const COST_PER_DB_READ_BYTE: i128 = 50;
 
 pub const COST_PER_DB_WRITE_BASE: i128 = 25_000 * 10;
-pub const COST_PER_DB_WRITE_BYTE: i128 = 250 * 10;
-pub const COST_PER_DB_WRITE_BYTE2: i128 = 250;
+pub const COST_PER_DB_WRITE_BYTE: i128 = 250;
 
 pub fn cost_db_read_byte(env: &crate::consensus::consensus_apply::ApplyEnv) -> i128 {
     if env.caller_env.entry_height >= forkheight(env) {
-        COST_PER_DB_READ_BYTE2
+        COST_PER_DB_READ_BYTE
     } else {
         COST_PER_DB_READ_BYTE
-    }
+    };
+    COST_PER_DB_READ_BYTE
 }
 
 pub fn cost_db_write_byte(env: &crate::consensus::consensus_apply::ApplyEnv) -> i128 {
     if env.caller_env.entry_height >= forkheight(env) {
-        COST_PER_DB_WRITE_BYTE2
+        COST_PER_DB_WRITE_BYTE
     } else {
         COST_PER_DB_WRITE_BYTE
-    }
+    };
+    COST_PER_DB_WRITE_BYTE
 }
 
 pub const COST_PER_CALL: i128 = AMA_01_CENT;

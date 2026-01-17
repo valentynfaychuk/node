@@ -2,7 +2,7 @@ use rust_rocksdb::{DBRawIteratorWithThreadMode, TransactionDB, MultiThreaded};
 use std::cmp::{min, Ordering};
 use std::convert::TryInto;
 
-use crate::consensus::bintree2::{
+use crate::consensus::bintree::{
     compute_namespace_path, leaf_hash, lcp_be, prefix_match_be,
     get_bit_be, set_bit_be, mask_after_be,
     Proof, ProofNode, NodeKey, Hash, Path, ZERO_HASH

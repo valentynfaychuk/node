@@ -3,7 +3,7 @@ use crate::{
 };
 
 use crate::consensus::bic::protocol;
-use crate::consensus::{bintree, bintree2, consensus_kv};
+use crate::consensus::{bintree, consensus_kv};
 use crate::consensus::consensus_muts;
 use crate::model::tx_receipt::TXReceipt;
 use std::clone;
@@ -89,7 +89,6 @@ pub struct ApplyEnv<'db> {
     pub exec_max: i128,
     pub storage_left: i128,
     pub storage_max: i128,
-    pub result_log: Vec<HashMap<String, String>>,
     pub receipts: Vec<TXReceipt>,
     pub logs: Vec<Vec<u8>>,
     pub logs_size: usize,
@@ -138,7 +137,6 @@ pub fn make_apply_env<'db>(db: &'db TransactionDB<MultiThreaded>, txn: Transacti
         exec_max: protocol::AMA_10_CENT,
         storage_left: 0,
         storage_max: protocol::AMA_1_DOLLAR,
-        result_log: Vec::new(),
         receipts: Vec::new(),
         logs: Vec::new(),
         logs_size: 0,
@@ -268,11 +266,6 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, txn: Transact
                     logs: applyenv.logs.clone(),
                 };
                 applyenv.receipts.push(receipt);
-
-                let mut m = std::collections::HashMap::new();
-                m.insert("error".to_string(), "ok".to_string());
-                m.insert("exec_used".to_string(), exec_cost_total.clone());
-                applyenv.result_log.push(m);
             }
             Err(payload) => {
                 //TODO: refund storage costs on revert?
@@ -288,11 +281,6 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, txn: Transact
                         logs: applyenv.logs.clone(),
                     };
                     applyenv.receipts.push(receipt);
-
-                    let mut m = std::collections::HashMap::new();
-                    m.insert("error".to_string(), s.to_string());
-                    m.insert("exec_used".to_string(), exec_cost_total.clone());
-                    applyenv.result_log.push(m);
                 } else {
                     let receipt = TXReceipt {
                         txid: tx_hash.into(),
@@ -302,11 +290,6 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, txn: Transact
                         logs: applyenv.logs.clone(),
                     };
                     applyenv.receipts.push(receipt);
-
-                    let mut m = std::collections::HashMap::new();
-                    m.insert("error".to_string(), "unknown".to_string());
-                    m.insert("exec_used".to_string(), exec_cost_total.clone());
-                    applyenv.result_log.push(m);
                 }
             }
         }
@@ -314,16 +297,9 @@ pub fn apply_entry<'db, 'a>(db: &'db TransactionDB<MultiThreaded>, txn: Transact
 
     call_exit(&mut applyenv);
 
-    if applyenv.caller_env.entry_height >= protocol::forkheight(&applyenv) {
-        let root_receipts = root_receipts2(entry.txs.clone(), applyenv.receipts.clone());
-        let root_contractstate = update_and_root_contractstate(&mut applyenv);
-        applyenv.into_parts(root_receipts, root_contractstate)
-    } else {
-        let root_receipts = root_receipts(entry.txs.clone(), applyenv.result_log.clone());
-        let root_contractstate = update_and_root_contractstate(&mut applyenv);
-        applyenv.into_parts(root_receipts, root_contractstate)
-
-    }
+    let root_receipts = root_receipts(entry.txs.clone(), applyenv.receipts.clone());
+    let root_contractstate = update_and_root_contractstate(&mut applyenv);
+    applyenv.into_parts(root_receipts, root_contractstate)
 
     //println!("r{:?} {}", applyenv.caller_env.entry_height, root_receipts(txus.clone(), applyenv.result_log.clone()).iter().map(|b| format!("{:02x}", b)).collect::<String>() );
     //println!("c{:?} {}", applyenv.caller_env.entry_height, hubt_contractstate_root.iter().map(|b| format!("{:02x}", b)).collect::<String>());
@@ -451,37 +427,26 @@ fn update_and_root_contractstate(applyenv: &mut ApplyEnv) -> [u8; 32] {
             }
         }
     }
-    let mut ops: Vec<consensus::bintree2::Op> = Vec::with_capacity(map.len());
+    let mut ops: Vec<consensus::bintree::Op> = Vec::with_capacity(map.len());
     for (key, m) in map {
         let namespace = consensus_kv::contractstate_namespace(&key);
         let op = match m {
             consensus_muts::Mutation::Put { value, .. } => {
-                consensus::bintree2::Op::Insert(namespace, key, value)
+                consensus::bintree::Op::Insert(namespace, key, value)
             },
             consensus_muts::Mutation::Delete { .. } => {
-                consensus::bintree2::Op::Delete(namespace, key)
+                consensus::bintree::Op::Delete(namespace, key)
             },
             consensus_muts::Mutation::SetBit { .. } => {
                 let val = applyenv.txn.get_cf(&applyenv.cf, &key).unwrap().unwrap();
-                consensus::bintree2::Op::Insert(namespace, key, val)
+                consensus::bintree::Op::Insert(namespace, key, val)
             },
             consensus_muts::Mutation::ClearBit { .. } => {
                 let val = applyenv.txn.get_cf(&applyenv.cf, &key).unwrap().unwrap();
-                consensus::bintree2::Op::Insert(namespace, key, val)
+                consensus::bintree::Op::Insert(namespace, key, val)
             },
         };
         ops.push(op);
-    }
-
-    let mut all_kv_ops: Vec<consensus::bintree2::Op> = Vec::new();
-    if applyenv.caller_env.entry_height == protocol::forkheight(applyenv) {
-        let mut cursor: Vec<u8> = Vec::new();
-        while let Some((next_key_wo_prefix, val)) = crate::consensus::consensus_kv::kv_get_next(applyenv, b"", &cursor) {
-            let namespace = consensus_kv::contractstate_namespace(&next_key_wo_prefix);
-            let op = consensus::bintree2::Op::Insert(namespace, next_key_wo_prefix.to_vec(), val);
-            all_kv_ops.push(op);
-            cursor = next_key_wo_prefix;
-        }
     }
 
     applyenv.cf = applyenv.db.cf_handle("contractstate_tree").unwrap();
@@ -489,73 +454,24 @@ fn update_and_root_contractstate(applyenv: &mut ApplyEnv) -> [u8; 32] {
     applyenv.muts = Vec::new();
     applyenv.muts_rev = Vec::new();
 
-    if applyenv.caller_env.entry_height == protocol::forkheight(applyenv) {
-        println!("migrate tree! {:?}", all_kv_ops.len());
-        let mut cursor: Vec<u8> = Vec::new();
-        while let Some((next_key_wo_prefix, val)) = crate::consensus::consensus_kv::kv_get_next(applyenv, b"", &cursor) {
-            crate::consensus::consensus_kv::kv_delete(applyenv, &next_key_wo_prefix);
-            cursor = next_key_wo_prefix;
-        }
-        let mut hubt_contractstate2 = consensus::bintree_rdb2::RocksHubt::new(applyenv);
-        hubt_contractstate2.batch_update(all_kv_ops);
-
-        applyenv.muts_final.append(&mut applyenv.muts);
-        applyenv.muts_final_rev.append(&mut applyenv.muts_rev);
-
-        applyenv.muts = Vec::new();
-        applyenv.muts_rev = Vec::new();
-    }
-
-    let root_contractstate = if applyenv.caller_env.entry_height >= protocol::forkheight(applyenv) {
-        let mut hubt_contractstate2 = consensus::bintree_rdb2::RocksHubt::new(applyenv);
-        hubt_contractstate2.batch_update(ops);
-        hubt_contractstate2.root()
-    } else {
-        let mut hubt_contractstate = consensus::bintree_rdb::RocksHubt::new(applyenv);
-        hubt_contractstate.batch_update(ops.clone());
-        hubt_contractstate.root()
-    };
+    let mut hubt_contractstate = consensus::bintree_rdb::RocksHubt::new(applyenv);
+    hubt_contractstate.batch_update(ops);
+    let contractstate_root = hubt_contractstate.root();
 
     let mut muts = unique_mutations(applyenv.muts.clone(), false);
     applyenv.muts_final.append(&mut muts);
     let mut muts_rev = unique_mutations(applyenv.muts_rev.clone(), true);
     applyenv.muts_final_rev.append(&mut muts_rev);
 
-    root_contractstate
+    contractstate_root
 }
 
-fn root_receipts(txus: Vec<crate::model::tx::TXU>, result_log: Vec<HashMap<String, String>>) -> [u8; 32] {
-    use sha2::{Sha256, Digest};
-    let count = txus.len();
-    let mut kvs = Vec::with_capacity((count * 2) + 1);
-
-    for (txu, log) in txus.into_iter().zip(result_log.into_iter()) {
-        let tx_hash = txu.hash;
-
-        let error = log.get("error")
-            .expect("no_error_key_in_receipt")
-            .as_bytes()
-            .to_vec();
-
-        let log_term = vecpak::encode(log.to_term());
-        let log_hash = Sha256::digest(&log_term);
-
-        kvs.push(bintree::Op::Insert(tx_hash.to_vec(), log_hash.to_vec()));
-        kvs.push(bintree::Op::Insert([b"result:", &tx_hash[..]].concat(), error));
-    }
-    kvs.push(bintree::Op::Insert(b"count".to_vec(), (count as u64).to_string().into_bytes()));
-
-    let mut hubt = bintree::Hubt::new();
-    hubt.batch_update(kvs);
-    hubt.root()
-}
-
-fn root_receipts2(txus: Vec<crate::model::tx::TXU>, receipts: Vec<TXReceipt>) -> [u8; 32] {
+fn root_receipts(txus: Vec<crate::model::tx::TXU>, receipts: Vec<TXReceipt>) -> [u8; 32] {
     use sha2::{Sha256, Digest};
     let count = txus.len();
     let mut kvs = Vec::with_capacity((count * 4) + 1);
 
-    kvs.push(bintree2::Op::Insert(None, b"count".to_vec(), (count as u32).to_be_bytes().to_vec()));
+    kvs.push(bintree::Op::Insert(None, b"count".to_vec(), (count as u32).to_be_bytes().to_vec()));
 
     //TODO: for parallel processing fix this later
     for (index, receipt) in receipts.into_iter().enumerate() {
@@ -570,13 +486,13 @@ fn root_receipts2(txus: Vec<crate::model::tx::TXU>, receipts: Vec<TXReceipt>) ->
         }
         let log_hash = log_hasher.finalize();
 
-        kvs.push(bintree2::Op::Insert(Some(b"index".to_vec()), receipt.txid.to_vec(), index_bytes));
-        kvs.push(bintree2::Op::Insert(Some(b"success".to_vec()), receipt.txid.to_vec(), success_bytes));
-        kvs.push(bintree2::Op::Insert(Some(b"result".to_vec()), receipt.txid.to_vec(), receipt.result));
-        kvs.push(bintree2::Op::Insert(Some(b"logs".to_vec()), receipt.txid.to_vec(), log_hash.to_vec()));
+        kvs.push(bintree::Op::Insert(Some(b"index".to_vec()), receipt.txid.to_vec(), index_bytes));
+        kvs.push(bintree::Op::Insert(Some(b"success".to_vec()), receipt.txid.to_vec(), success_bytes));
+        kvs.push(bintree::Op::Insert(Some(b"result".to_vec()), receipt.txid.to_vec(), receipt.result));
+        kvs.push(bintree::Op::Insert(Some(b"logs".to_vec()), receipt.txid.to_vec(), log_hash.to_vec()));
     }
 
-    let mut hubt = bintree2::Hubt2::new();
+    let mut hubt = bintree::Hubt::new();
     hubt.batch_update(kvs);
     hubt.root()
 }
