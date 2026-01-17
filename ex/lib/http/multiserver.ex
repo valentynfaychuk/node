@@ -71,6 +71,14 @@ defmodule Ama.MultiServer do
         String.replace(bin,"{replace:\"me\"}", JSX.encode!(inject))
     end
 
+    def json_fix_floats(data) when is_map(data) do json_fix_floats(JSX.encode!(data)) end
+    def json_fix_floats(json_string) do
+      Regex.replace(~r/(\d+\.?\d*)e-([0-9]+)/, json_string, fn(_, num, exp) ->
+        precision = String.to_integer(exp)
+        :erlang.float_to_binary(String.to_float("#{num}e-#{exp}"), [:compact, decimals: precision])
+      end)
+    end
+
     def handle_http(state) do
         r = state.request
         #IO.inspect r.path
@@ -194,8 +202,8 @@ defmodule Ama.MultiServer do
                 logs = Enum.map(logs, & RocksDB.ascii_dump(&1))
                 quick_reply(state, JSX.encode!(%{success: success, result: RocksDB.ascii_dump(result), logs: logs}))
             r.method == "GET" and String.starts_with?(r.path, "/api/contract/richlist") ->
-                {result, _count} = API.Contract.richlist()
-                quick_reply(state, JSX.encode!(%{error: :ok, richlist: result}))
+                {richlist, _count} = API.Contract.richlist()
+                quick_reply(state, json_fix_floats(%{error: :ok, richlist: richlist}))
 
             r.method == "GET" and String.starts_with?(r.path, "/api/chain/tx_events_by_account/") ->
                 query = r.query && Photon.HTTP.parse_query(r.query)
@@ -248,12 +256,12 @@ defmodule Ama.MultiServer do
                     [pk] -> API.Wallet.balance(pk, "AMA")
                     [pk, symbol] -> API.Wallet.balance(pk, symbol)
                 end
-                quick_reply(state, %{error: :ok, balance: balance})
+                quick_reply(state, json_fix_floats(%{error: :ok, balance: balance}))
 
             r.method == "GET" and String.starts_with?(r.path, "/api/wallet/balance_all/") ->
                 pk = String.replace(r.path, "/api/wallet/balance_all/", "")
                 balances = API.Wallet.balance_all(pk)
-                quick_reply(state, %{error: :ok, balances: balances})
+                quick_reply(state, json_fix_floats(%{error: :ok, balances: balances}))
 
             r.method == "POST" and r.path == "/api/tx/submit" ->
                 {r, tx_packed} = Photon.HTTP.read_body_all(state.socket, r)

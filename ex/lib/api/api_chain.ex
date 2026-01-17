@@ -67,6 +67,7 @@ defmodule API.Chain do
 
       %{
         height: tip.header.height,
+        rooted_height: DB.Chain.rooted_height(),
         tip_hash: tip.hash |> Base58.encode(),
         tip: format_entry_for_client(tip),
         tx_pool_size: TXPool.size(),
@@ -80,6 +81,7 @@ defmodule API.Chain do
         diff_bits: API.Epoch.get_diff_bits(),
         pflops: pflops(tip.header.height),
         txs_per_sec: stat_txs_sec(tip.header.height),
+        segment_vr_hash: DB.Chain.segment_vr_hash(),
       }
     end
 

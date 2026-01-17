@@ -9,6 +9,7 @@ defmodule BIC.Sol do
     end
 
     def unpack(sol = <<epoch::32-little, _::binary>>) when epoch >= 156 do
+    #def unpack(sol = <<epoch::32-little, _::binary>>) do
         <<epoch::32-little, segment_vr_hash::32-binary, sol_pk::48-binary, pop::96-binary, computor_pk::48-binary, nonce::12-binary, tensor_c::1024-binary>> = sol
         %{epoch: epoch, pk: sol_pk, pop: pop, computor: computor_pk, segment_vr_hash: segment_vr_hash, nonce: nonce, tensor_c: tensor_c}
     end
@@ -19,6 +20,11 @@ defmodule BIC.Sol do
     def unpack(sol) do
         <<epoch::32-little, sol_pk::48-binary, pop::96-binary, computor_pk::48-binary, _::binary>> = sol
         %{epoch: epoch, pk: sol_pk, pop: pop, computor: computor_pk}
+    end
+
+    def unpack_testnet(sol = <<epoch::32-little, _::binary>>) do
+        <<epoch::32-little, segment_vr_hash::32-binary, sol_pk::48-binary, pop::96-binary, computor_pk::48-binary, nonce::12-binary, tensor_c::1024-binary>> = sol
+        %{epoch: epoch, pk: sol_pk, pop: pop, computor: computor_pk, segment_vr_hash: segment_vr_hash, nonce: nonce, tensor_c: tensor_c}
     end
 
     def verify_hash(epoch, hash) when epoch >= 244 do
@@ -45,6 +51,13 @@ defmodule BIC.Sol do
 
     def verify(sol = <<epoch::32-little, _::binary>>, opts \\ %{}) do
       cond do
+        !!Application.fetch_env(:ama, :testnet)->
+          usol = unpack_testnet(sol)
+          if opts.segment_vr_hash != usol.segment_vr_hash, do: throw %{error: :segment_vr_hash}
+          if byte_size(sol) != @sol_size, do: throw(%{error: :invalid_sol_seed_size})
+          hash = Map.get_lazy(opts, :hash, fn()-> Blake3.hash(sol) end)
+          vr_b3 = Map.get_lazy(opts, :vr_b3, fn()-> :crypto.strong_rand_bytes(32) end)
+          verify_hash_diff(epoch, hash, opts.diff_bits) and RDB.freivalds(sol, vr_b3)
         epoch >= 295 ->
           usol = unpack(sol)
           if opts.segment_vr_hash != usol.segment_vr_hash, do: throw %{error: :segment_vr_hash}
