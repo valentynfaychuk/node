@@ -22,16 +22,28 @@ pub fn call_lock(env: &mut crate::consensus::consensus_apply::ApplyEnv, args: Ve
     let amount = args[0].as_slice();
     let amount = std::str::from_utf8(&amount).ok().and_then(|s| s.parse::<i128>().ok()).unwrap_or_else(|| panic_any("invalid_amount"));
     let tier = args[1].as_slice();
-    let (tier_epochs, multiplier) = match args.get(1).map(|v| v.as_slice()).unwrap_or_else(|| panic_any("invalid_tier")) {
-        b"7d"   => (10, 13),
-        b"30d"  => (45, 17),
-        b"90d"  => (135, 27),
-        b"180d" => (270, 35),
-        b"365d" => (547, 54),
-        _ => panic_any("invalid_tier"),
+
+    let (tier_epochs, multiplier) = if env.testnet {
+        match args.get(1).map(|v| v.as_slice()).unwrap_or_else(|| panic_any("invalid_tier")) {
+            b"7d"   => (1, 13),
+            b"30d"  => (3, 17),
+            b"90d"  => (9, 27),
+            b"180d" => (18, 35),
+            b"365d" => (36, 54),
+            _ => panic_any("invalid_tier"),
+        }
+    } else {
+        match args.get(1).map(|v| v.as_slice()).unwrap_or_else(|| panic_any("invalid_tier")) {
+            b"7d"   => (10, 13),
+            b"30d"  => (45, 17),
+            b"90d"  => (135, 27),
+            b"180d" => (270, 35),
+            b"365d" => (547, 54),
+            _ => panic_any("invalid_tier"),
+        }
     };
 
-    if amount <= to_flat(1) { panic_any("invalid_amount") }
+    if amount <= to_flat(1) { panic_any("lockup_amount_insufficient") }
     if amount > balance(env, &env.caller_env.account_caller.clone(), b"AMA") { panic_any("insufficient_funds") }
     kv_increment(env, &bcat(&[b"account:", &env.caller_env.account_caller, b":balance:AMA"]), -amount);
 

@@ -39,7 +39,7 @@ udp_ipv4_iface =  ((System.get_env("UDP_IPV4") || "0.0.0.0") |> :unicode.charact
 config :ama, :udp_ipv4_tuple, udp_ipv4_iface
 config :ama, :udp_port, (System.get_env("UDP_PORT") || "36969") |> :erlang.binary_to_integer()
 
-config :ama, :rpc_url, (System.get_env("RPC_URL") || "https://nodes.amadeus.bot")
+config :ama, :rpc_url, (System.get_env("RPC_URL") || "https://mainnet-rpc.ama.one")
 config :ama, :rpc_events, ((System.get_env("RPC_EVENTS") || "true") == "true")
 
 config :ama, :prometheus_token, System.get_env("PROMETHEUS_TOKEN")

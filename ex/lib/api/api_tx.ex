@@ -161,7 +161,7 @@ defmodule API.TX do
       tx = get(hash)
       cond do
         !!tx and !wait_finalized -> tx
-        !!tx and wait_finalized and tx.metadata.finalized -> tx
+        !!tx and wait_finalized and tx.metadata.status == :finalized -> tx
         true ->
           Process.sleep(100)
           submit_and_wait_1(hash, wait_finalized, tries + 1)

@@ -121,7 +121,7 @@ defmodule Ama.MultiServer do
             r.method == "GET" and String.starts_with?(r.path, "/api/peer/nodes") ->
                 nodes = API.Peer.all_for_web()
                 quick_reply(state, %{error: :ok, nodes: nodes})
-            r.method == "GET" and String.starts_with?(r.path, "/api/peer/trainers") ->
+            r.method == "GET" and (String.starts_with?(r.path, "/api/peer/trainers") or String.starts_with?(r.path, "/api/peer/validators")) ->
                 trainers = API.Peer.all_trainers()
                 quick_reply(state, %{error: :ok, trainers: trainers})
             r.method == "GET" and String.starts_with?(r.path, "/api/peer/removed_trainers") ->

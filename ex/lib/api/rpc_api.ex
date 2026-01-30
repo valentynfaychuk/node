@@ -47,6 +47,15 @@ defmodule RPC.API do
       end)
     end
 
+    def transfer_bulk_from_text(seed, text) do
+      lines = String.split(String.trim(text), "\n")
+      |> Enum.filter(& &1 != "")
+      Enum.map(lines, fn line->
+        [pk, amount] = :binary.split(line, " ")
+        {pk, :erlang.binary_to_integer(amount) * 1.0}
+      end)
+    end
+
     def balance(pk, symbol \\ "AMA") do
       RPC.API.get("/api/wallet/balance/#{pk}/#{symbol}")
     end

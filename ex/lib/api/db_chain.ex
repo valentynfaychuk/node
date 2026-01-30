@@ -69,7 +69,7 @@ defmodule DB.Chain do
     receipt = if map[:result] do map.result else map.receipt end
 
     status = cond do
-      entry.header.height >= rooted_height() -> :finalized
+      rooted_height() >= entry.header.height -> :finalized
       true -> :committed
       #pending
     end
